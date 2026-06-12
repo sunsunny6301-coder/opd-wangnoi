@@ -1,6 +1,10 @@
 // ── App root: state, nav, routing ───────────────────────────
 var { useState, useEffect, useRef, useMemo } = React;
 const LS_KEY = 'wnvet_opd_v1';
+const SB_URL = 'https://lvybmnzuzsefsizgszaf.supabase.co';
+const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imx2eWJtbnp1enNlZnNpemdzemFmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODEyMTk1NjAsImV4cCI6MjA5Njc5NTU2MH0.h2lu10nj9z8aZwREVUsU8b5cnooQSScZ_QhbfC2kuTQ';
+const supa = (typeof supabase !== 'undefined') ? supabase.createClient(SB_URL, SB_KEY) : null;
+let sbSaveTimer = null;
 
 function loadState() {
   try {
@@ -111,8 +115,26 @@ function App() {
     pushToast(`ยกเลิกคิว ${item.q} — ${item.petName} เรียบร้อย`);
   };
 
+  // sync Supabase → local on first load
   useEffect(() => {
-    try {localStorage.setItem(LS_KEY, JSON.stringify(state));} catch (e) {/* ignore */}
+    if (!supa) return;
+    supa.from('app_state').select('data').eq('id', 'main').single().then(({ data }) => {
+      if (data?.data?.pets && data?.data?.queue) {
+        setState(data.data);
+        try { localStorage.setItem(LS_KEY, JSON.stringify(data.data)); } catch (e) {}
+      }
+    });
+  }, []);
+
+  // save to localStorage + Supabase on every state change
+  useEffect(() => {
+    try { localStorage.setItem(LS_KEY, JSON.stringify(state)); } catch (e) {}
+    if (supa) {
+      clearTimeout(sbSaveTimer);
+      sbSaveTimer = setTimeout(() => {
+        supa.from('app_state').upsert({ id: 'main', data: state, updated_at: new Date().toISOString() });
+      }, 2000);
+    }
   }, [state]);
 
   // Close nav on ESC

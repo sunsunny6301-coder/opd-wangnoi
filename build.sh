@@ -41,6 +41,9 @@ echo '</script>'
 echo '<script>'
 cat vendor/xlsx.full.min.js
 echo '</script>'
+echo '<script>'
+cat vendor/supabase.min.js
+echo '</script>'
 
 echo '<script>'
 printf 'window.LOGO_SRC = "data:image/jpeg;base64,%s";\n' "$LOGO_B64"
