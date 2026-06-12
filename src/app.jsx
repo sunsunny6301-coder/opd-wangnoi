@@ -117,11 +117,16 @@ function App() {
 
   // sync Supabase → local on first load
   useEffect(() => {
-    if (!supa) return;
-    supa.from('app_state').select('data').eq('id', 'main').single().then(({ data }) => {
+    if (!supa) { console.warn('[SB] supabase client not available'); return; }
+    console.log('[SB] loading from Supabase...');
+    supa.from('app_state').select('data').eq('id', 'main').single().then(({ data, error }) => {
+      if (error) { console.warn('[SB] load error:', error.message); return; }
       if (data?.data?.pets && data?.data?.queue) {
+        console.log('[SB] loaded state from Supabase ✓');
         setState(data.data);
         try { localStorage.setItem(LS_KEY, JSON.stringify(data.data)); } catch (e) {}
+      } else {
+        console.log('[SB] no data in Supabase yet, using localStorage');
       }
     });
   }, []);
@@ -132,7 +137,8 @@ function App() {
     if (supa) {
       clearTimeout(sbSaveTimer);
       sbSaveTimer = setTimeout(() => {
-        supa.from('app_state').upsert({ id: 'main', data: state, updated_at: new Date().toISOString() });
+        supa.from('app_state').upsert({ id: 'main', data: state, updated_at: new Date().toISOString() })
+          .then(({ error }) => { if (error) console.error('[SB] save error:', error.message); else console.log('[SB] saved to Supabase ✓'); });
       }, 2000);
     }
   }, [state]);
