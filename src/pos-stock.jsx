@@ -175,7 +175,7 @@ function ExcelImportModal({ onImport, onClose }) {
     </Modal>
   );
 }
-function PetShop({ stock, onCheckout, previewReceiptNo, onDeleteItem, onAddItem, onImportStock }) {
+function PetShop({ stock, onCheckout, previewReceiptNo, onDeleteItem, onAddItem, onImportStock, onUpdateItem }) {
   const [q, setQ] = useState('');
   const [cat, setCat] = useState('ทั้งหมด');
   const [cart, setCart] = useState([]);
@@ -183,8 +183,17 @@ function PetShop({ stock, onCheckout, previewReceiptNo, onDeleteItem, onAddItem,
   const [showImport, setShowImport] = useState(false);
   const [showAdd, setShowAdd] = useState(false);
   const [confirmDeleteId, setConfirmDeleteId] = useState(null);
+  const [editItem, setEditItem] = useState(null);
+  const [ef, setEf] = useState({});
   const [nf, setNf] = useState({ name: '', cat: 'ของใช้', unit: 'ชิ้น', qty: '', min: '', price: '', cost: '' });
   const cats = ['ทั้งหมด', 'อาหาร', 'ของใช้', 'เวชภัณฑ์', 'ยา'];
+
+  const openEdit = (p) => { setEditItem(p); setEf({ qty: String(p.qty ?? ''), price: String(p.price ?? ''), name: p.name, cost: String(p.cost ?? '') }); };
+  const saveEdit = () => {
+    if (!editItem) return;
+    onUpdateItem && onUpdateItem(editItem.id, { ...editItem, qty: parseInt(ef.qty) || 0, price: parseFloat(ef.price) || 0, cost: parseFloat(ef.cost) || 0 });
+    setEditItem(null);
+  };
 
   const items = stock.filter((s) =>
     (cat === 'ทั้งหมด' || s.cat === cat) &&
@@ -228,7 +237,15 @@ function PetShop({ stock, onCheckout, previewReceiptNo, onDeleteItem, onAddItem,
             const low = !out && p.qty <= p.min;
             return (
               <div key={p.id} className="prod-card" style={{ position: 'relative', ...(out ? { opacity: .45, cursor: 'not-allowed' } : null) }}
-                onClick={() => !out && confirmDeleteId !== p.id && add(p)}>
+                onClick={() => !out && confirmDeleteId !== p.id && editItem?.id !== p.id && add(p)}>
+                {/* ✏️ edit button top-left */}
+                {onUpdateItem && (
+                  <div style={{ position: 'absolute', top: 6, left: 6, zIndex: 2 }} onClick={(e) => e.stopPropagation()}>
+                    <button className="btn btn-sm" style={{ fontSize: 12, padding: '2px 6px', opacity: 0.6, background: 'rgba(255,255,255,0.85)' }}
+                      onClick={() => openEdit(p)}>✏️</button>
+                  </div>
+                )}
+                {/* 🗑 delete button top-right */}
                 {onDeleteItem && (
                   <div style={{ position: 'absolute', top: 6, right: 6, zIndex: 2 }} onClick={(e) => e.stopPropagation()}>
                     {confirmDeleteId === p.id ? (
@@ -306,6 +323,26 @@ function PetShop({ stock, onCheckout, previewReceiptNo, onDeleteItem, onAddItem,
           onImport={(items) => { onImportStock && onImportStock(items); }}
           onClose={() => setShowImport(false)}
         />
+      ) : null}
+
+      {editItem ? (
+        <Modal title={`✏️ แก้ไข — ${editItem.name}`} onClose={() => setEditItem(null)}
+          footer={<>
+            <button className="btn" onClick={() => setEditItem(null)}>ยกเลิก</button>
+            <button className="btn btn-primary" onClick={saveEdit}><Icon name="check" size={16} /> บันทึก</button>
+          </>}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 13 }}>
+            <Field label="จำนวนคงเหลือ">
+              <input className="input" type="number" value={ef.qty} onChange={(e) => setEf({ ...ef, qty: e.target.value })} autoFocus />
+            </Field>
+            <Field label="ราคาขาย (฿)">
+              <input className="input" type="number" value={ef.price} onChange={(e) => setEf({ ...ef, price: e.target.value })} />
+            </Field>
+            <Field label="ต้นทุน (฿)">
+              <input className="input" type="number" value={ef.cost} onChange={(e) => setEf({ ...ef, cost: e.target.value })} />
+            </Field>
+          </div>
+        </Modal>
       ) : null}
 
       {showAdd ? (

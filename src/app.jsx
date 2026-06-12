@@ -412,7 +412,7 @@ function App() {
           onUpdatePet={updatePet} onAddService={addService} onDeleteService={deleteService} onUpdateService={updateService} onSaveDraft={saveDraft} previewReceiptNo={nextReceiptNo().no} /> :
           null}
           {page === 'appointments' ? <AppointmentsView appointments={appointments} pets={pets} onAdd={addAppointment} onUpdate={updateAppointment} /> : null}
-          {page === 'shop' ? <PetShop stock={stock} onCheckout={shopCheckout} previewReceiptNo={nextReceiptNo().no} onDeleteItem={deleteStockItem} onAddItem={addStockItem} onImportStock={importStockItems} /> : null}
+          {page === 'shop' ? <PetShop stock={stock} onCheckout={shopCheckout} previewReceiptNo={nextReceiptNo().no} onDeleteItem={deleteStockItem} onAddItem={addStockItem} onImportStock={importStockItems} onUpdateItem={updateStockItem} /> : null}
           {page === 'stock' ? <StockView stock={stock} onAdjust={adjustStock} onAddItem={addStockItem} onImportStock={importStockItems} onDeleteItem={deleteStockItem} onClearAll={clearStock} onUpdateItem={updateStockItem} /> : null}
           {page === 'reports' ? <ReportsView pets={pets} queue={queue} stock={stock} receipts={receipts} /> : null}
           {page === 'history' ? <HistoryView pets={pets} /> : null}
