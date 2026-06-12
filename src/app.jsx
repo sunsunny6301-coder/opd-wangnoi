@@ -83,6 +83,34 @@ function App() {
     setState((s) => ({ ...s, pets: s.pets.map((p) => p.hn === updated.hn ? updated : p) }));
   };
 
+  const services = state.services || VetData.services;
+  const addService = (item) => {
+    const svc = { ...item, id: item.id || ('svc_' + Date.now()), emoji: item.emoji || '💼', kind: 'svc' };
+    setState((s) => ({ ...s, services: [...(s.services || VetData.services), svc] }));
+    pushToast(`บันทึกรายการ "${svc.name}" แล้ว`);
+  };
+  const deleteService = (id) => {
+    setState((s) => ({ ...s, services: (s.services || VetData.services).filter((x) => x.id !== id) }));
+    pushToast('ลบรายการแล้ว');
+  };
+  const updateService = (updated) => {
+    setState((s) => ({ ...s, services: (s.services || VetData.services).map((x) => x.id === updated.id ? { ...x, ...updated } : x) }));
+    pushToast(`อัปเดต "${updated.name}" แล้ว`);
+  };
+  const saveDraft = (qNo, draft) => {
+    setState((s) => ({ ...s, queue: s.queue.map((x) => x.q === qNo ? { ...x, draft } : x) }));
+  };
+
+  const cancelQueue = (item) => {
+    setState((s) => ({
+      ...s,
+      queue: s.queue.filter((x) => x.q !== item.q),
+      // ลูกค้าใหม่ที่เพิ่งลงทะเบียน ยังไม่มีประวัติ → ลบออกด้วย
+      pets: item.isNew ? s.pets.filter((p) => p.hn !== item.hn) : s.pets,
+    }));
+    pushToast(`ยกเลิกคิว ${item.q} — ${item.petName} เรียบร้อย`);
+  };
+
   useEffect(() => {
     try {localStorage.setItem(LS_KEY, JSON.stringify(state));} catch (e) {/* ignore */}
   }, [state]);
@@ -115,23 +143,27 @@ function App() {
 
   /* ── actions ── */
   const walkIn = (payload) => {
-    let hn = payload.existingHn,isNew = false,petName,species;
+    let hn = payload.existingHn, isNew = false, petName, species;
     let newPets = pets;
     if (!hn) {
       const f = payload.newPet;
-      hn = nextHN();isNew = true;petName = f.pet;species = f.species;
+      hn = nextHN(); isNew = true; petName = f.pet; species = f.species;
       const d = new Date();
       d.setFullYear(d.getFullYear() - (parseInt(f.ageY) || 0));
       d.setMonth(d.getMonth() - (parseInt(f.ageM) || 0));
+      // keepOwner = สัตว์ใหม่ให้เจ้าของเดิม → ใช้ข้อมูลเจ้าของที่ส่งมา
+      const ownerObj = payload.keepOwner
+        ? { name: payload.keepOwner.name, phone: payload.keepOwner.phone || '-' }
+        : { name: f.owner, phone: f.phone || '-' };
       newPets = [...pets, {
         hn, name: f.pet, species: f.species, breed: '-', sex: f.sex,
         birth: d.toISOString().slice(0, 10), color: '-',
         weight: parseFloat(f.weight) || null, sterilized: false,
-        owner: { name: f.owner, phone: f.phone || '-' }, allergies: [], visits: []
+        owner: ownerObj, allergies: [], visits: []
       }];
     } else {
       const p = pets.find((x) => x.hn === hn);
-      petName = p.name;species = p.species;
+      petName = p.name; species = p.species;
     }
     const entry = { q: nextQ(), hn, petName, species, type: payload.type, status: 'wait', time: timeNow(), cc: payload.cc, isNew };
     setState((s) => ({ ...s, pets: newPets, queue: [...s.queue, entry] }));
@@ -248,9 +280,29 @@ function App() {
 
   const adjustStock = (id, d) =>
   setState((s) => ({ ...s, stock: s.stock.map((x) => x.id === id ? { ...x, qty: Math.max(0, x.qty + d) } : x) }));
+  const deleteStockItem = (id) => {
+    const name = stock.find((x) => x.id === id)?.name || '';
+    setState((s) => ({ ...s, stock: s.stock.filter((x) => x.id !== id) }));
+    pushToast(`ลบ "${name}" ออกจากสต็อกแล้ว`);
+  };
+  const clearStock = () => {
+    setState((s) => ({ ...s, stock: [] }));
+    pushToast('ล้างสต็อกทั้งหมดแล้ว');
+  };
   const addStockItem = (item) => {
     setState((s) => ({ ...s, stock: [...s.stock, { ...item, id: 'st' + Date.now(), emoji: { 'ยา': '💊', 'เวชภัณฑ์': '🩹', 'อาหาร': '🥫', 'ของใช้': '🧸' }[item.cat] || '📦' }] }));
     pushToast(`เพิ่ม "${item.name}" เข้าสต็อกแล้ว`);
+  };
+  const updateStockItem = (id, patch) => {
+    const CAT_EMOJIS = { 'ยา': '💊', 'เวชภัณฑ์': '🩹', 'อาหาร': '🥫', 'ของใช้': '🧸' };
+    setState((s) => ({ ...s, stock: s.stock.map((x) => x.id === id ? { ...x, ...patch, emoji: CAT_EMOJIS[patch.cat] || x.emoji || '📦' } : x) }));
+    pushToast(`อัปเดต "${patch.name}" แล้ว`);
+  };
+  const importStockItems = (items) => {
+    const CAT_EMOJIS = { 'ยา': '💊', 'เวชภัณฑ์': '🩹', 'อาหาร': '🥫', 'ของใช้': '🧸' };
+    const newItems = items.map((item) => ({ ...item, id: 'st' + Date.now() + Math.random().toString(36).slice(2), emoji: item.emoji || CAT_EMOJIS[item.cat] || '📦' }));
+    setState((s) => ({ ...s, stock: [...s.stock, ...newItems] }));
+    pushToast(`นำเข้าสต็อก ${newItems.length} รายการแล้ว`);
   };
 
   /* ── nav ── */
@@ -319,21 +371,21 @@ function App() {
           <Dashboard pets={pets} queue={queue} appointments={appointments} admitted={admitted}
           onOpenCase={openCase} onOpenPet={openPet}
           onMove={moveQ} onPay={setPayFor} onWalkIn={walkIn}
-          onUpdateAppointment={updateAppointment} onDischargeAdmitted={dischargeAdmitted} onUpdateAdmitted={updateAdmitted} onOpenAdmittedCase={openAdmittedCase} /> :
+          onUpdateAppointment={updateAppointment} onDischargeAdmitted={dischargeAdmitted} onUpdateAdmitted={updateAdmitted} onOpenAdmittedCase={openAdmittedCase} onCancelQueue={cancelQueue} /> :
           null}
           {page === 'case' && casePet ?
           <CaseView pet={casePet} queueItem={caseQItem}
-          vets={vets} services={VetData.services} stock={stock} allPets={pets}
+          vets={vets} services={services} stock={stock} allPets={pets}
           onBack={() => {setPage('dashboard');setCaseCtx(null);}}
           onFinish={finishCase} onAddVet={addVet}
           onAddAppointment={addAppointment}
           onUpdateAdmitted={updateAdmitted} onDischargeAdmitted={dischargeAdmitted}
           onAddAdmitted={addAdmitted} pushToast={pushToast}
-          onUpdatePet={updatePet} previewReceiptNo={nextReceiptNo().no} /> :
+          onUpdatePet={updatePet} onAddService={addService} onDeleteService={deleteService} onUpdateService={updateService} onSaveDraft={saveDraft} previewReceiptNo={nextReceiptNo().no} /> :
           null}
           {page === 'appointments' ? <AppointmentsView appointments={appointments} pets={pets} onAdd={addAppointment} onUpdate={updateAppointment} /> : null}
-          {page === 'shop' ? <PetShop stock={stock} onCheckout={shopCheckout} previewReceiptNo={nextReceiptNo().no} /> : null}
-          {page === 'stock' ? <StockView stock={stock} onAdjust={adjustStock} onAddItem={addStockItem} /> : null}
+          {page === 'shop' ? <PetShop stock={stock} onCheckout={shopCheckout} previewReceiptNo={nextReceiptNo().no} onDeleteItem={deleteStockItem} onAddItem={addStockItem} onImportStock={importStockItems} /> : null}
+          {page === 'stock' ? <StockView stock={stock} onAdjust={adjustStock} onAddItem={addStockItem} onImportStock={importStockItems} onDeleteItem={deleteStockItem} onClearAll={clearStock} onUpdateItem={updateStockItem} /> : null}
           {page === 'reports' ? <ReportsView pets={pets} queue={queue} stock={stock} receipts={receipts} /> : null}
           {page === 'history' ? <HistoryView pets={pets} /> : null}
           {page === 'tax' ? <TaxView pets={pets} receipts={receipts} /> : null}

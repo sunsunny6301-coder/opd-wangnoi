@@ -71,44 +71,132 @@ function MediaUpload({ media, onChange }) {
   );
 }
 
+const SVC_CATS = ['บริการ','ยา','เวชภัณฑ์','อาหาร','ของใช้','แล็บ','วัคซีน','ผ่าตัด','ทั่วไป'];
+
 // ── Service Manager Modal ──
-function ServiceManagerModal({ services, stock, onAdd, onClose }) {
+function ServiceManagerModal({ services, stock, onAdd, onSaveService, onDeleteService, onUpdateService, onClose }) {
   const [q, setQ] = useState('');
-  const [newItem, setNewItem] = useState({ name: '', price: '' });
+  const [catFilter, setCatFilter] = useState('ทั้งหมด');
+  const [newItem, setNewItem] = useState({ name: '', cat: 'บริการ', price: '' });
+  const [editId, setEditId] = useState(null);
+  const [editForm, setEditForm] = useState(null);
+  const [confirmDeleteId, setConfirmDeleteId] = useState(null);
   const all = useMemo(() => [
     ...services.map((s) => ({ ...s, kind: 'svc', emoji: s.emoji || '💼' })),
-    ...stock.map((s) => ({ ...s, kind: 'stk' })),
+    ...stock.map((s) => ({ ...s, kind: 'stk', emoji: s.emoji || '📦' })),
   ], [services, stock]);
-  const filtered = q ? all.filter((s) => s.name.toLowerCase().includes(q.toLowerCase())) : all;
+  const categories = useMemo(() => {
+    const cats = new Set(all.map(s => s.cat));
+    return ['ทั้งหมด', ...Array.from(cats).sort()];
+  }, [all]);
+  const filtered = all.filter((s) => {
+    const matchCat = catFilter === 'ทั้งหมด' || s.cat === catFilter;
+    const matchQ = !q || s.name.toLowerCase().includes(q.toLowerCase());
+    return matchCat && matchQ;
+  });
   return (
     <Modal title="📋 จัดการรายการ" onClose={onClose} wide>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
         <input className="input" value={q} onChange={(e) => setQ(e.target.value)} placeholder="ค้นหารายการ..." autoFocus />
-        <div style={{ maxHeight: 360, overflowY: 'auto', border: '1px solid var(--line)', borderRadius: 'var(--radius-sm)', overflow: 'hidden' }}>
+        <div className="seg" style={{ width: '100%', justifyContent: 'flex-start', overflowX: 'auto', gap: 2, padding: '2px' }}>
+          {categories.map((c) => (
+            <button key={c} className="btn btn-sm" style={{ fontSize: 12, whiteSpace: 'nowrap', background: catFilter === c ? 'var(--navy)' : 'transparent', color: catFilter === c ? '#fff' : 'var(--ink-soft)', border: 'none', borderRadius: 'var(--radius-sm)' }}
+              onClick={() => setCatFilter(c)}>
+              {c}
+            </button>
+          ))}
+        </div>
+        <div style={{ maxHeight: 380, overflowY: 'auto', border: '1px solid var(--line)', borderRadius: 'var(--radius-sm)' }}>
           <table className="tbl">
-            <thead><tr><th>รายการ</th><th>หมวด</th><th className="num">ราคา</th><th style={{ width: 80 }}></th></tr></thead>
+            <thead><tr><th>รายการ</th><th>หมวด</th><th className="num">ราคา</th><th style={{ width: 90 }}>ข้อมูล</th><th style={{ width: 160 }}></th></tr></thead>
             <tbody>
-              {filtered.map((s) => (
-                <tr key={s.id}>
-                  <td><span style={{ marginRight: 7 }}>{s.emoji || '📦'}</span><b>{s.name}</b></td>
-                  <td><span className="chip" style={{ fontSize: 11 }}>{s.cat}</span></td>
-                  <td className="num" style={{ fontWeight: 700, color: 'var(--mint-deep)' }}>{fmtB(s.price)}</td>
-                  <td>
-                    <button className="btn btn-sm btn-primary" style={{ fontSize: 12 }}
-                      onClick={() => { onAdd(s); }}>+ เพิ่ม</button>
-                  </td>
-                </tr>
-              ))}
+              {filtered.length === 0 ? (
+                <tr><td colSpan="5" style={{ textAlign: 'center', color: 'var(--ink-faint)', padding: 20 }}>ไม่พบรายการ</td></tr>
+              ) : filtered.map((s) => {
+                if (editId === s.id) {
+                  return (
+                    <tr key={s.id} style={{ background: 'var(--powder-soft, #f0f4ff)' }}>
+                      <td><input className="input" value={editForm.name} onChange={(e) => setEditForm({ ...editForm, name: e.target.value })} style={{ fontSize: 13, padding: '4px 8px' }} /></td>
+                      <td>
+                        <select className="select" value={editForm.cat} onChange={(e) => setEditForm({ ...editForm, cat: e.target.value })} style={{ fontSize: 12, padding: '4px 6px' }}>
+                          {SVC_CATS.map((c) => <option key={c}>{c}</option>)}
+                        </select>
+                      </td>
+                      <td className="num"><input className="input" type="number" value={editForm.price} onChange={(e) => setEditForm({ ...editForm, price: e.target.value })} style={{ width: 72, fontSize: 13, padding: '4px 8px', textAlign: 'right' }} /></td>
+                      <td></td>
+                      <td>
+                        <div style={{ display: 'flex', gap: 4 }}>
+                          <button className="btn btn-sm btn-primary" style={{ fontSize: 12 }}
+                            onClick={() => {
+                              if (!editForm.name.trim()) return;
+                              onUpdateService && onUpdateService({ ...s, name: editForm.name.trim(), price: parseFloat(editForm.price) || 0, cat: editForm.cat });
+                              setEditId(null);
+                            }}>บันทึก</button>
+                          <button className="btn btn-sm" style={{ fontSize: 12 }} onClick={() => setEditId(null)}>ยกเลิก</button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                }
+                return (
+                  <tr key={s.id} style={{ background: s.kind === 'stk' ? 'var(--paper)' : 'transparent' }}>
+                    <td><span style={{ marginRight: 7 }}>{s.emoji || '📦'}</span><b>{s.name}</b></td>
+                    <td><span className="chip" style={{ fontSize: 11 }}>{s.cat}</span></td>
+                    <td className="num" style={{ fontWeight: 700, color: 'var(--mint-deep)' }}>{fmtB(s.price)}</td>
+                    <td style={{ fontSize: 12, color: 'var(--ink-faint)' }}>
+                      {s.kind === 'stk' ? <>คงเหลือ {s.qty} {s.unit}</> : <>💼 บริการ</>}
+                    </td>
+                    <td>
+                      <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+                        <button className="btn btn-sm btn-primary" style={{ fontSize: 12 }} onClick={() => { onAdd(s); }}>+ เพิ่ม</button>
+                        {s.kind === 'svc' && (
+                          confirmDeleteId === s.id ? (
+                            <>
+                              <button className="btn btn-sm" style={{ fontSize: 11, background: 'var(--blush-soft)', color: 'var(--blush-deep)', borderColor: 'var(--blush-deep)', fontWeight: 700 }}
+                                onClick={() => { onDeleteService && onDeleteService(s.id); setConfirmDeleteId(null); }}>ลบ?</button>
+                              <button className="btn btn-sm" style={{ fontSize: 11 }} onClick={() => setConfirmDeleteId(null)}>ไม่</button>
+                            </>
+                          ) : (
+                            <>
+                              <button className="btn btn-sm" style={{ fontSize: 13, padding: '3px 7px' }} title="แก้ไข"
+                                onClick={() => { setEditId(s.id); setEditForm({ name: s.name, cat: s.cat || 'บริการ', price: String(s.price) }); setConfirmDeleteId(null); }}>✏️</button>
+                              <button className="btn btn-sm" style={{ fontSize: 13, padding: '3px 7px', color: 'var(--blush-deep)' }} title="ลบ"
+                                onClick={() => { setConfirmDeleteId(s.id); setEditId(null); }}>🗑</button>
+                            </>
+                          )
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
         <div style={{ borderTop: '2px solid var(--line)', paddingTop: 12 }}>
           <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 8, color: 'var(--ink-soft)' }}>+ เพิ่มรายการใหม่</div>
-          <div style={{ display: 'flex', gap: 8 }}>
-            <input className="input" style={{ flex: 1 }} placeholder="ชื่อรายการ" value={newItem.name} onChange={(e) => setNewItem({ ...newItem, name: e.target.value })} />
-            <input className="input" style={{ width: 90 }} type="number" placeholder="ราคา (฿)" value={newItem.price} onChange={(e) => setNewItem({ ...newItem, price: e.target.value })} />
+          <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end' }}>
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 4 }}>
+              <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink-soft)' }}>ชื่อรายการ</label>
+              <input className="input" placeholder="เช่น ตรวจเลือด" value={newItem.name} onChange={(e) => setNewItem({ ...newItem, name: e.target.value })} />
+            </div>
+            <div style={{ width: 140, display: 'flex', flexDirection: 'column', gap: 4 }}>
+              <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink-soft)' }}>หมวด</label>
+              <select className="select" value={newItem.cat} onChange={(e) => setNewItem({ ...newItem, cat: e.target.value })}>
+                {SVC_CATS.map((c) => <option key={c}>{c}</option>)}
+              </select>
+            </div>
+            <div style={{ width: 100, display: 'flex', flexDirection: 'column', gap: 4 }}>
+              <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink-soft)' }}>ราคา (฿)</label>
+              <input className="input" type="number" placeholder="0" value={newItem.price} onChange={(e) => setNewItem({ ...newItem, price: e.target.value })} />
+            </div>
             <button className="btn btn-primary" disabled={!newItem.name.trim() || !newItem.price}
-              onClick={() => { onAdd({ id: 'cust_' + Date.now(), name: newItem.name.trim(), price: parseFloat(newItem.price) || 0, cat: 'ทั่วไป' }); setNewItem({ name: '', price: '' }); }}>
+              onClick={() => {
+                const item = { id: 'svc_' + Date.now(), name: newItem.name.trim(), price: parseFloat(newItem.price) || 0, cat: newItem.cat, emoji: '💼', kind: 'svc' };
+                onAdd(item);
+                onSaveService && onSaveService(item);
+                setNewItem({ name: '', cat: 'บริการ', price: '' });
+              }}>
               เพิ่ม
             </button>
           </div>
@@ -152,20 +240,25 @@ function ChargePicker({ services, stock, onAdd }) {
   );
 }
 
-function CaseView({ pet, queueItem, vets, services, stock, allPets, onBack, onFinish, onAddVet, onAddAdmitted, onUpdateAdmitted, onDischargeAdmitted, pushToast, onUpdatePet, previewReceiptNo }) {
+function CaseView({ pet, queueItem, vets, services, stock, allPets, onBack, onFinish, onAddVet, onAddAdmitted, onUpdateAdmitted, onDischargeAdmitted, pushToast, onUpdatePet, onAddService, onDeleteService, onUpdateService, onSaveDraft, previewReceiptNo }) {
   const latestWeight = pet.visits.length ? pet.visits[0].weight : pet.weight;
+  const draft = queueItem?.draft;
   const [rec, setRec] = useState({
-    cc: (queueItem && queueItem.cc) || '', pe: '', dx: '', plan: '',
-    vet: vets[0], weight: latestWeight || '',
+    cc: draft?.cc ?? ((queueItem && queueItem.cc) || ''),
+    pe: draft?.pe ?? '',
+    dx: draft?.dx ?? '',
+    plan: draft?.plan ?? '',
+    vet: draft?.vet ?? vets[0],
+    weight: draft?.weight ?? (latestWeight || ''),
   });
   const [petAvatar, setPetAvatar] = useState(pet.avatar || null);
   const avatarRef = useRef(null);
-  const [media, setMedia] = useState([]);
+  const [media, setMedia] = useState(draft?.media || []);
   const [showOwnerPets, setShowOwnerPets] = useState(false);
   const ownerPets = useMemo(() => (allPets || []).filter((p) => p.owner.phone === pet.owner.phone), [allPets, pet.owner.phone]);
   // charge = [ชื่อ, จำนวน, ราคา/หน่วย, stockId?] — stockId ไว้ตัดสต็อก + ปริ้นฉลากยา
   const [charges, setCharges] = useState(
-    ((queueItem && queueItem.charges) || []).map((c) =>
+    (draft?.charges || (queueItem && queueItem.charges) || []).map((c) =>
       Array.isArray(c) ? [c[0] || '', Number(c[1]) || 1, Number(c[2]) || 0, c[3] || null]
         : [String(c.name || ''), Number(c.qty) || 1, Number(c.price) || 0, c.stockId || null]
     )
@@ -177,6 +270,8 @@ function CaseView({ pet, queueItem, vets, services, stock, allPets, onBack, onFi
   const [editVisit, setEditVisit] = useState(null);
   const [showVaccineHistory, setShowVaccineHistory] = useState(false);
   const [showServiceMgr, setShowServiceMgr] = useState(false);
+  const [lightbox, setLightbox] = useState(null);
+  const [expandedVisits, setExpandedVisits] = useState({ 0: true });
   const setR = (k) => (e) => setRec({ ...rec, [k]: e.target.value });
   const isEditMode = queueItem && (queueItem.status === 'cashier' || queueItem.status === 'done');
   const isAdmittedMode = queueItem?.status === 'admitted';
@@ -405,7 +500,12 @@ function CaseView({ pet, queueItem, vets, services, stock, allPets, onBack, onFi
           </div>
 
           <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
-            <button className="btn btn-lg" onClick={onBack}>เก็บไว้ก่อน</button>
+            <button className="btn btn-lg" onClick={() => {
+              if (queueItem?.q && onSaveDraft) {
+                onSaveDraft(queueItem.q, { cc: rec.cc, pe: rec.pe, dx: rec.dx, plan: rec.plan, vet: rec.vet, weight: rec.weight, charges, media: media.filter((m) => !m.session) });
+              }
+              onBack();
+            }}>เก็บไว้ก่อน</button>
             {isAdmittedMode ? (
               <>
                 <button className="btn btn-primary btn-lg" onClick={saveAdmittedRecord}><Icon name="check" size={17} /> บันทึกการรักษาวันนี้</button>
@@ -443,49 +543,64 @@ function CaseView({ pet, queueItem, vets, services, stock, allPets, onBack, onFi
           <div className="card-pad" style={{ paddingTop: 8, maxHeight: 620, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 14 }}>
             {pet.visits.length === 0 ? <div className="queue-empty">ยังไม่มีประวัติ</div> :
               [...pet.visits].map((v, i) => {
+                const isExpanded = expandedVisits[i] ?? (i === 0);
                 const vTotal = v.items.reduce((s, [, q, p]) => s + q * p, 0);
                 const isFirst = i === pet.visits.length - 1;
                 return (
                   <div key={i} style={{ borderLeft: '3px solid #E5C97E', paddingLeft: 13, position: 'relative' }}>
                     {isFirst && <span className="chip chip-butter" style={{ position: 'absolute', top: -8, left: -12, fontSize: 11 }}>ครั้งแรก</span>}
-                    <div style={{ fontWeight: 800, fontSize: 15, color: '#7A5E00', marginBottom: 5 }}>{dateTH(v.date)}</div>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, fontSize: 12.5, marginBottom: 8 }}>
-                      <div><span style={{ color: 'var(--ink-faint)', fontSize: 10, fontWeight: 700, textTransform: 'uppercase' }}>CC</span><div>{v.cc}</div></div>
-                      <div><span style={{ color: 'var(--ink-faint)', fontSize: 10, fontWeight: 700, textTransform: 'uppercase' }}>Dx</span><div>{v.dx}</div></div>
-                    </div>
-                    {v.items.length > 0 && (
-                      <div>
-                        <table style={{ width: '100%', fontSize: 11.5, borderCollapse: 'collapse', marginBottom: 8 }}>
-                          <tbody>
-                            {v.items.map((it, j) => (
-                              <tr key={j} style={{ borderBottom: j < v.items.length - 1 ? '1px solid #E8E0F5' : 'none' }}>
-                                <td style={{ padding: '4px 0', fontWeight: 600 }}>{it[0]}</td>
-                                <td style={{ padding: '4px 6px 4px 0', textAlign: 'right', color: 'var(--ink-faint)' }}>x{it[1]}</td>
-                                <td style={{ padding: '4px 0', textAlign: 'right', fontWeight: 700 }}>{fmtB(it[1] * it[2])}</td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', paddingTop: 6, borderTop: '1px solid #E8E0F5', fontSize: 12.5, fontWeight: 700 }}>
-                          <span>รวม</span> <span>{fmtB(vTotal)}</span>
+                    <button onClick={() => setExpandedVisits((prev) => ({ ...prev, [i]: !isExpanded }))}
+                      style={{ width: '100%', textAlign: 'left', background: 'none', border: 'none', cursor: 'pointer', padding: 0, display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: isExpanded ? 6 : 3 }}>
+                      <div style={{ fontWeight: 800, fontSize: 15, color: '#7A5E00' }}>{dateTH(v.date)}</div>
+                      <span style={{ fontSize: 11, color: 'var(--ink-faint)', display: 'inline-block', transition: 'transform .2s', transform: isExpanded ? 'rotate(180deg)' : 'none' }}>▼</span>
+                    </button>
+                    {!isExpanded && (
+                      <div style={{ fontSize: 12, color: 'var(--ink-soft)', marginBottom: 4, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        {v.cc || v.dx || '—'}
+                      </div>
+                    )}
+                    {isExpanded && (
+                      <>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, fontSize: 12.5, marginBottom: 8 }}>
+                          <div><span style={{ color: 'var(--ink-faint)', fontSize: 10, fontWeight: 700, textTransform: 'uppercase' }}>CC</span><div>{v.cc}</div></div>
+                          <div><span style={{ color: 'var(--ink-faint)', fontSize: 10, fontWeight: 700, textTransform: 'uppercase' }}>Dx</span><div>{v.dx}</div></div>
                         </div>
-                      </div>
-                    )}
-                    {v.media && v.media.length > 0 && (
-                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6, marginBottom: 8 }}>
-                        {v.media.map((m, j) => (
-                          <div key={j} style={{ borderRadius: 'var(--radius-sm)', overflow: 'hidden', background: 'var(--paper)', aspectRatio: '1', border: '1px solid var(--line)' }}>
-                            {m.type === 'video'
-                              ? <video src={m.url} controls style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
-                              : <img src={m.url} alt={m.name} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />}
+                        {v.items.length > 0 && (
+                          <div>
+                            <table style={{ width: '100%', fontSize: 11.5, borderCollapse: 'collapse', marginBottom: 8 }}>
+                              <tbody>
+                                {v.items.map((it, j) => (
+                                  <tr key={j} style={{ borderBottom: j < v.items.length - 1 ? '1px solid #E8E0F5' : 'none' }}>
+                                    <td style={{ padding: '4px 0', fontWeight: 600 }}>{it[0]}</td>
+                                    <td style={{ padding: '4px 6px 4px 0', textAlign: 'right', color: 'var(--ink-faint)' }}>x{it[1]}</td>
+                                    <td style={{ padding: '4px 0', textAlign: 'right', fontWeight: 700 }}>{fmtB(it[1] * it[2])}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', paddingTop: 6, borderTop: '1px solid #E8E0F5', fontSize: 12.5, fontWeight: 700 }}>
+                              <span>รวม</span> <span>{fmtB(vTotal)}</span>
+                            </div>
                           </div>
-                        ))}
-                      </div>
+                        )}
+                        {v.media && v.media.length > 0 && (
+                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6, marginBottom: 8 }}>
+                            {v.media.map((m, j) => (
+                              <div key={j} style={{ borderRadius: 'var(--radius-sm)', overflow: 'hidden', background: 'var(--paper)', aspectRatio: '1', border: '1px solid var(--line)', cursor: m.type !== 'video' ? 'zoom-in' : 'default' }}
+                                onClick={() => m.type !== 'video' && setLightbox({ url: m.url, name: m.name })}>
+                                {m.type === 'video'
+                                  ? <video src={m.url} controls style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+                                  : <img src={m.url} alt={m.name} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                        <div style={{ fontSize: 12, color: 'var(--ink-faint)', display: 'flex', alignItems: 'center', gap: 5 }}>
+                          <Icon name="user" size={13} /> {v.vet}
+                        </div>
+                        <button className="btn btn-sm" onClick={() => setEditVisit({ date: v.date, weight: v.weight, cc: v.cc, pe: v.pe, dx: v.dx, plan: v.plan, media: v.media || [], _orig: v })} style={{ marginTop: 8 }}><Icon name="edit" size={13} /> แก้ไข</button>
+                      </>
                     )}
-                    <div style={{ fontSize: 12, color: 'var(--ink-faint)', display: 'flex', alignItems: 'center', gap: 5 }}>
-                      <Icon name="user" size={13} /> {v.vet}
-                    </div>
-                    <button className="btn btn-sm" onClick={() => setEditVisit({ date: v.date, weight: v.weight, cc: v.cc, pe: v.pe, dx: v.dx, plan: v.plan, _orig: v })} style={{ marginTop: 8 }}><Icon name="edit" size={13} /> แก้ไข</button>
                   </div>
                 );
               })}
@@ -510,13 +625,19 @@ function CaseView({ pet, queueItem, vets, services, stock, allPets, onBack, onFi
             setEditVisit(null); pushToast && pushToast('บันทึกประวัติแล้ว');
           }}>บันทึก</button>
         </>}>
-          <div className="form-grid" style={{ gridTemplateColumns: '1fr 1fr', gap: 13 }}>
-            <Field label="วันที่"><input className="input" type="date" value={editVisit.date || ''} onChange={(e) => setEditVisit({ ...editVisit, date: e.target.value })} /></Field>
-            <Field label="น้ำหนัก (kg)"><input className="input" type="number" value={editVisit.weight ?? ''} step="0.1" onChange={(e) => setEditVisit({ ...editVisit, weight: e.target.value })} /></Field>
-            <Field label="อาการสำคัญ (CC)" style={{ gridColumn: '1/-1' }}><textarea className="textarea" rows="2" value={editVisit.cc || ''} onChange={(e) => setEditVisit({ ...editVisit, cc: e.target.value })} placeholder="อาการที่เจ้าของบอก..." /></Field>
-            <Field label="ผลการตรวจร่างกาย (PE)" style={{ gridColumn: '1/-1' }}><textarea className="textarea" rows="2" value={editVisit.pe || ''} onChange={(e) => setEditVisit({ ...editVisit, pe: e.target.value })} placeholder="T, P, R, ผลตรวจ..." /></Field>
-            <Field label="การวินิจฉัย (Dx)" style={{ gridColumn: '1/-1' }}><textarea className="textarea" rows="2" value={editVisit.dx || ''} onChange={(e) => setEditVisit({ ...editVisit, dx: e.target.value })} placeholder="การวินิจฉัย..." /></Field>
-            <Field label="แผนการรักษา (Plan)" style={{ gridColumn: '1/-1' }}><textarea className="textarea" rows="2" value={editVisit.plan || ''} onChange={(e) => setEditVisit({ ...editVisit, plan: e.target.value })} placeholder="ขั้นตอนการรักษา..." /></Field>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 13 }}>
+            <div className="form-grid" style={{ gridTemplateColumns: '1fr 1fr', gap: 13 }}>
+              <Field label="วันที่"><input className="input" type="date" value={editVisit.date || ''} onChange={(e) => setEditVisit({ ...editVisit, date: e.target.value })} /></Field>
+              <Field label="น้ำหนัก (kg)"><input className="input" type="number" value={editVisit.weight ?? ''} step="0.1" onChange={(e) => setEditVisit({ ...editVisit, weight: e.target.value })} /></Field>
+              <Field label="อาการสำคัญ (CC)" style={{ gridColumn: '1/-1' }}><textarea className="textarea" rows="2" value={editVisit.cc || ''} onChange={(e) => setEditVisit({ ...editVisit, cc: e.target.value })} placeholder="อาการที่เจ้าของบอก..." /></Field>
+              <Field label="ผลการตรวจร่างกาย (PE)" style={{ gridColumn: '1/-1' }}><textarea className="textarea" rows="2" value={editVisit.pe || ''} onChange={(e) => setEditVisit({ ...editVisit, pe: e.target.value })} placeholder="T, P, R, ผลตรวจ..." /></Field>
+              <Field label="การวินิจฉัย (Dx)" style={{ gridColumn: '1/-1' }}><textarea className="textarea" rows="2" value={editVisit.dx || ''} onChange={(e) => setEditVisit({ ...editVisit, dx: e.target.value })} placeholder="การวินิจฉัย..." /></Field>
+              <Field label="แผนการรักษา (Plan)" style={{ gridColumn: '1/-1' }}><textarea className="textarea" rows="2" value={editVisit.plan || ''} onChange={(e) => setEditVisit({ ...editVisit, plan: e.target.value })} placeholder="ขั้นตอนการรักษา..." /></Field>
+            </div>
+            <div>
+              <div style={{ fontWeight: 700, fontSize: 13, color: 'var(--ink-soft)', marginBottom: 8 }}>📷 รูปภาพ / วิดีโอ</div>
+              <MediaUpload media={editVisit.media || []} onChange={(m) => setEditVisit({ ...editVisit, media: m })} />
+            </div>
           </div>
         </Modal>
       ) : null}
@@ -593,6 +714,9 @@ function CaseView({ pet, queueItem, vets, services, stock, allPets, onBack, onFi
         <ServiceManagerModal
           services={services} stock={stock}
           onAdd={(item) => { setCharges((prev) => [...prev, [item.name, 1, item.price, item.kind === 'stk' || item.kind === 'stock' ? item.id : null]]); }}
+          onSaveService={onAddService}
+          onDeleteService={onDeleteService}
+          onUpdateService={onUpdateService}
           onClose={() => setShowServiceMgr(false)}
         />
       ) : null}
@@ -607,6 +731,12 @@ function CaseView({ pet, queueItem, vets, services, stock, allPets, onBack, onFi
             pushToast && pushToast(`บันทึกนัด ${appt.petName} — ${appt.date} เรียบร้อย`);
           }} />
       ) : null}
+      {lightbox && (
+        <div onClick={() => setLightbox(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.88)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'zoom-out' }}>
+          <img src={lightbox.url} alt={lightbox.name} style={{ maxWidth: '92vw', maxHeight: '88vh', objectFit: 'contain', borderRadius: 8, boxShadow: '0 4px 32px rgba(0,0,0,.6)' }} onClick={(e) => e.stopPropagation()} />
+          <button onClick={() => setLightbox(null)} style={{ position: 'absolute', top: 16, right: 20, background: 'rgba(255,255,255,.18)', border: 'none', color: '#fff', fontSize: 24, cursor: 'pointer', borderRadius: 6, width: 36, height: 36, display: 'flex', alignItems: 'center', justifyContent: 'center', lineHeight: 1 }}>×</button>
+        </div>
+      )}
       {showOwnerPets ? (
         <Modal title={`🐾 สัตว์เลี้ยงของ ${pet.owner.name}`} onClose={() => setShowOwnerPets(false)}>
           <div style={{ marginBottom: 12, color: 'var(--ink-soft)', fontSize: 13 }}>

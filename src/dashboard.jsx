@@ -23,12 +23,12 @@ const STATUS_META = {
   }
 };
 
-function GlobalSearch({ pets, onOpenPet }) {
+function GlobalSearch({ pets, onOpenPet, onWalkIn, onDirectWalkIn }) {
   const [q, setQ] = useState('');
   const [open, setOpen] = useState(false);
   const wrapRef = useRef(null);
   useEffect(() => {
-    const fn = (e) => {if (wrapRef.current && !wrapRef.current.contains(e.target)) setOpen(false);};
+    const fn = (e) => { if (wrapRef.current && !wrapRef.current.contains(e.target)) setOpen(false); };
     document.addEventListener('mousedown', fn);
     return () => document.removeEventListener('mousedown', fn);
   }, []);
@@ -36,8 +36,8 @@ function GlobalSearch({ pets, onOpenPet }) {
     const s = q.trim().toLowerCase();
     if (!s) return [];
     return pets.filter((p) =>
-    p.name.toLowerCase().includes(s) || p.hn.includes(s) ||
-    p.owner.name.toLowerCase().includes(s) || p.owner.phone.replace(/-/g, '').includes(s.replace(/-/g, ''))
+      p.name.toLowerCase().includes(s) || p.hn.includes(s) ||
+      p.owner.name.toLowerCase().includes(s) || p.owner.phone.replace(/-/g, '').includes(s.replace(/-/g, ''))
     ).slice(0, 8);
   }, [q, pets]);
   return (
@@ -47,47 +47,77 @@ function GlobalSearch({ pets, onOpenPet }) {
         className="search-input"
         placeholder="ค้นหาเคสเก่า — ชื่อสัตว์ / HN / เจ้าของ / เบอร์โทร"
         value={q}
-        onChange={(e) => {setQ(e.target.value);setOpen(true);}}
-        onFocus={() => setOpen(true)} style={{ borderStyle: "solid", borderWidth: "2px" }} />
-      
+        onChange={(e) => { setQ(e.target.value); setOpen(true); }}
+        onFocus={() => setOpen(true)} style={{ borderStyle: 'solid', borderWidth: '2px' }} />
       {open && q.trim() ?
-      <div className="search-pop">
-          {results.length === 0 ? <div className="search-empty">ไม่พบเคสที่ค้นหา — ลองคำอื่น หรือกด "รับเคสใหม่"</div> :
-        results.map((p) =>
-        <button key={p.hn} className="search-row" onClick={() => {setOpen(false);setQ('');onOpenPet(p.hn);}}>
+        <div className="search-pop">
+          {results.length === 0
+            ? <div className="search-empty">ไม่พบเคสที่ค้นหา — ลองคำอื่น หรือกด "รับเคสใหม่"</div>
+            : results.map((p) => (
+              <div key={p.hn} className="search-row" style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px', borderBottom: '1px solid var(--line-soft)' }}>
                 <div className="pet-avatar" style={{ width: 40, height: 40, fontSize: 19 }}>{SPECIES_EMOJI[p.species] || '🐾'}</div>
-                <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ flex: 1, minWidth: 0, cursor: 'pointer' }} onClick={() => { setOpen(false); setQ(''); onOpenPet(p.hn); }}>
                   <div style={{ fontWeight: 700 }}>{p.name} <span style={{ color: 'var(--ink-faint)', fontWeight: 500, fontSize: 12.5 }}>HN {p.hn}</span></div>
                   <div style={{ fontSize: 12.5, color: 'var(--ink-soft)' }}>{p.species} · {p.breed} · {p.owner.name} · {p.owner.phone}</div>
                 </div>
-                <Icon name="chevR" size={16} style={{ color: 'var(--ink-faint)' }} />
-              </button>
-        )}
-        </div> :
-      null}
-    </div>);
-
+                <button className="btn btn-sm btn-primary" style={{ fontSize: 12, whiteSpace: 'nowrap', flexShrink: 0 }}
+                  onClick={(e) => { e.stopPropagation(); setOpen(false); setQ(''); onDirectWalkIn({ existingHn: p.hn, type: 'ตรวจรักษา', cc: '' }); }}>
+                  <Icon name="plus" size={13} /> รอตรวจ
+                </button>
+                <Icon name="chevR" size={16} style={{ color: 'var(--ink-faint)', cursor: 'pointer', flexShrink: 0 }}
+                  onClick={() => { setOpen(false); setQ(''); onOpenPet(p.hn); }} />
+              </div>
+            ))}
+        </div>
+        : null}
+    </div>
+  );
 }
 
-function WalkInModal({ pets, onClose, onSubmit }) {
-  const [mode, setMode] = useState('new'); // new | old
+function WalkInModal({ pets, onClose, onSubmit, prefillHn }) {
+  const prefillPet = prefillHn ? pets.find((p) => p.hn === prefillHn) : null;
+  const [mode, setMode] = useState(prefillHn ? 'old' : 'new');
   const [oldQuery, setOldQuery] = useState('');
-  const [pick, setPick] = useState(null);
+  const [pick, setPick] = useState(prefillPet || null);
+  // addNewPet = เพิ่มสัตว์ใหม่ให้เจ้าของเดิม (ใช้เมื่อเจอเจ้าของแล้วแต่ไม่ใช่สัตว์เดิม)
+  const [addNewPet, setAddNewPet] = useState(false);
+  const [pickedOwner, setPickedOwner] = useState(null); // เจ้าของที่เลือกไว้ (ยังไม่มีสัตว์ตัวใหม่)
   const [f, setF] = useState({ owner: '', phone: '', pet: '', species: 'สุนัข', sex: 'ผู้', ageY: '', ageM: '', weight: '', type: 'ตรวจรักษา', cc: '' });
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
 
   const oldResults = useMemo(() => {
     const s = oldQuery.trim().toLowerCase();
     if (!s) return [];
-    return pets.filter((p) => p.name.toLowerCase().includes(s) || p.hn.includes(s) || p.owner.phone.replace(/-/g, '').includes(s)).slice(0, 6);
+    return pets.filter((p) => p.name.toLowerCase().includes(s) || p.hn.includes(s) || p.owner.phone.replace(/-/g, '').includes(s.replace(/-/g, '')) || p.owner.name.toLowerCase().includes(s)).slice(0, 8);
   }, [oldQuery, pets]);
 
-  const canSubmit = mode === 'old' ? !!pick : f.pet.trim() && f.owner.trim();
+  // จัดกลุ่มผลค้นหาตามเจ้าของ เพื่อแสดงตัวเลือก "เพิ่มสัตว์ใหม่"
+  const ownerGroups = useMemo(() => {
+    const map = {};
+    oldResults.forEach((p) => {
+      const key = p.owner.phone || p.owner.name;
+      if (!map[key]) map[key] = { owner: p.owner, pets: [] };
+      map[key].pets.push(p);
+    });
+    return Object.values(map);
+  }, [oldResults]);
+
+  const canSubmit = addNewPet
+    ? (f.pet.trim() && pickedOwner)
+    : (mode === 'old' ? !!pick : f.pet.trim() && f.owner.trim());
 
   const submit = () => {
-    if (mode === 'old') onSubmit({ existingHn: pick.hn, type: f.type, cc: f.cc });else
-    onSubmit({ newPet: f, type: f.type, cc: f.cc });
+    if (addNewPet && pickedOwner) {
+      // สัตว์ใหม่ + เจ้าของเดิม
+      onSubmit({ newPet: { ...f, owner: pickedOwner.name, phone: pickedOwner.phone }, type: f.type, cc: f.cc, keepOwner: pickedOwner });
+    } else if (mode === 'old') {
+      onSubmit({ existingHn: pick.hn, type: f.type, cc: f.cc });
+    } else {
+      onSubmit({ newPet: f, type: f.type, cc: f.cc });
+    }
   };
+
+  const SERVICE_TYPES = ['ตรวจรักษา', 'วัคซีน', 'อาบน้ำตัดขน', 'ผ่าตัด', 'ซื้อสินค้า'];
 
   return (
     <Modal
@@ -98,54 +128,116 @@ function WalkInModal({ pets, onClose, onSubmit }) {
           <Icon name="check" size={17} /> ออกบัตรคิว
         </button>
       </>}>
-      
+
       <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 18 }}>
         <div className="seg">
-          <button className={mode === 'new' ? 'on' : ''} onClick={() => setMode('new')}>ลูกค้าใหม่</button>
-          <button className={mode === 'old' ? 'on' : ''} onClick={() => setMode('old')}>ลูกค้าเดิม</button>
+          <button className={mode === 'new' && !addNewPet ? 'on' : ''} onClick={() => { setMode('new'); setAddNewPet(false); setPickedOwner(null); setPick(null); }}>ลูกค้าใหม่</button>
+          <button className={mode === 'old' ? 'on' : ''} onClick={() => { setMode('old'); setAddNewPet(false); setPickedOwner(null); }}>ลูกค้าเดิม</button>
         </div>
       </div>
 
-      {mode === 'old' ?
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          <Field label="ค้นหาลูกค้าเดิม (ชื่อสัตว์ / HN / เบอร์โทร)">
-            <input className="input" value={oldQuery} onChange={(e) => {setOldQuery(e.target.value);setPick(null);}} placeholder="เช่น เฮงเฮง หรือ 690012" autoFocus />
-          </Field>
-          {pick ?
-        <div className="card card-pad" style={{ display: 'flex', gap: 12, alignItems: 'center', borderColor: 'var(--navy)', borderWidth: 1.5 }}>
-              <div className="pet-avatar" style={{ width: 46, height: 46, fontSize: 22 }}>{SPECIES_EMOJI[pick.species]}</div>
-              <div style={{ flex: 1 }}>
-                <div style={{ fontWeight: 700 }}>{pick.name} · HN {pick.hn}</div>
-                <div style={{ fontSize: 13, color: 'var(--ink-soft)' }}>{pick.species} {pick.breed} · {pick.owner.name}</div>
-              </div>
-              <button className="btn btn-sm" onClick={() => setPick(null)}>เปลี่ยน</button>
-            </div> :
-        oldResults.length > 0 ?
-        <div className="card" style={{ overflow: 'hidden' }}>
-              {oldResults.map((p) =>
-          <button key={p.hn} className="search-row" onClick={() => setPick(p)}>
-                  <div className="pet-avatar" style={{ width: 38, height: 38, fontSize: 18 }}>{SPECIES_EMOJI[p.species]}</div>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontWeight: 700, fontSize: 14 }}>{p.name} <span style={{ fontWeight: 500, color: 'var(--ink-faint)', fontSize: 12 }}>HN {p.hn}</span></div>
-                    <div style={{ fontSize: 12.5, color: 'var(--ink-soft)' }}>{p.owner.name} · {p.owner.phone}</div>
-                  </div>
-                </button>
-          )}
-            </div> :
-        oldQuery.trim() ? <div className="search-empty">ไม่พบ — ลองคำอื่น</div> : null}
+      {/* ─── โหมด: เพิ่มสัตว์ใหม่ให้เจ้าของเดิม ─── */}
+      {addNewPet && pickedOwner ? (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <div className="card card-pad" style={{ display: 'flex', gap: 12, alignItems: 'center', background: 'var(--navy-soft)', borderColor: 'var(--navy)' }}>
+            <div style={{ fontSize: 28 }}>👤</div>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontWeight: 700 }}>{pickedOwner.name}</div>
+              <div style={{ fontSize: 13, color: 'var(--ink-soft)' }}>{pickedOwner.phone}</div>
+            </div>
+            <button className="btn btn-sm" onClick={() => { setAddNewPet(false); setPickedOwner(null); }}>เปลี่ยน</button>
+          </div>
+          <div style={{ background: 'var(--butter-soft)', border: '1px solid var(--butter)', borderRadius: 'var(--radius-sm)', padding: '8px 12px', fontSize: 13, color: 'var(--butter-deep)', fontWeight: 600 }}>
+            🐾 กรอกข้อมูลสัตว์เลี้ยงตัวใหม่ (เจ้าของเดิม)
+          </div>
           <div className="form-grid">
+            <Field label="ชื่อสัตว์เลี้ยง *"><input className="input" value={f.pet} onChange={set('pet')} placeholder="ชื่อน้อง..." autoFocus /></Field>
+            <div />
+            <Field label="ชนิด">
+              <select className="select" value={f.species} onChange={set('species')}>
+                {['สุนัข', 'แมว', 'กระต่าย', 'นก', 'อื่นๆ'].map((s) => <option key={s}>{s}</option>)}
+              </select>
+            </Field>
+            <Field label="เพศ">
+              <select className="select" value={f.sex} onChange={set('sex')}>
+                {['ผู้', 'เมีย', 'ไม่ระบุ'].map((s) => <option key={s}>{s}</option>)}
+              </select>
+            </Field>
+            <Field label="อายุ (ปี)"><input className="input" type="number" min="0" value={f.ageY} onChange={set('ageY')} placeholder="ปี" /></Field>
+            <Field label="น้ำหนัก (kg)"><input className="input" type="number" min="0" step="0.1" value={f.weight} onChange={set('weight')} placeholder="0.0" /></Field>
             <Field label="บริการ">
               <select className="select" value={f.type} onChange={set('type')}>
-                {['ตรวจรักษา', 'วัคซีน', 'อาบน้ำตัดขน', 'ผ่าตัด', 'ซื้อสินค้า'].map((t) => <option key={t}>{t}</option>)}
+                {SERVICE_TYPES.map((t) => <option key={t}>{t}</option>)}
               </select>
             </Field>
             <Field label="อาการเบื้องต้น (CC)">
               <input className="input" value={f.cc} onChange={set('cc')} placeholder="เช่น ซึม เบื่ออาหาร" />
             </Field>
           </div>
-        </div> :
+        </div>
 
-      <div className="form-grid">
+      /* ─── โหมด: ลูกค้าเดิม ─── */
+      ) : mode === 'old' ? (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <Field label="ค้นหาลูกค้าเดิม (ชื่อสัตว์ / HN / ชื่อเจ้าของ / เบอร์โทร)">
+            <input className="input" value={oldQuery} onChange={(e) => { setOldQuery(e.target.value); setPick(null); }} placeholder="เช่น เฮงเฮง หรือ 690012 หรือ 081-xxx" autoFocus={!prefillHn} />
+          </Field>
+
+          {pick ? (
+            <div className="card card-pad" style={{ display: 'flex', gap: 12, alignItems: 'center', borderColor: 'var(--navy)', borderWidth: 1.5 }}>
+              <div className="pet-avatar" style={{ width: 46, height: 46, fontSize: 22 }}>{SPECIES_EMOJI[pick.species]}</div>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontWeight: 700 }}>{pick.name} · HN {pick.hn}</div>
+                <div style={{ fontSize: 13, color: 'var(--ink-soft)' }}>{pick.species} {pick.breed} · {pick.owner.name} · {pick.owner.phone}</div>
+              </div>
+              <button className="btn btn-sm" onClick={() => setPick(null)}>เปลี่ยน</button>
+            </div>
+          ) : ownerGroups.length > 0 ? (
+            <div className="card" style={{ overflow: 'hidden' }}>
+              {ownerGroups.map((grp, gi) => (
+                <div key={gi}>
+                  {/* สัตว์แต่ละตัวของเจ้าของคนนี้ */}
+                  {grp.pets.map((p) => (
+                    <button key={p.hn} className="search-row" style={{ width: '100%', border: 'none', background: 'none', display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px', cursor: 'pointer', borderBottom: '1px solid var(--line-soft)' }}
+                      onClick={() => setPick(p)}>
+                      <div className="pet-avatar" style={{ width: 38, height: 38, fontSize: 18 }}>{SPECIES_EMOJI[p.species]}</div>
+                      <div style={{ flex: 1, textAlign: 'left' }}>
+                        <div style={{ fontWeight: 700, fontSize: 14 }}>{p.name} <span style={{ fontWeight: 500, color: 'var(--ink-faint)', fontSize: 12 }}>HN {p.hn}</span></div>
+                        <div style={{ fontSize: 12.5, color: 'var(--ink-soft)' }}>{p.owner.name} · {p.owner.phone}</div>
+                      </div>
+                    </button>
+                  ))}
+                  {/* ปุ่มเพิ่มสัตว์ใหม่ให้เจ้าของคนนี้ */}
+                  <button style={{ width: '100%', border: 'none', background: 'var(--butter-soft)', display: 'flex', alignItems: 'center', gap: 10, padding: '9px 16px', cursor: 'pointer', borderBottom: gi < ownerGroups.length - 1 ? '2px solid var(--line)' : 'none' }}
+                    onClick={() => { setAddNewPet(true); setPickedOwner(grp.owner); setOldQuery(''); }}>
+                    <span style={{ fontSize: 18 }}>🐾</span>
+                    <div style={{ flex: 1, textAlign: 'left' }}>
+                      <div style={{ fontWeight: 700, fontSize: 13, color: 'var(--butter-deep)' }}>+ เพิ่มสัตว์เลี้ยงตัวใหม่</div>
+                      <div style={{ fontSize: 12, color: 'var(--ink-soft)' }}>เจ้าของ: {grp.owner.name} · {grp.owner.phone}</div>
+                    </div>
+                  </button>
+                </div>
+              ))}
+            </div>
+          ) : oldQuery.trim() ? (
+            <div className="search-empty">ไม่พบ — ลองคำอื่น</div>
+          ) : null}
+
+          <div className="form-grid">
+            <Field label="บริการ">
+              <select className="select" value={f.type} onChange={set('type')}>
+                {SERVICE_TYPES.map((t) => <option key={t}>{t}</option>)}
+              </select>
+            </Field>
+            <Field label="อาการเบื้องต้น (CC)">
+              <input className="input" value={f.cc} onChange={set('cc')} placeholder="เช่น ซึม เบื่ออาหาร" />
+            </Field>
+          </div>
+        </div>
+
+      /* ─── โหมด: ลูกค้าใหม่ ─── */
+      ) : (
+        <div className="form-grid">
           <Field label="ชื่อเจ้าของ *"><input className="input" value={f.owner} onChange={set('owner')} placeholder="ชื่อ-นามสกุล" autoFocus /></Field>
           <Field label="เบอร์โทร"><input className="input" value={f.phone} onChange={set('phone')} placeholder="08x-xxx-xxxx" /></Field>
           <Field label="ชื่อสัตว์เลี้ยง *"><input className="input" value={f.pet} onChange={set('pet')} placeholder="ชื่อน้อง..." /></Field>
@@ -168,19 +260,20 @@ function WalkInModal({ pets, onClose, onSubmit }) {
           </div>
           <Field label="บริการ">
             <select className="select" value={f.type} onChange={set('type')}>
-              {['ตรวจรักษา', 'วัคซีน', 'อาบน้ำตัดขน', 'ผ่าตัด', 'ซื้อสินค้า'].map((t) => <option key={t}>{t}</option>)}
+              {SERVICE_TYPES.map((t) => <option key={t}>{t}</option>)}
             </select>
           </Field>
           <Field label="อาการเบื้องต้น (CC)"><input className="input" value={f.cc} onChange={set('cc')} placeholder="อาการที่เจ้าของสังเกตได้..." /></Field>
         </div>
-      }
-    </Modal>);
-
+      )}
+    </Modal>
+  );
 }
 
-function QueueCard({ item, pet, onOpen, onOpenCase, onMove, onPay, zoneBorder }) {
+function QueueCard({ item, pet, onOpen, onOpenCase, onMove, onPay, onCancel, zoneBorder }) {
   const meta = STATUS_META[item.status];
   const total = (item.charges || []).reduce((s, [, q, p]) => s + q * p, 0);
+  const [confirmCancel, setConfirmCancel] = useState(false);
   return (
     <div className={'q-card ' + meta.tone}
     style={{ borderTop: 'none', borderLeft: `4px solid ${zoneBorder || meta.dot}`, cursor: 'pointer' }}
@@ -198,11 +291,27 @@ function QueueCard({ item, pet, onOpen, onOpenCase, onMove, onPay, zoneBorder })
       </div>
       {item.cc ? <div className="q-cc">{item.cc}</div> : null}
       <div className="q-actions" onClick={(e) => e.stopPropagation()}>
-        {item.status === 'wait' ?
-        <button className="btn btn-primary btn-sm" style={{ flex: 1 }} onClick={() => {onMove(item.q, 'exam');onOpen({ ...item, status: 'exam' });}}>
-            <Icon name="stetho" size={15} /> เรียกตรวจ
-          </button> :
-        null}
+        {item.status === 'wait' ? (
+          confirmCancel ? (
+            <>
+              <button className="btn btn-sm" style={{ flex: 1, fontSize: 12, background: 'var(--blush-soft)', color: 'var(--blush-deep)', borderColor: 'var(--blush-deep)', fontWeight: 700 }}
+                onClick={(e) => { e.stopPropagation(); onCancel && onCancel(item); }}>
+                ✕ ยืนยันยกเลิก
+              </button>
+              <button className="btn btn-sm" style={{ fontSize: 12 }} onClick={(e) => { e.stopPropagation(); setConfirmCancel(false); }}>
+                ไม่ใช่
+              </button>
+            </>
+          ) : (
+            <>
+              <button className="btn btn-primary btn-sm" style={{ flex: 1 }} onClick={(e) => { e.stopPropagation(); onMove(item.q, 'exam'); onOpen({ ...item, status: 'exam' }); }}>
+                <Icon name="stetho" size={15} /> เรียกตรวจ
+              </button>
+              <button className="btn btn-sm" title="ยกเลิกคิว" style={{ fontSize: 13, color: 'var(--ink-faint)', padding: '4px 8px', flexShrink: 0 }}
+                onClick={(e) => { e.stopPropagation(); setConfirmCancel(true); }}>✕</button>
+            </>
+          )
+        ) : null}
         {item.status === 'exam' ?
         <button className="btn btn-soft btn-sm" style={{ flex: 1 }} onClick={() => onOpenCase(item)}>
             <Icon name="edit" size={14} /> เปิดเคส / บันทึก
@@ -371,8 +480,17 @@ function AdmittedPanel({ admitted, onUpdateAdmitted, onDischargeAdmitted, onOpen
   );
 }
 
-function Dashboard({ pets, queue, appointments, admitted, onOpenCase, onOpenPet, onMove, onPay, onWalkIn, onUpdateAppointment, onDischargeAdmitted, onUpdateAdmitted, onOpenAdmittedCase }) {
+function Dashboard({ pets, queue, appointments, admitted, onOpenCase, onOpenPet, onMove, onPay, onWalkIn, onUpdateAppointment, onDischargeAdmitted, onUpdateAdmitted, onOpenAdmittedCase, onCancelQueue }) {
   const [showWalkIn, setShowWalkIn] = useState(false);
+  const [walkInPrefillHn, setWalkInPrefillHn] = useState(null);
+  const openWalkIn = (opts) => {
+    if (opts && opts.prefill && opts.existingHn) {
+      setWalkInPrefillHn(opts.existingHn);
+    } else {
+      setWalkInPrefillHn(null);
+    }
+    setShowWalkIn(true);
+  };
   const byStatus = (st) => {
     const today = new Date().toISOString().slice(0, 10);
     return queue.filter((x) => {
@@ -399,8 +517,8 @@ function Dashboard({ pets, queue, appointments, admitted, onOpenCase, onOpenPet,
   return (
     <div>
       <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginBottom: 18, flexWrap: 'wrap' }}>
-        <GlobalSearch pets={pets} onOpenPet={onOpenPet} />
-        <button className="btn btn-primary btn-lg" onClick={() => setShowWalkIn(true)} style={{ backgroundColor: "rgb(211, 109, 31)" }}>
+        <GlobalSearch pets={pets} onOpenPet={onOpenPet} onWalkIn={openWalkIn} onDirectWalkIn={onWalkIn} />
+        <button className="btn btn-primary btn-lg" onClick={() => openWalkIn({})} style={{ backgroundColor: "rgb(211, 109, 31)" }}>
           <Icon name="plus" size={18} /> รับเคสใหม่ / Walk-in
         </button>
       </div>
@@ -522,7 +640,7 @@ function Dashboard({ pets, queue, appointments, admitted, onOpenCase, onOpenPet,
                     <div className="queue-empty" style={{ background: 'transparent', border: `1.5px dashed ${meta.zoneBorder}`, opacity: .7 }}>— ว่าง —</div> :
                     items.map((item) =>
                     <QueueCard key={item.q} item={item} pet={pets.find((p) => p.hn === item.hn)}
-                    onOpen={onOpenCase} onOpenCase={onOpenCase} onMove={onMove} onPay={onPay} zoneBorder={meta.zoneBorder} />
+                    onOpen={onOpenCase} onOpenCase={onOpenCase} onMove={onMove} onPay={onPay} onCancel={onCancelQueue} zoneBorder={meta.zoneBorder} />
                     )}
               </div>
             </div>);
@@ -533,8 +651,10 @@ function Dashboard({ pets, queue, appointments, admitted, onOpenCase, onOpenPet,
       </div> {/* end outer grid */}
 
       {showWalkIn ?
-      <WalkInModal pets={pets} onClose={() => setShowWalkIn(false)}
-      onSubmit={(payload) => {setShowWalkIn(false);onWalkIn(payload);}} /> :
+      <WalkInModal pets={pets}
+        prefillHn={walkInPrefillHn}
+        onClose={() => { setShowWalkIn(false); setWalkInPrefillHn(null); }}
+        onSubmit={(payload) => { setShowWalkIn(false); setWalkInPrefillHn(null); onWalkIn(payload); }} /> :
       null}
     </div>);
 

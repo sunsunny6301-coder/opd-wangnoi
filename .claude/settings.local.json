@@ -14,7 +14,8 @@
       "Bash(printf '\\\\nObject.assign\\(window, { TaxView }\\);\\\\n')",
       "Bash(bash build.sh)",
       "mcp__Claude_Preview__preview_start",
-      "Bash(cd \"/d/OPD วังน้อยสัตวแพทย์\" && rm design_bundle && ls -la)"
+      "Bash(cd \"/d/OPD วังน้อยสัตวแพทย์\" && rm design_bundle && ls -la)",
+      "Bash(node -e \"const xlsx = require\\('xlsx'\\); console.log\\('xlsx ok'\\);\")"
     ]
   }
 }

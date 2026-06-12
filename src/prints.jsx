@@ -27,7 +27,7 @@ function fmtNum(n) {
   return Number(n || 0).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
-function TaxInvoice({ items, petName, ownerName, ownerPhone, method, vatMode, no }) {
+function TaxInvoice({ items, petName, ownerName, ownerPhone, ownerAddr, ownerTaxId, method, vatMode, no }) {
   const subtotal = items.reduce((s, it) => s + it.qty * it.price, 0);
   const { beforeVat, vatAmt, grandTotal } = calcVat(subtotal, vatMode);
   const totalQty = items.reduce((s, it) => s + it.qty, 0);
@@ -98,6 +98,8 @@ function TaxInvoice({ items, petName, ownerName, ownerPhone, method, vatMode, no
         <div style={S.buyerGrid}>
           <div>
             <div><b>ชื่อผู้ซื้อ:</b> {ownerName || '—'}</div>
+            {ownerAddr ? <div style={{ fontSize: 12.5 }}><b>ที่อยู่:</b> {ownerAddr}</div> : null}
+            {ownerTaxId ? <div style={{ fontSize: 12.5 }}><b>เลขผู้เสียภาษี (ลูกค้า):</b> {ownerTaxId}</div> : null}
           </div>
           <div style={{ textAlign: 'right' }}>
             <div><b>โทร:</b> {ownerPhone || '—'}</div>
@@ -186,8 +188,17 @@ function ReceiptModal({ title, items, petName, ownerName, ownerPhone, receiptNo,
   const [vatMode, setVatMode] = useState(noVat ? 'none' : (defaultVatMode || 'none'));
   const subtotal = items.reduce((s, it) => s + it.qty * it.price, 0);
   const { grandTotal } = calcVat(subtotal, noVat ? 'none' : vatMode);
+
+  // ── edit buyer / bill fields ──
+  const [showEditBuyer, setShowEditBuyer] = useState(false);
+  const [buyerName, setBuyerName] = useState(ownerName || '');
+  const [buyerPhone, setBuyerPhone] = useState(ownerPhone || '');
+  const [buyerAddr, setBuyerAddr] = useState('');
+  const [buyerTaxId, setBuyerTaxId] = useState('');
+  const [customNo, setCustomNo] = useState('');
+
   // เลขที่ใบเสร็จจริงมาจากระบบรันเลขรายปี (RCP-2026-00001) — fallback เฉพาะกรณีเปิดดูโดยไม่ได้ส่งเลขมา
-  const no = useMemo(() => receiptNo || `RCP-${new Date().getFullYear()}-${String(Date.now()).slice(-5)}`, [receiptNo]);
+  const no = useMemo(() => customNo.trim() || receiptNo || `RCP-${new Date().getFullYear()}-${String(Date.now()).slice(-5)}`, [customNo, receiptNo]);
 
   const VAT_OPTIONS = [
     { id: 'none',     label: 'ไม่มี VAT',       desc: 'ราคาปกติ' },
@@ -207,7 +218,7 @@ function ReceiptModal({ title, items, petName, ownerName, ownerPhone, receiptNo,
       </>}
     >
       {/* controls row */}
-      <div className="no-print" style={{ display: 'flex', gap: 20, marginBottom: 18, flexWrap: 'wrap', alignItems: 'flex-start' }}>
+      <div className="no-print" style={{ display: 'flex', gap: 20, marginBottom: showEditBuyer ? 10 : 18, flexWrap: 'wrap', alignItems: 'flex-start' }}>
         {/* VAT picker */}
         {!noVat ? (
           <div>
@@ -251,12 +262,51 @@ function ReceiptModal({ title, items, petName, ownerName, ownerPhone, receiptNo,
             </div>
           </div>
         ) : null}
+
+        {/* edit buyer / bill button */}
+        <div style={{ marginLeft: 'auto', alignSelf: 'flex-end' }}>
+          <button onClick={() => setShowEditBuyer((v) => !v)} style={{
+            padding: '7px 13px', borderRadius: 'var(--radius-sm)', fontSize: 13,
+            border: showEditBuyer ? '2px solid var(--powder-deep)' : '1.5px solid var(--line)',
+            background: showEditBuyer ? 'var(--powder-soft)' : '#fff',
+            color: showEditBuyer ? 'var(--powder-deep)' : 'var(--ink-soft)',
+            cursor: 'pointer', fontWeight: showEditBuyer ? 700 : 500, display: 'flex', alignItems: 'center', gap: 6,
+          }}>
+            <Icon name="edit" size={14} /> แก้ไขข้อมูลบิล
+          </button>
+        </div>
       </div>
+
+      {/* ── edit buyer panel ── */}
+      {showEditBuyer && (
+        <div className="no-print" style={{ background: 'var(--powder-soft)', border: '1.5px solid var(--powder-deep)', borderRadius: 'var(--radius-sm)', padding: '14px 16px', marginBottom: 16, display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <div style={{ fontWeight: 700, fontSize: 13, color: 'var(--powder-deep)', marginBottom: 2 }}>✏️ แก้ไขข้อมูลบิล (เฉพาะการพิมพ์ครั้งนี้)</div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+            <Field label="ชื่อลูกค้า">
+              <input className="input" value={buyerName} onChange={(e) => setBuyerName(e.target.value)} placeholder="ชื่อ-นามสกุล" />
+            </Field>
+            <Field label="เบอร์โทร">
+              <input className="input" value={buyerPhone} onChange={(e) => setBuyerPhone(e.target.value)} placeholder="08x-xxx-xxxx" />
+            </Field>
+            <Field label="ที่อยู่ลูกค้า" style={{ gridColumn: '1/-1' }}>
+              <input className="input" value={buyerAddr} onChange={(e) => setBuyerAddr(e.target.value)} placeholder="บ้านเลขที่ ถนน แขวง/ตำบล อำเภอ จังหวัด รหัสไปรษณีย์" />
+            </Field>
+            <Field label="เลขประจำตัวผู้เสียภาษี (ลูกค้า)">
+              <input className="input" value={buyerTaxId} onChange={(e) => setBuyerTaxId(e.target.value)} placeholder="13 หลัก" maxLength={13} />
+            </Field>
+            <Field label="เลขที่บิล (ถ้าต้องการเปลี่ยน)">
+              <input className="input" value={customNo} onChange={(e) => setCustomNo(e.target.value)} placeholder={receiptNo || 'RCP-2026-XXXXX'} />
+            </Field>
+          </div>
+        </div>
+      )}
 
       {/* ── the actual printable invoice ── */}
       <div style={{ background: '#fff', border: '1px solid var(--line)', borderRadius: 'var(--radius)', padding: '24px 28px', maxHeight: '70vh', overflowY: 'auto' }}>
         <TaxInvoice
-          items={items} petName={petName} ownerName={ownerName} ownerPhone={ownerPhone}
+          items={items} petName={petName}
+          ownerName={buyerName || ownerName} ownerPhone={buyerPhone || ownerPhone}
+          ownerAddr={buyerAddr} ownerTaxId={buyerTaxId}
           method={paidAlready || method}
           vatMode={noVat ? 'none' : vatMode}
           no={no}
