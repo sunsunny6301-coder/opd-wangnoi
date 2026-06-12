@@ -119,7 +119,7 @@ function App() {
   useEffect(() => {
     if (!supa) { console.warn('[SB] supabase client not available'); return; }
     console.log('[SB] loading from Supabase...');
-    supa.from('app_state').select('data').eq('id', 'main').single().then(({ data, error }) => {
+    supa.from('app_state').select('data').eq('id', 'main').maybeSingle().then(({ data, error }) => {
       if (error) { console.warn('[SB] load error:', error.message); return; }
       if (data?.data?.pets && data?.data?.queue) {
         console.log('[SB] loaded state from Supabase ✓');
