@@ -478,7 +478,7 @@ function ReportsView({ pets, queue, stock, receipts = [], onCancelReceipt }) {
                     {onCancelReceipt && (
                       <button title={`ยกเลิกใบเสร็จ ${r.no}`}
                         style={{ background: '#FDECEA', border: '1px solid #D98880', borderRadius: 6, color: '#8C3028', fontSize: 11, padding: '2px 8px', cursor: 'pointer', flexShrink: 0, lineHeight: 1.5 }}
-                        onClick={() => { if (confirm(`ยกเลิกใบเสร็จ ${r.no} ?\nเลขนี้จะถูกนำกลับมาใช้ใหม่ครั้งถัดไป และจะไม่ถูกนับในสรุป PDF/Excel`)) onCancelReceipt(r.no); }}>
+                        onClick={() => { if (confirm(`คุณต้องการลบใบเสร็จเลขที่ ${r.no} ใช่ไหม?\n\nเลขนี้จะถูกนำกลับมาใช้ใหม่ในการคิดเงินครั้งถัดไป และจะไม่ถูกนับในสรุป PDF/Excel`)) onCancelReceipt(r.no); }}>
                         ยกเลิก
                       </button>
                     )}
