@@ -212,7 +212,13 @@ function PetShop({ stock, onCheckout, previewReceiptNo, onDeleteItem, onAddItem,
     }
   };
   const step = (id, d) => setCart(cart
-    .map((c) => c.id === id ? { ...c, qty: c.qty + d } : c)
+    .map((c) => {
+      if (c.id !== id) return c;
+      const have = stock.find((s) => s.id === id);
+      // ไม่ให้เพิ่มเกินจำนวนคงเหลือในสต็อก
+      const next = (d > 0 && have) ? Math.min(c.qty + d, have.qty) : c.qty + d;
+      return { ...c, qty: next };
+    })
     .filter((c) => c.qty > 0));
   const total = cart.reduce((s, c) => s + c.qty * c.price, 0);
 

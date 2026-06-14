@@ -354,6 +354,7 @@ function CaseView({ pet, queueItem, vets, services, stock, allPets, onBack, onFi
     date: todayISO(), vet: rec.vet, cc: rec.cc, pe: rec.pe, dx: rec.dx, plan: rec.plan,
     weight: parseFloat(rec.weight) || latestWeight, items: charges,
     media: media.filter((m) => !m.session),
+    q: queueItem?.q,  // ผูกกับเลขคิว เพื่อกันบันทึกประวัติซ้ำเมื่อบันทึกรอบเดิมซ้ำ
   });
   const save = (status, method) => {
     onFinish && onFinish({ ...pet, visits: [buildVisit(), ...pet.visits] }, queueItem, status, method);

@@ -19,13 +19,13 @@ function getDateRange(rangeId) {
 
 function filterVisits(pets, [s, e]) {
   const out = [];
-  pets.forEach((p) => p.visits.filter((v) => v.date >= s && v.date <= e).forEach((v) =>
+  (pets || []).forEach((p) => (p.visits || []).filter((v) => v.date >= s && v.date <= e).forEach((v) =>
     out.push({ ...v, petHn: p.hn, petName: p.name, petSpecies: p.species, owner: p.owner })));
   return out;
 }
 
 function calcMetrics(pets, queue, stock, visits) {
-  const opdRevenue = visits.reduce((s, v) => s + v.items.reduce((ss, [, q, p]) => ss + q * p, 0), 0);
+  const opdRevenue = visits.reduce((s, v) => s + (v.items || []).reduce((ss, [, q, p]) => ss + q * p, 0), 0);
   const profit = stock.reduce((s, stk) => {
     const sold = queue
       .filter((qi) => qi.charges)
@@ -53,7 +53,7 @@ function calcMetrics(pets, queue, stock, visits) {
   const dailyRevenue = {};
   visits.forEach((v) => {
     if (!dailyRevenue[v.date]) dailyRevenue[v.date] = 0;
-    dailyRevenue[v.date] += v.items.reduce((s, [, q, p]) => s + q * p, 0);
+    dailyRevenue[v.date] += (v.items || []).reduce((s, [, q, p]) => s + q * p, 0);
   });
   const serviceBreakdown = {};
   visits.forEach((v) => {

@@ -131,12 +131,23 @@ function App() {
     pushToast(`ยกเลิกคิว ${item.q} — ${item.petName} เรียบร้อย`);
   };
 
+  // กันเขียนทับข้อมูลคลาวด์: ห้าม save ขึ้น Supabase จนกว่าจะโหลดข้อมูลจากคลาวด์เสร็จก่อน
+  const hydrated = useRef(false);
+  // เครื่องนี้เคยมีข้อมูลจริงในเครื่องไหม (ไม่ใช่ข้อมูลตัวอย่าง seed)
+  const hadLocal = useRef(!!localStorage.getItem(LS_KEY));
+
   // sync Supabase → local on first load
   useEffect(() => {
-    if (!supa) { console.warn('[SB] supabase client not available'); return; }
+    if (!supa) { console.warn('[SB] supabase client not available'); hydrated.current = true; return; }
     console.log('[SB] loading from Supabase...');
     supa.from('app_state').select('data').eq('id', 'main').maybeSingle().then(({ data, error }) => {
-      if (error) { console.warn('[SB] load error:', error.message); return; }
+      if (error) {
+        console.warn('[SB] load error:', error.message);
+        // โหลดไม่ได้: ถ้าเครื่องนี้มีข้อมูลจริงอยู่แล้ว → save ได้ (กันงานค้าง)
+        // แต่ถ้าเป็นเครื่องใหม่ (มีแต่ seed) → ห้าม save เพื่อไม่ให้ทับข้อมูลจริงบนคลาวด์
+        if (hadLocal.current) hydrated.current = true;
+        return;
+      }
       if (data?.data?.pets && data?.data?.queue) {
         console.log('[SB] loaded state from Supabase ✓');
         setState(data.data);
@@ -144,13 +155,14 @@ function App() {
       } else {
         console.log('[SB] no data in Supabase yet, using localStorage');
       }
+      hydrated.current = true; // โหลดเสร็จแล้ว (มี/ไม่มีข้อมูลก็ตาม) → เริ่ม save ขึ้นคลาวด์ได้
     });
   }, []);
 
   // save to localStorage + Supabase on every state change
   useEffect(() => {
     try { localStorage.setItem(LS_KEY, JSON.stringify(state)); } catch (e) {}
-    if (supa) {
+    if (supa && hydrated.current) {
       clearTimeout(sbSaveTimer);
       sbSaveTimer = setTimeout(() => {
         supa.from('app_state').upsert({ id: 'main', data: state, updated_at: new Date().toISOString() })
@@ -166,7 +178,11 @@ function App() {
     return () => document.removeEventListener('keydown', fn);
   }, []);
 
-  const nextQ = () => 'Q' + String(queue.length + 1).padStart(3, '0');
+  // เลขคิวถัดไป = เลขมากสุดที่มีอยู่ + 1 (กันเลขซ้ำหลังยกเลิกคิว — เดิมใช้ length+1 ทำให้ชนกัน)
+  const nextQ = () => {
+    const nums = (queue || []).map((x) => parseInt(String(x.q || '').replace(/\D/g, ''), 10) || 0);
+    return 'Q' + String((nums.length ? Math.max(...nums) : 0) + 1).padStart(3, '0');
+  };
 
   // HN: [last 2 digits of Thai year] + [5-digit seq] → e.g. 6900001
   const nextHN = () => {
@@ -282,6 +298,12 @@ function App() {
     const visit = updatedPet.visits[0];
     if (!visit) return;
 
+    // เคสที่ชำระและปิดแล้ว: กันกดซ้ำจนเกิดประวัติ/ใบเสร็จ/ตัดสต็อกซ้ำ
+    if (queueItem && queueItem.status === 'done') {
+      setPage('dashboard'); setCaseCtx(null);
+      pushToast('เคสนี้ชำระและปิดแล้ว — หากต้องการแก้ไข กรุณายกเลิกใบเสร็จเดิมก่อน');
+      return;
+    }
     // charge = [ชื่อ, จำนวน, ราคา, stockId?] — stockId ไว้ตัดสต็อกตอนรับชำระ
     const charges = (visit.items || []).map((c) =>
       Array.isArray(c) ? [c[0] || '', Number(c[1]) || 1, Number(c[2]) || 0, c[3] || null]
@@ -289,7 +311,13 @@ function App() {
     );
     const receiptItems = charges.map((c) => [c[0], c[1], c[2]]);
     const total = charges.reduce((s, c) => s + (Number(c[1]) || 1) * (Number(c[2]) || 0), 0);
-    let newPets = pets.map((p) => p.hn === updatedPet.hn ? updatedPet : p);
+    // ผูกบันทึกกับเลขคิว (q): ถ้าคิวนี้เคยบันทึกประวัติไปแล้ว (เช่น เคยส่งแคชเชียร์/กดย้อนกลับ)
+    // ให้แทนที่บันทึกเดิม ไม่เพิ่มซ้ำ
+    const encId = queueItem?.q;
+    const mergedVisits = encId
+      ? [updatedPet.visits[0], ...updatedPet.visits.slice(1).filter((v) => v.q !== encId)]
+      : updatedPet.visits;
+    let newPets = pets.map((p) => p.hn === updatedPet.hn ? { ...updatedPet, visits: mergedVisits } : p);
     let newQueue = queue;
     let newReceipts = receipts;
     let newSeq = receiptSeq;
