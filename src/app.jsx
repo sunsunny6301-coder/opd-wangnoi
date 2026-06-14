@@ -262,6 +262,10 @@ function App() {
     setState((s) => ({ ...s, vets: [...(s.vets || VetData.vets), name.trim()] }));
     pushToast(`เพิ่มสัตวแพทย์ "${name.trim()}" แล้ว`);
   };
+  const deleteVet = (name) => {
+    setState((s) => ({ ...s, vets: (s.vets || VetData.vets).filter((v) => v !== name) }));
+    pushToast(`ลบสัตวแพทย์ "${name}" แล้ว`);
+  };
 
   const deductStock = (stockArr, charges) => {
     let n = 0;
@@ -465,7 +469,7 @@ function App() {
           <CaseView pet={casePet} queueItem={caseQItem}
           vets={vets} services={services} stock={stock} allPets={pets}
           onBack={() => {setPage('dashboard');setCaseCtx(null);}}
-          onFinish={finishCase} onAddVet={addVet}
+          onFinish={finishCase} onAddVet={addVet} onDeleteVet={deleteVet}
           onAddAppointment={addAppointment}
           onUpdateAdmitted={updateAdmitted} onDischargeAdmitted={dischargeAdmitted}
           onAddAdmitted={addAdmitted} pushToast={pushToast}

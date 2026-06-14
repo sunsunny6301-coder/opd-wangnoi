@@ -1,29 +1,76 @@
 // ── Case view: pet profile + today record + charges + history ──
 var { useState, useEffect, useRef, useMemo } = React;
 
-// ── Vet selector with inline "add" ──
-function VetSelector({ vets, value, onChange, onAddVet }) {
+// ── Vet selector with inline "add" and per-vet delete ──
+function VetSelector({ vets, value, onChange, onAddVet, onDeleteVet }) {
   const [adding, setAdding] = useState(false);
+  const [open, setOpen] = useState(false);
   const [name, setName] = useState('');
+  const ref = useRef(null);
+
+  // close dropdown when clicking outside
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [open]);
+
   const doAdd = () => {
     if (!name.trim()) return;
     onAddVet(name.trim()); onChange(name.trim());
-    setAdding(false); setName('');
+    setAdding(false); setName(''); setOpen(false);
   };
+  const doDelete = (v, e) => {
+    e.stopPropagation();
+    if (!confirm(`ลบสัตวแพทย์ "${v}" ออกจากรายการ?`)) return;
+    if (value === v && vets.length > 1) onChange(vets.find((x) => x !== v));
+    onDeleteVet && onDeleteVet(v);
+    setOpen(false);
+  };
+
   return (
     <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
       {adding ? (
         <>
-          <input className="input" value={name} autoFocus onChange={(e) => setName(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') doAdd(); if (e.key === 'Escape') { setAdding(false); setName(''); } }} placeholder="ชื่อสัตวแพทย์ใหม่..." style={{ flex: 1 }} />
+          <input className="input" value={name} autoFocus onChange={(e) => setName(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') doAdd(); if (e.key === 'Escape') { setAdding(false); setName(''); } }}
+            placeholder="ชื่อสัตวแพทย์ใหม่..." style={{ flex: 1 }} />
           <button className="btn btn-primary btn-sm" onClick={doAdd} disabled={!name.trim()}>เพิ่ม</button>
           <button className="btn btn-sm" onClick={() => { setAdding(false); setName(''); }}>ยกเลิก</button>
         </>
       ) : (
         <>
-          <select className="select" value={value} onChange={(e) => onChange(e.target.value)} style={{ flex: 1 }}>
-            {vets.map((v) => <option key={v}>{v}</option>)}
-          </select>
-          <button className="btn btn-sm" onClick={() => setAdding(true)} title="เพิ่มสัตวแพทย์"><Icon name="plus" size={14} /> เพิ่มหมอ</button>
+          <div ref={ref} style={{ flex: 1, position: 'relative' }}>
+            <button type="button" onClick={() => setOpen((o) => !o)}
+              style={{ width: '100%', textAlign: 'left', background: 'var(--surface)', border: '1.5px solid var(--line)', borderRadius: 'var(--radius-sm)', padding: '8px 32px 8px 11px', fontSize: 14, cursor: 'pointer', color: 'var(--ink)', position: 'relative', lineHeight: 1.4 }}>
+              {value || '—'}
+              <span style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', color: 'var(--ink-faint)', fontSize: 11 }}>▾</span>
+            </button>
+            {open && (
+              <div style={{ position: 'absolute', zIndex: 999, top: 'calc(100% + 3px)', left: 0, right: 0, background: 'var(--surface)', border: '1.5px solid var(--line)', borderRadius: 'var(--radius-sm)', boxShadow: '0 4px 16px rgba(0,0,0,.12)', overflow: 'hidden' }}>
+                {vets.map((v) => (
+                  <div key={v} style={{ display: 'flex', alignItems: 'center', background: v === value ? 'var(--navy)' : 'transparent' }}>
+                    <button type="button"
+                      style={{ flex: 1, textAlign: 'left', background: 'none', border: 'none', padding: '9px 12px', cursor: 'pointer', fontSize: 14, color: v === value ? '#fff' : 'var(--ink)', lineHeight: 1.4 }}
+                      onClick={() => { onChange(v); setOpen(false); }}>
+                      {v}
+                    </button>
+                    {onDeleteVet && (
+                      <button type="button" title={`ลบ ${v}`}
+                        style={{ background: 'none', border: 'none', cursor: 'pointer', color: v === value ? 'rgba(255,255,255,.7)' : 'var(--ink-faint)', fontSize: 15, padding: '6px 10px', lineHeight: 1, flexShrink: 0 }}
+                        onClick={(e) => doDelete(v, e)}>
+                        ×
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+          <button className="btn btn-sm" onClick={() => setAdding(true)} title="เพิ่มสัตวแพทย์">
+            <Icon name="plus" size={14} /> เพิ่มหมอ
+          </button>
         </>
       )}
     </div>
@@ -240,7 +287,7 @@ function ChargePicker({ services, stock, onAdd }) {
   );
 }
 
-function CaseView({ pet, queueItem, vets, services, stock, allPets, onBack, onFinish, onAddVet, onAddAdmitted, onUpdateAdmitted, onDischargeAdmitted, pushToast, onUpdatePet, onAddService, onDeleteService, onUpdateService, onSaveDraft, previewReceiptNo }) {
+function CaseView({ pet, queueItem, vets, services, stock, allPets, onBack, onFinish, onAddVet, onDeleteVet, onAddAdmitted, onUpdateAdmitted, onDischargeAdmitted, pushToast, onUpdatePet, onAddService, onDeleteService, onUpdateService, onSaveDraft, previewReceiptNo }) {
   const latestWeight = pet.visits.length ? pet.visits[0].weight : pet.weight;
   const draft = queueItem?.draft;
   const [rec, setRec] = useState({
@@ -389,7 +436,7 @@ function CaseView({ pet, queueItem, vets, services, stock, allPets, onBack, onFi
             <div className="card-pad" style={{ display: 'flex', flexDirection: 'column', gap: 13 }}>
               <div className="form-grid">
                 <Field label="สัตวแพทย์ผู้ตรวจ">
-                  <VetSelector vets={vets} value={rec.vet} onChange={(v) => setRec({ ...rec, vet: v })} onAddVet={onAddVet || (() => {})} />
+                  <VetSelector vets={vets} value={rec.vet} onChange={(v) => setRec({ ...rec, vet: v })} onAddVet={onAddVet || (() => {})} onDeleteVet={onDeleteVet} />
                 </Field>
                 <Field label="น้ำหนักวันนี้ (kg)">
                   <input className="input" type="number" step="0.1" value={rec.weight} onChange={setR('weight')} />
