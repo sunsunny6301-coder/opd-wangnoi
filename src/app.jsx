@@ -21,6 +21,7 @@ function loadState() {
     vets: [...VetData.vets],
     receipts: [],
     receiptSeq: {},
+    receiptVoids: {},
     appointments: [],
     admitted: [],
   };
@@ -40,6 +41,7 @@ function App() {
   const vets = state.vets || VetData.vets;
   const receipts = state.receipts || [];
   const receiptSeq = state.receiptSeq || {};
+  const receiptVoids = state.receiptVoids || {};
 
   const addAppointment = (appt) => {
     setState((s) => ({ ...s, appointments: [...(s.appointments || []), appt] }));
@@ -83,14 +85,18 @@ function App() {
     const allItems = records.flatMap((r) => (r.charges || []).map((c) => [`${c[0]} (${r.date})`, Number(c[1]) || 1, Number(c[2]) || 0]));
     const total = allItems.reduce((s, c) => s + c[1] * c[2], 0);
     const receipt = total > 0 ? nextReceiptNo() : null;
-    setState((s) => ({
-      ...s,
-      pets: s.pets.map((p) => p.hn === adm.hn ? { ...p, visits: [...newVisits, ...p.visits] } : p),
-      admitted: (s.admitted || []).filter((a) => a.id !== admId),
-      queue: adm.q ? (s.queue || []).map((x) => x.q === adm.q ? { ...x, status: 'done', paid: total, doneDate: todayISO() } : x) : (s.queue || []),
-      receipts: receipt ? [...(s.receipts || []), { no: receipt.no, date: todayISO(), type: 'opd', petName: adm.petName, ownerName: adm.owner?.name || '-', hn: adm.hn, q: adm.q || '', items: allItems, method: method || 'เงินสด', total }] : (s.receipts || []),
-      receiptSeq: receipt ? { ...(s.receiptSeq || {}), [receipt.year]: receipt.seq } : (s.receiptSeq || {}),
-    }));
+    setState((s) => {
+      const con = consumeReceipt(receipt, s);
+      return {
+        ...s,
+        pets: s.pets.map((p) => p.hn === adm.hn ? { ...p, visits: [...newVisits, ...p.visits] } : p),
+        admitted: (s.admitted || []).filter((a) => a.id !== admId),
+        queue: adm.q ? (s.queue || []).map((x) => x.q === adm.q ? { ...x, status: 'done', paid: total, doneDate: todayISO() } : x) : (s.queue || []),
+        receipts: receipt ? [...(s.receipts || []), { no: receipt.no, date: todayISO(), type: 'opd', petName: adm.petName, ownerName: adm.owner?.name || '-', hn: adm.hn, q: adm.q || '', items: allItems, method: method || 'เงินสด', total }] : (s.receipts || []),
+        receiptSeq: con.receiptSeq,
+        receiptVoids: con.receiptVoids,
+      };
+    });
     pushToast(total > 0 ? `จำหน่าย ${adm.petName} — รับชำระ ${fmtB(total)}` : `จำหน่าย ${adm.petName} แล้ว`);
   };
   const updatePet = (updated) => {
@@ -173,10 +179,39 @@ function App() {
   };
 
   // Receipt no: RCP-{CE year}-{5-digit seq per year}
+  // หยิบเลขที่ถูกยกเลิก (pool) มาใช้ซ้ำก่อน เลขเล็กสุดก่อน — ถ้าไม่มีค่อยรันเลขถัดไป
   const nextReceiptNo = () => {
     const year = new Date().getFullYear();
+    const pool = (receiptVoids[year] || []);
+    if (pool.length) {
+      const seq = Math.min(...pool);
+      return { no: `RCP-${year}-${String(seq).padStart(5, '0')}`, year, seq, fromPool: true };
+    }
     const next = (receiptSeq[year] || 0) + 1;
-    return { no: `RCP-${year}-${String(next).padStart(5, '0')}`, year, seq: next };
+    return { no: `RCP-${year}-${String(next).padStart(5, '0')}`, year, seq: next, fromPool: false };
+  };
+  // คำนวณ receiptSeq/receiptVoids ใหม่หลังใช้เลขใบเสร็จ 1 ใบ (เรียกภายใน setState ด้วย state ล่าสุด s)
+  const consumeReceipt = (r, s) => {
+    if (r && r.fromPool) {
+      const cur = (s.receiptVoids || {})[r.year] || [];
+      return { receiptSeq: s.receiptSeq || {}, receiptVoids: { ...(s.receiptVoids || {}), [r.year]: cur.filter((n) => n !== r.seq) } };
+    }
+    if (r) return { receiptSeq: { ...(s.receiptSeq || {}), [r.year]: r.seq }, receiptVoids: s.receiptVoids || {} };
+    return { receiptSeq: s.receiptSeq || {}, receiptVoids: s.receiptVoids || {} };
+  };
+  // ยกเลิกใบเสร็จ: ลบออกจากรายการ (จึงไม่ถูกนับใน PDF/Excel) + คืนเลขเข้า pool เพื่อใช้ซ้ำ
+  const cancelReceipt = (no) => {
+    const rcp = (receipts || []).find((r) => r.no === no);
+    if (!rcp) return;
+    const parts = String(no).split('-');
+    const year = parseInt(parts[1], 10) || new Date().getFullYear();
+    const seq = parseInt(parts[2], 10) || 0;
+    setState((s) => ({
+      ...s,
+      receipts: (s.receipts || []).filter((r) => r.no !== no),
+      receiptVoids: { ...(s.receiptVoids || {}), [year]: [...new Set([...(((s.receiptVoids || {})[year]) || []), seq])] },
+    }));
+    pushToast(`ยกเลิกใบเสร็จ ${no} แล้ว — เลขนี้จะถูกนำกลับมาใช้ครั้งถัดไป`);
   };
 
   /* ── actions ── */
@@ -254,12 +289,17 @@ function App() {
     let newQueue = queue;
     let newReceipts = receipts;
     let newSeq = receiptSeq;
+    let newVoids = receiptVoids;
     let newStock = stock;
     let deducted = 0;
 
     if (status === 'paid') {
       const receipt = nextReceiptNo();
-      newSeq = { ...receiptSeq, [receipt.year]: receipt.seq };
+      if (receipt.fromPool) {
+        newVoids = { ...receiptVoids, [receipt.year]: (receiptVoids[receipt.year] || []).filter((n) => n !== receipt.seq) };
+      } else {
+        newSeq = { ...receiptSeq, [receipt.year]: receipt.seq };
+      }
       newReceipts = [...receipts, { no: receipt.no, date: todayISO(), type: 'opd', petName: updatedPet.name, ownerName: updatedPet.owner.name, hn: updatedPet.hn, q: queueItem?.q || '', items: receiptItems, method: payMethod || 'เงินสด', total }];
       newQueue = queueItem?.q ? queue.map((x) => x.q === queueItem.q ? { ...x, status: 'done', paid: total, doneDate: todayISO() } : x) : queue;
       [newStock, deducted] = deductStock(stock, charges.filter((c) => c[3]).map((c) => ({ stockId: c[3], qty: c[1] })));
@@ -267,7 +307,7 @@ function App() {
       newQueue = queueItem?.q ? queue.map((x) => x.q === queueItem.q ? { ...x, status: 'cashier', charges } : x) : queue;
     }
 
-    setState((s) => ({ ...s, pets: newPets, queue: newQueue, receipts: newReceipts, receiptSeq: newSeq, stock: newStock }));
+    setState((s) => ({ ...s, pets: newPets, queue: newQueue, receipts: newReceipts, receiptSeq: newSeq, receiptVoids: newVoids, stock: newStock }));
     setPage('dashboard');
     setCaseCtx(null);
     pushToast(status === 'paid'
@@ -276,26 +316,31 @@ function App() {
   };
 
   const payFromBoard = (method, total) => {
-    const { no, year, seq } = nextReceiptNo();
+    const receipt = nextReceiptNo();
+    const { no } = receipt;
     const petObj = pets.find((p) => p.hn === payFor.hn) || { owner: {} };
     const charges = (payFor.charges || []).map((c) =>
       Array.isArray(c) ? [c[0] || '', Number(c[1]) || 1, Number(c[2]) || 0, c[3] || null]
         : [String(c.name || ''), Number(c.qty) || 1, Number(c.price) || 0, c.stockId || null]
     );
     const [newStock, deducted] = deductStock(stock, charges.filter((c) => c[3]).map((c) => ({ stockId: c[3], qty: c[1] })));
-    setState((s) => ({
-      ...s,
-      stock: newStock,
-      queue: s.queue.map((x) => x.q === payFor.q ? { ...x, status: 'done', paid: total, doneDate: todayISO() } : x),
-      receipts: [...(s.receipts || []), {
-        no, date: todayISO(), type: 'opd',
-        petName: payFor.petName, ownerName: petObj.owner?.name || '-',
-        hn: payFor.hn, q: payFor.q,
-        items: charges.map((c) => [c[0], c[1], c[2]]),
-        method, total
-      }],
-      receiptSeq: { ...(s.receiptSeq || {}), [year]: seq }
-    }));
+    setState((s) => {
+      const con = consumeReceipt(receipt, s);
+      return {
+        ...s,
+        stock: newStock,
+        queue: s.queue.map((x) => x.q === payFor.q ? { ...x, status: 'done', paid: total, doneDate: todayISO() } : x),
+        receipts: [...(s.receipts || []), {
+          no, date: todayISO(), type: 'opd',
+          petName: payFor.petName, ownerName: petObj.owner?.name || '-',
+          hn: payFor.hn, q: payFor.q,
+          items: charges.map((c) => [c[0], c[1], c[2]]),
+          method, total
+        }],
+        receiptSeq: con.receiptSeq,
+        receiptVoids: con.receiptVoids,
+      };
+    });
     pushToast(`รับชำระ ${fmtB(total)} (${method}) — ${payFor.petName}` + (deducted > 0 ? ` · ตัดสต็อก ${deducted} รายการ` : ''));
     setPayFor(null);
   };
@@ -303,16 +348,21 @@ function App() {
   const shopCheckout = (cart, method, total) => {
     const charges = cart.map((c) => ({ stockId: c.id, qty: c.qty }));
     const [newStock, deducted] = deductStock(stock, charges);
-    const { no, year, seq } = nextReceiptNo();
-    setState((s) => ({
-      ...s, stock: newStock,
-      receipts: [...(s.receipts || []), {
-        no, date: new Date().toISOString().slice(0, 10), type: 'shop',
-        petName: '-', ownerName: '-', items: cart.map((c) => [c.name, c.qty, c.price]),
-        method, total
-      }],
-      receiptSeq: { ...(s.receiptSeq || {}), [year]: seq }
-    }));
+    const receipt = nextReceiptNo();
+    const { no } = receipt;
+    setState((s) => {
+      const con = consumeReceipt(receipt, s);
+      return {
+        ...s, stock: newStock,
+        receipts: [...(s.receipts || []), {
+          no, date: new Date().toISOString().slice(0, 10), type: 'shop',
+          petName: '-', ownerName: '-', items: cart.map((c) => [c.name, c.qty, c.price]),
+          method, total
+        }],
+        receiptSeq: con.receiptSeq,
+        receiptVoids: con.receiptVoids,
+      };
+    });
     pushToast(`ขายสินค้า ${fmtB(total)} (${method}) · ตัดสต็อก ${deducted} รายการ`);
   };
 
@@ -424,7 +474,7 @@ function App() {
           {page === 'appointments' ? <AppointmentsView appointments={appointments} pets={pets} onAdd={addAppointment} onUpdate={updateAppointment} /> : null}
           {page === 'shop' ? <PetShop stock={stock} onCheckout={shopCheckout} previewReceiptNo={nextReceiptNo().no} onDeleteItem={deleteStockItem} onAddItem={addStockItem} onImportStock={importStockItems} onUpdateItem={updateStockItem} /> : null}
           {page === 'stock' ? <StockView stock={stock} onAdjust={adjustStock} onAddItem={addStockItem} onImportStock={importStockItems} onDeleteItem={deleteStockItem} onClearAll={clearStock} onUpdateItem={updateStockItem} /> : null}
-          {page === 'reports' ? <ReportsView pets={pets} queue={queue} stock={stock} receipts={receipts} /> : null}
+          {page === 'reports' ? <ReportsView pets={pets} queue={queue} stock={stock} receipts={receipts} onCancelReceipt={cancelReceipt} /> : null}
           {page === 'history' ? <HistoryView pets={pets} /> : null}
           {page === 'tax' ? <TaxView pets={pets} receipts={receipts} /> : null}
         </main>

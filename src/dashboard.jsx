@@ -515,8 +515,8 @@ function Dashboard({ pets, queue, appointments, admitted, onOpenCase, onOpenPet,
       return true;
     });
   };
-  const revenue = queue.filter((x) => x.status === 'done' && (!x.doneDate || x.doneDate === today)).reduce((s, x) => s + (x.paid || 0), 0);
   const todayISO = new Date().toISOString().slice(0, 10);
+  const revenue = queue.filter((x) => x.status === 'done' && (!x.doneDate || x.doneDate === todayISO)).reduce((s, x) => s + (x.paid || 0), 0);
   const todayAppts = (appointments || []).
   filter((a) => a.date === todayISO && a.status !== 'cancelled').
   sort((a, b) => (a.time || '').localeCompare(b.time || ''));

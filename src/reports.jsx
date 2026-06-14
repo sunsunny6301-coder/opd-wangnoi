@@ -318,7 +318,7 @@ function SimpleBar({ label, value, max, color }) {
   );
 }
 
-function ReportsView({ pets, queue, stock, receipts = [] }) {
+function ReportsView({ pets, queue, stock, receipts = [], onCancelReceipt }) {
   const [range, setRange] = useState('week');
   const [showExport, setShowExport] = useState(false);
   const dateRange = useMemo(() => getDateRange(range), [range]);
@@ -463,18 +463,25 @@ function ReportsView({ pets, queue, stock, receipts = [] }) {
         {/* Receipts summary */}
         <div className="card">
           <div className="card-head"><span>สรุปใบเสร็จ</span><span className="chip chip-navy">{receipts.length} ใบ</span></div>
-          <div className="card-pad">
+          <div className="card-pad" style={{ maxHeight: 320, overflowY: 'auto' }}>
             {receipts.length === 0
               ? <div className="queue-empty">ยังไม่มีใบเสร็จ — ชำระเงินเคสแรกเพื่อเริ่ม</div>
-              : receipts.slice(-5).reverse().map((r, i) => (
-                <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', padding: '6px 0', borderBottom: '1px solid var(--line-soft)', fontSize: 13.5 }}>
-                  <div>
+              : receipts.slice().reverse().map((r, i) => (
+                <div key={r.no || i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, padding: '6px 0', borderBottom: '1px solid var(--line-soft)', fontSize: 13.5 }}>
+                  <div style={{ minWidth: 0 }}>
                     <span style={{ fontWeight: 700, color: 'var(--navy)' }}>{r.no}</span>
                     <span style={{ color: 'var(--ink-faint)', marginLeft: 8 }}>{r.petName !== '-' ? r.petName : 'เพ็ทช้อป'}</span>
                   </div>
-                  <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexShrink: 0 }}>
                     <span className="chip">{r.method}</span>
                     <span style={{ fontWeight: 700 }}>{fmtB(r.total)}</span>
+                    {onCancelReceipt && (
+                      <button title={`ยกเลิกใบเสร็จ ${r.no}`}
+                        style={{ background: '#FDECEA', border: '1px solid #D98880', borderRadius: 6, color: '#8C3028', fontSize: 11, padding: '2px 8px', cursor: 'pointer', flexShrink: 0, lineHeight: 1.5 }}
+                        onClick={() => { if (confirm(`ยกเลิกใบเสร็จ ${r.no} ?\nเลขนี้จะถูกนำกลับมาใช้ใหม่ครั้งถัดไป และจะไม่ถูกนับในสรุป PDF/Excel`)) onCancelReceipt(r.no); }}>
+                        ยกเลิก
+                      </button>
+                    )}
                   </div>
                 </div>
               ))}
