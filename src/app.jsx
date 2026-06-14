@@ -60,6 +60,16 @@ function App() {
   const updateAdmitted = (admId, data) => {
     setState((s) => ({ ...s, admitted: (s.admitted || []).map((a) => a.id === admId ? { ...a, ...data } : a) }));
   };
+  const cancelAdmit = (admId) => {
+    const adm = admitted.find((a) => a.id === admId);
+    if (!adm) return;
+    setState((s) => ({
+      ...s,
+      admitted: (s.admitted || []).filter((a) => a.id !== admId),
+      queue: adm.q ? (s.queue || []).map((x) => x.q === adm.q ? { ...x, status: 'wait' } : x) : (s.queue || []),
+    }));
+    pushToast(`ยกเลิกแอดมิด ${adm.petName} — กลับเข้ารอตรวจ`);
+  };
   // จำหน่าย: บันทึกทุกวันที่แอดมิดลงประวัติสัตว์ + ออกใบเสร็จรวม + ปิดคิว
   const dischargeAdmitted = (admId, method, extraRec) => {
     const adm = admitted.find((a) => a.id === admId);
@@ -399,7 +409,7 @@ function App() {
           <Dashboard pets={pets} queue={queue} appointments={appointments} admitted={admitted}
           onOpenCase={openCase} onOpenPet={openPet}
           onMove={moveQ} onPay={setPayFor} onWalkIn={walkIn}
-          onUpdateAppointment={updateAppointment} onDischargeAdmitted={dischargeAdmitted} onUpdateAdmitted={updateAdmitted} onOpenAdmittedCase={openAdmittedCase} onCancelQueue={cancelQueue} /> :
+          onUpdateAppointment={updateAppointment} onDischargeAdmitted={dischargeAdmitted} onUpdateAdmitted={updateAdmitted} onOpenAdmittedCase={openAdmittedCase} onCancelQueue={cancelQueue} onCancelAdmit={cancelAdmit} /> :
           null}
           {page === 'case' && casePet ?
           <CaseView pet={casePet} queueItem={caseQItem}

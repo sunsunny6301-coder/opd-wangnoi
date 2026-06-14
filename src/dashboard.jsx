@@ -312,16 +312,24 @@ function QueueCard({ item, pet, onOpen, onOpenCase, onMove, onPay, onCancel, zon
             </>
           )
         ) : null}
-        {item.status === 'exam' ?
-        <button className="btn btn-soft btn-sm" style={{ flex: 1 }} onClick={() => onOpenCase(item)}>
-            <Icon name="edit" size={14} /> เปิดเคส / บันทึก
-          </button> :
-        null}
-        {item.status === 'cashier' ?
-        <button className="btn btn-blush btn-sm" style={{ flex: 1 }} onClick={() => onPay(item)}>
-            <Icon name="cash" size={15} /> ชำระเงิน {total ? fmtB(total) : ''}
-          </button> :
-        null}
+        {item.status === 'exam' ? (
+          <div style={{ display: 'flex', gap: 4, flex: 1 }}>
+            <button className="btn btn-soft btn-sm" style={{ flex: 1 }} onClick={() => onOpenCase(item)}>
+              <Icon name="edit" size={14} /> เปิดเคส / บันทึก
+            </button>
+            <button className="btn btn-sm" style={{ fontSize: 11, color: 'var(--ink-soft)', padding: '4px 7px', flexShrink: 0 }} title="ย้อนกลับรอตรวจ"
+              onClick={() => onMove(item.q, 'wait')}>← รอตรวจ</button>
+          </div>
+        ) : null}
+        {item.status === 'cashier' ? (
+          <div style={{ display: 'flex', gap: 4, flex: 1 }}>
+            <button className="btn btn-blush btn-sm" style={{ flex: 1 }} onClick={() => onPay(item)}>
+              <Icon name="cash" size={15} /> ชำระเงิน {total ? fmtB(total) : ''}
+            </button>
+            <button className="btn btn-sm" style={{ fontSize: 11, color: 'var(--ink-soft)', padding: '4px 7px', flexShrink: 0 }} title="ย้อนกลับกำลังตรวจ"
+              onClick={() => onMove(item.q, 'exam')}>← ตรวจ</button>
+          </div>
+        ) : null}
         {item.status === 'done' ?
         <span style={{ fontSize: 12.5, color: 'var(--mint-deep)', fontWeight: 700, display: 'inline-flex', gap: 5, alignItems: 'center' }}>
             <Icon name="check" size={14} /> ชำระแล้ว {item.paid ? fmtB(item.paid) : ''}
@@ -333,7 +341,7 @@ function QueueCard({ item, pet, onOpen, onOpenCase, onMove, onPay, onCancel, zon
 }
 
 // ── Admitted panel ──
-function AdmittedPanel({ admitted, onUpdateAdmitted, onDischargeAdmitted, onOpenCase }) {
+function AdmittedPanel({ admitted, onUpdateAdmitted, onDischargeAdmitted, onOpenCase, onCancelAdmit }) {
   const [expanded, setExpanded] = useState(null);
   const [addingFor, setAddingFor] = useState(null);
   const [newRec, setNewRec] = useState({ note: '', charges: [{ name: '', qty: 1, price: '' }] });
@@ -381,6 +389,13 @@ function AdmittedPanel({ admitted, onUpdateAdmitted, onDischargeAdmitted, onOpen
                     <div style={{ fontSize: 11.5, color: 'var(--ink-faint)' }}>วันที่ {adm.admittedDate?.slice(5).replace('-', '/')} · {days} วัน</div>
                     {total > 0 && <div style={{ fontSize: 12, color: '#A05A00', fontWeight: 700 }}>รวม {fmtB(total)}</div>}
                   </div>
+                  {onCancelAdmit && (
+                    <button title="ยกเลิกแอดมิด — กลับรอตรวจ"
+                      style={{ background: 'none', border: '1px solid #D98880', borderRadius: 6, color: '#8C3028', fontSize: 11, padding: '2px 7px', cursor: 'pointer', flexShrink: 0, lineHeight: 1.4 }}
+                      onClick={(e) => { e.stopPropagation(); if (confirm(`ยกเลิกแอดมิด "${adm.petName}" ?\nสัตว์จะกลับไปรอตรวจ`)) onCancelAdmit(adm.id); }}>
+                      ยกเลิกแอดมิด
+                    </button>
+                  )}
                   <span style={{ fontSize: 11, color: 'var(--ink-faint)' }}>{isExp ? '▲' : '▼'}</span>
                 </div>
                 {isExp && (
@@ -480,7 +495,7 @@ function AdmittedPanel({ admitted, onUpdateAdmitted, onDischargeAdmitted, onOpen
   );
 }
 
-function Dashboard({ pets, queue, appointments, admitted, onOpenCase, onOpenPet, onMove, onPay, onWalkIn, onUpdateAppointment, onDischargeAdmitted, onUpdateAdmitted, onOpenAdmittedCase, onCancelQueue }) {
+function Dashboard({ pets, queue, appointments, admitted, onOpenCase, onOpenPet, onMove, onPay, onWalkIn, onUpdateAppointment, onDischargeAdmitted, onUpdateAdmitted, onOpenAdmittedCase, onCancelQueue, onCancelAdmit }) {
   const [showWalkIn, setShowWalkIn] = useState(false);
   const [walkInPrefillHn, setWalkInPrefillHn] = useState(null);
   const openWalkIn = (opts) => {
@@ -577,7 +592,7 @@ function Dashboard({ pets, queue, appointments, admitted, onOpenCase, onOpenPet,
             })}
           </div>
         </div>
-        <AdmittedPanel admitted={admitted} onUpdateAdmitted={onUpdateAdmitted || (() => {})} onDischargeAdmitted={onDischargeAdmitted} onOpenCase={onOpenAdmittedCase} />
+        <AdmittedPanel admitted={admitted} onUpdateAdmitted={onUpdateAdmitted || (() => {})} onDischargeAdmitted={onDischargeAdmitted} onOpenCase={onOpenAdmittedCase} onCancelAdmit={onCancelAdmit} />
         </div>
 
         {/* ── right: stats + queue board ── */}
