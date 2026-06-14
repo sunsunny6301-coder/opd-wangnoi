@@ -495,6 +495,39 @@ function AdmittedPanel({ admitted, onUpdateAdmitted, onDischargeAdmitted, onOpen
   );
 }
 
+// ── พื้นหลังแมวการ์ตูนเดินช้าๆ (จางมาก อยู่หลังเนื้อหา ไม่รบกวนการใช้งาน) ──
+function CatDoodle() {
+  return (
+    <svg viewBox="0 0 58 42" width="48" height="35" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+      <g fill="currentColor">
+        {/* หาง */}
+        <path d="M9,28 q-8,-1 -6,-13 q1,-4 4,-3 q-3,3 -1,9 q1,6 5,5 z" />
+        {/* ลำตัว */}
+        <ellipse cx="26" cy="27" rx="17" ry="9" />
+        {/* ขา */}
+        <rect x="15" y="33" width="3.6" height="8" rx="1.8" />
+        <rect x="23" y="34" width="3.6" height="7" rx="1.8" />
+        <rect x="31" y="33" width="3.6" height="8" rx="1.8" />
+        <rect x="39" y="34" width="3.6" height="7" rx="1.8" />
+        {/* หัว */}
+        <circle cx="45" cy="18" r="9.5" />
+        {/* หู */}
+        <path d="M38,12 l-1.5,-8 l7.5,4.5 z" />
+        <path d="M49,11 l5.5,-6 l1,7.5 z" />
+      </g>
+    </svg>
+  );
+}
+function BgCats() {
+  return (
+    <div className="bg-cats" aria-hidden="true">
+      <div className="bg-cat bg-cat-1"><span className="bg-cat-bob"><CatDoodle /></span></div>
+      <div className="bg-cat bg-cat-2"><span className="bg-cat-bob"><CatDoodle /></span></div>
+      <div className="bg-cat bg-cat-3"><span className="bg-cat-bob"><CatDoodle /></span></div>
+    </div>
+  );
+}
+
 function Dashboard({ pets, queue, appointments, admitted, onOpenCase, onOpenPet, onMove, onPay, onWalkIn, onUpdateAppointment, onDischargeAdmitted, onUpdateAdmitted, onOpenAdmittedCase, onCancelQueue, onCancelAdmit }) {
   const [showWalkIn, setShowWalkIn] = useState(false);
   const [walkInPrefillHn, setWalkInPrefillHn] = useState(null);
@@ -531,6 +564,7 @@ function Dashboard({ pets, queue, appointments, admitted, onOpenCase, onOpenPet,
 
   return (
     <div>
+      <BgCats />
       <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginBottom: 18, flexWrap: 'wrap' }}>
         <GlobalSearch pets={pets} onOpenPet={onOpenPet} onWalkIn={openWalkIn} onDirectWalkIn={onWalkIn} />
         <button className="btn btn-primary btn-lg" onClick={() => openWalkIn({})} style={{ backgroundColor: "rgb(211, 109, 31)" }}>

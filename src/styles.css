@@ -403,3 +403,40 @@ button, input, select, textarea { font-family: inherit; font-size: inherit; colo
   .queue-board { grid-template-columns: 1fr; }
   .main-body { padding: 16px 14px 80px; }
 }
+
+/* ── พื้นหลังแมวการ์ตูนเดินช้าๆ ── */
+.bg-cats {
+  position: fixed; inset: 0; z-index: -1;
+  pointer-events: none; overflow: hidden;
+}
+.bg-cat {
+  position: absolute; left: 0;
+  color: var(--navy); opacity: .07;
+  will-change: transform;
+}
+.bg-cat svg { display: block; }
+.bg-cat-bob { display: inline-block; animation: catBob 0.85s ease-in-out infinite; }
+
+.bg-cat-1 { bottom: 38px;  animation: catWalkR 58s linear infinite; }
+.bg-cat-2 { bottom: 128px; animation: catWalkL 76s linear infinite; animation-delay: -22s; opacity: .055; }
+.bg-cat-3 { bottom: 30px;  animation: catWalkR 96s linear infinite; animation-delay: -50s; opacity: .05; }
+.bg-cat-3 svg { width: 36px; height: 26px; }
+
+@keyframes catWalkR {
+  from { transform: translateX(-90px); }
+  to   { transform: translateX(calc(100vw + 90px)); }
+}
+@keyframes catWalkL {
+  from { transform: translateX(calc(100vw + 90px)) scaleX(-1); }
+  to   { transform: translateX(-90px) scaleX(-1); }
+}
+@keyframes catBob {
+  0%, 100% { transform: translateY(0); }
+  50%      { transform: translateY(-2px); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .bg-cat, .bg-cat-bob { animation: none; }
+  .bg-cat-2 { transform: scaleX(-1) translateX(40vw); }
+  .bg-cat-1 { transform: translateX(20vw); }
+  .bg-cat-3 { transform: translateX(70vw); }
+}
