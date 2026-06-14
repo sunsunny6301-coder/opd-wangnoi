@@ -528,6 +528,57 @@ function BgCats() {
   );
 }
 
+// ── แมวตัวเล็กลายชัด เดินเล่นไปมาบนการ์ด/หัวข้อ (สีเข้มกว่า มีหน้าตา) ──
+function CatPlay() {
+  return (
+    <svg viewBox="0 0 66 52" width="34" height="27" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+      <g fill="currentColor">
+        {/* หางฟู โค้งขึ้น */}
+        <path d="M11,34 C2,33 -1,19 8,13 C10,11 13,13 11,16 C5,20 7,29 14,30 Z" />
+        {/* ลำตัว */}
+        <ellipse cx="30" cy="33" rx="19" ry="11" />
+        {/* ขา 4 ขา (สลับสูงต่ำให้ดูกำลังก้าว) */}
+        <rect x="16" y="40" width="4" height="9" rx="2" />
+        <rect x="25" y="41" width="4" height="8" rx="2" />
+        <rect x="35" y="40" width="4" height="9" rx="2" />
+        <rect x="44" y="41" width="4" height="8" rx="2" />
+        {/* หัว */}
+        <circle cx="51" cy="21" r="11" />
+        {/* หู */}
+        <path d="M42,15 L39,3 L50,9 Z" />
+        <path d="M53,9 L61,1 L62,14 Z" />
+      </g>
+      {/* หูชั้นใน */}
+      <path d="M43.5,13 L42,6 L48,9.5 Z" fill="rgba(255,255,255,.5)" />
+      <path d="M54.5,10 L59,5 L59.5,12.5 Z" fill="rgba(255,255,255,.5)" />
+      {/* หน้าตา */}
+      <path d="M47,21 q2,2.4 4,0" fill="none" stroke="#fff" strokeWidth="1.6" strokeLinecap="round" />
+      <path d="M55,20.5 q2,2.4 4,0" fill="none" stroke="#fff" strokeWidth="1.6" strokeLinecap="round" />
+      <circle cx="53.5" cy="25.5" r="1.5" fill="#fff" />
+      {/* หนวด */}
+      <g stroke="#fff" strokeWidth="1" strokeLinecap="round" opacity=".75">
+        <line x1="56" y1="25" x2="64" y2="23" />
+        <line x1="56" y1="26.5" x2="64" y2="27" />
+      </g>
+      {/* ลายทางบนตัว */}
+      <g stroke="rgba(255,255,255,.4)" strokeWidth="1.6" strokeLinecap="round">
+        <line x1="28" y1="24" x2="26" y2="29" />
+        <line x1="34" y1="24" x2="32" y2="29" />
+        <line x1="40" y1="25" x2="38" y2="30" />
+      </g>
+    </svg>
+  );
+}
+function FgCats() {
+  return (
+    <div className="fg-cats" aria-hidden="true">
+      <span className="fg-cat fg-cat-a"><span className="fg-cat-bob"><CatPlay /></span></span>
+      <span className="fg-cat fg-cat-b"><span className="fg-cat-bob"><CatPlay /></span></span>
+      <span className="fg-cat fg-cat-c"><span className="fg-cat-bob"><CatPlay /></span></span>
+    </div>
+  );
+}
+
 function Dashboard({ pets, queue, appointments, admitted, onOpenCase, onOpenPet, onMove, onPay, onWalkIn, onUpdateAppointment, onDischargeAdmitted, onUpdateAdmitted, onOpenAdmittedCase, onCancelQueue, onCancelAdmit }) {
   const [showWalkIn, setShowWalkIn] = useState(false);
   const [walkInPrefillHn, setWalkInPrefillHn] = useState(null);
@@ -563,8 +614,9 @@ function Dashboard({ pets, queue, appointments, admitted, onOpenCase, onOpenPet,
 
 
   return (
-    <div>
+    <div className="dash-root">
       <BgCats />
+      <FgCats />
       <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginBottom: 18, flexWrap: 'wrap' }}>
         <GlobalSearch pets={pets} onOpenPet={onOpenPet} onWalkIn={openWalkIn} onDirectWalkIn={onWalkIn} />
         <button className="btn btn-primary btn-lg" onClick={() => openWalkIn({})} style={{ backgroundColor: "rgb(211, 109, 31)" }}>

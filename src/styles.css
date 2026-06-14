@@ -440,3 +440,46 @@ button, input, select, textarea { font-family: inherit; font-size: inherit; colo
   .bg-cat-1 { transform: translateX(20vw); }
   .bg-cat-3 { transform: translateX(70vw); }
 }
+
+/* ── แมวตัวเล็กลายชัด เดินเล่นไปมาบนการ์ด/หัวข้อ (foreground) ── */
+.dash-root { position: relative; }
+.fg-cats {
+  position: absolute; inset: 0;
+  pointer-events: none; z-index: 5; overflow: hidden;
+}
+.fg-cat { position: absolute; will-change: transform; }
+.fg-cat svg { display: block; }
+.fg-cat-bob { display: inline-block; animation: catBob2 0.5s ease-in-out infinite; }
+
+.fg-cat-a { top: 60px;  left: 6px;   color: var(--navy-deep);  opacity: .72; animation: strollA 24s ease-in-out infinite; }
+.fg-cat-b { top: 92px;  left: 300px; color: var(--blush-deep); opacity: .62; animation: strollB 32s ease-in-out infinite; animation-delay: -7s; }
+.fg-cat-c { top: 360px; left: 360px; color: var(--butter-deep); opacity: .6; animation: strollC 28s ease-in-out infinite; animation-delay: -14s; }
+
+@keyframes strollA {
+  0%   { transform: translateX(0)     scaleX(1); }
+  46%  { transform: translateX(150px) scaleX(1); }
+  50%  { transform: translateX(150px) scaleX(-1); }
+  96%  { transform: translateX(0)     scaleX(-1); }
+  100% { transform: translateX(0)     scaleX(1); }
+}
+@keyframes strollB {
+  0%   { transform: translateX(0)     scaleX(1); }
+  46%  { transform: translateX(260px) scaleX(1); }
+  50%  { transform: translateX(260px) scaleX(-1); }
+  96%  { transform: translateX(0)     scaleX(-1); }
+  100% { transform: translateX(0)     scaleX(1); }
+}
+@keyframes strollC {
+  0%   { transform: translateX(0)     scaleX(1); }
+  46%  { transform: translateX(200px) scaleX(1); }
+  50%  { transform: translateX(200px) scaleX(-1); }
+  96%  { transform: translateX(0)     scaleX(-1); }
+  100% { transform: translateX(0)     scaleX(1); }
+}
+@keyframes catBob2 {
+  0%, 100% { transform: translateY(0); }
+  50%      { transform: translateY(-2.5px); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .fg-cat, .fg-cat-bob { animation: none; }
+}
