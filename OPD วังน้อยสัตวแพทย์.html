@@ -4052,8 +4052,14 @@ function exportToExcel(visits, receipts, rangeLabel, stock = [], dateRange = nul
   const cell = (n) => (n ? n : '');  // ช่องว่างเมื่อเป็น 0 ให้อ่านง่าย
   const header = ['วันที่', 'HN', 'ชื่อสัตว์', 'ชนิด', 'เจ้าของ', 'เบอร์โทร', 'CC', 'Dx', 'รายการ', 'จำนวน', 'ราคารักษา', 'ราคาอาหารสัตว์', 'รวม'];
   let sumTreat = 0, sumFood = 0;
+  // เอาเฉพาะเคสที่ยังมีใบเสร็จ OPD อยู่จริง (ใบเสร็จที่ยกเลิกไปแล้วจะไม่ถูกนับ — จับคู่ด้วย HN+คิว+วันที่)
+  const activeOpdKeys = new Set(
+    (receipts || [])
+      .filter((r) => (r.type || 'opd') === 'opd')
+      .map((r) => `${r.hn}|${r.q || ''}|${r.date}`)
+  );
   // แถวจากเคสตรวจรักษา (OPD)
-  const visitRows = visits.map((v) => {
+  const visitRows = visits.filter((v) => activeOpdKeys.has(`${v.petHn}|${v.q || ''}|${v.date}`)).map((v) => {
     const items = (v.items || []).map((it) => Array.isArray(it) ? it : [it.name, it.qty, it.price, it.stockId]);
     let treat = 0, food = 0, qtyTotal = 0;
     const names = [];
