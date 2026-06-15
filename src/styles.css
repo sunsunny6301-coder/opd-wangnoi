@@ -441,54 +441,79 @@ button, input, select, textarea { font-family: inherit; font-size: inherit; colo
   .bg-cat-3 { transform: translateX(70vw); }
 }
 
-/* ── แมวสีสัน 2 ตัว มีชีวิตชีวา เดิน/กระโดด/กลิ้ง เดินทั่วหน้าจอ (foreground) ── */
+/* ── แมวสีสัน 3 ตัว เดินอิสระทั่วทั้งหน้าจอ (2 มิติ) เดิน/กระโดด/กลิ้ง/เขี่ยเล่น ── */
 .dash-root { position: relative; }
 .fg-cats {
-  position: absolute; inset: 0;
+  position: fixed; inset: 0;       /* เต็มหน้าจอ — เดินไปได้ทุกที่ */
   pointer-events: none; z-index: 5; overflow: hidden;
 }
-.fg-cat { position: absolute; left: 0; will-change: transform; }
+.fg-cat { position: absolute; top: 0; left: 0; will-change: transform; }
 .fg-cat svg { display: block; }
 .fg-act { display: inline-block; will-change: transform; }
 .fg-bob { display: inline-block; }
 
-.fg-cat-a { top: 66px;  opacity: .94; animation: catRoam 46s ease-in-out infinite; }
-.fg-cat-a .fg-act { animation: catAct 46s ease-in-out infinite; }
+/* roam = เดินเตร็ดเตร่ทั่วจอ (ช้า, คนละเส้นทาง) · act = ท่าเล่น (ถี่กว่า) · bob = ก้าวเดิน */
+.fg-cat-a { opacity: .94; animation: roamA 44s ease-in-out infinite; }
+.fg-cat-a .fg-act { animation: catAct 12s ease-in-out infinite; }
 .fg-cat-a .fg-bob { animation: catBob2 0.5s ease-in-out infinite; }
 
-.fg-cat-b { top: 352px; opacity: .92; animation: catRoam 56s ease-in-out infinite; animation-delay: -28s; }
-.fg-cat-b .fg-act { animation: catAct 56s ease-in-out infinite; animation-delay: -28s; }
+.fg-cat-b { opacity: .92; animation: roamB 54s ease-in-out infinite; animation-delay: -10s; }
+.fg-cat-b .fg-act { animation: catAct 14s ease-in-out infinite; animation-delay: -5s; }
 .fg-cat-b .fg-bob { animation: catBob2 0.55s ease-in-out infinite; }
 
-.fg-cat-c { top: 208px; opacity: .93; animation: catRoam 50s ease-in-out infinite; animation-delay: -16s; }
-.fg-cat-c .fg-act { animation: catAct 50s ease-in-out infinite; animation-delay: -16s; }
+.fg-cat-c { opacity: .93; animation: roamC 49s ease-in-out infinite; animation-delay: -22s; }
+.fg-cat-c .fg-act { animation: catAct 13s ease-in-out infinite; animation-delay: -8s; }
 .fg-cat-c .fg-bob { animation: catBob2 0.52s ease-in-out infinite; }
 
-/* เดินทั่วจอ: เดินขวา → หยุดกระโดด → เดินต่อ → กลิ้ง → กลับตัว → เดินกลับซ้าย */
-@keyframes catRoam {
-  0%   { transform: translateX(2vw)  scaleX(1); }
-  4%   { transform: translateX(2vw)  scaleX(1); }
-  20%  { transform: translateX(26vw) scaleX(1); }
-  25%  { transform: translateX(26vw) scaleX(1); }
-  44%  { transform: translateX(52vw) scaleX(1); }
-  48%  { transform: translateX(52vw) scaleX(1); }
-  58%  { transform: translateX(52vw) scaleX(1); }
-  62%  { transform: translateX(52vw) scaleX(-1); }
-  92%  { transform: translateX(2vw)  scaleX(-1); }
-  97%  { transform: translateX(2vw)  scaleX(-1); }
-  100% { transform: translateX(2vw)  scaleX(1); }
+/* แต่ละตัวเดินคนละเส้นทาง ครอบคลุมทั้งจอ (ค้นหา/รอตรวจ/กำลังตรวจ/ชำระเงิน/เสร็จแล้ว/ที่ว่าง) */
+@keyframes roamA {
+  0%   { transform: translate(3vw, 14vh)  scaleX(1); }
+  12%  { transform: translate(40vw, 13vh) scaleX(1); }
+  22%  { transform: translate(70vw, 22vh) scaleX(1); }
+  34%  { transform: translate(46vw, 45vh) scaleX(-1); }
+  46%  { transform: translate(18vw, 62vh) scaleX(-1); }
+  58%  { transform: translate(48vw, 80vh) scaleX(1); }
+  70%  { transform: translate(72vw, 50vh) scaleX(1); }
+  82%  { transform: translate(28vw, 30vh) scaleX(-1); }
+  92%  { transform: translate(6vw, 60vh)  scaleX(-1); }
+  100% { transform: translate(3vw, 14vh)  scaleX(1); }
 }
-/* ท่าทาง: กระโดด (~22%) แล้วล้มตัวนอนหงาย+กลิ้ง (~50-58%) */
+@keyframes roamB {
+  0%   { transform: translate(62vw, 82vh) scaleX(-1); }
+  12%  { transform: translate(22vw, 74vh) scaleX(-1); }
+  24%  { transform: translate(4vw, 40vh)  scaleX(1); }
+  36%  { transform: translate(36vw, 16vh) scaleX(1); }
+  48%  { transform: translate(70vw, 18vh) scaleX(1); }
+  60%  { transform: translate(52vw, 46vh) scaleX(-1); }
+  72%  { transform: translate(64vw, 78vh) scaleX(1); }
+  84%  { transform: translate(30vw, 56vh) scaleX(-1); }
+  100% { transform: translate(62vw, 82vh) scaleX(-1); }
+}
+@keyframes roamC {
+  0%   { transform: translate(36vw, 44vh) scaleX(1); }
+  12%  { transform: translate(70vw, 24vh) scaleX(1); }
+  24%  { transform: translate(62vw, 76vh) scaleX(-1); }
+  36%  { transform: translate(14vw, 82vh) scaleX(-1); }
+  48%  { transform: translate(3vw, 26vh)  scaleX(1); }
+  60%  { transform: translate(30vw, 13vh) scaleX(1); }
+  72%  { transform: translate(60vw, 16vh) scaleX(1); }
+  84%  { transform: translate(46vw, 50vh) scaleX(-1); }
+  100% { transform: translate(36vw, 44vh) scaleX(1); }
+}
+/* ท่าเล่น: กระโดด → ล้มตัวนอนหงาย+กลิ้ง 1 รอบ → เขี่ยเล่น (วนถี่ขณะเดิน) */
 @keyframes catAct {
-  0%, 19% { transform: translateY(0) rotate(0deg); }
-  22%     { transform: translateY(-20px) rotate(-6deg); }
-  25%     { transform: translateY(0) rotate(0deg); }
-  47%     { transform: translateY(0) rotate(0deg); }
-  50%     { transform: translateY(4px) rotate(130deg); }
-  54%     { transform: translateY(5px) rotate(250deg); }
-  57%     { transform: translateY(2px) rotate(360deg); }
-  59%     { transform: translateY(0) rotate(360deg); }
-  100%    { transform: translateY(0) rotate(360deg); }
+  0%, 9% { transform: translateY(0) rotate(0deg); }
+  15%    { transform: translateY(-15px) rotate(-5deg); }   /* กระโดด */
+  21%    { transform: translateY(0) rotate(0deg); }
+  44%    { transform: translateY(0) rotate(0deg); }
+  51%    { transform: translateY(3px) rotate(180deg); }     /* ล้มหงาย */
+  59%    { transform: translateY(3px) rotate(360deg); }     /* กลิ้งกลับ */
+  63%    { transform: translateY(0) rotate(360deg); }
+  78%    { transform: translateY(0) rotate(360deg); }
+  81%    { transform: translateY(-2px) rotate(350deg); }    /* เขี่ยเล่น */
+  84%    { transform: translateY(-2px) rotate(370deg); }
+  87%    { transform: translateY(0) rotate(360deg); }
+  100%   { transform: translateY(0) rotate(360deg); }
 }
 @keyframes catBob2 {
   0%, 100% { transform: translateY(0); }
@@ -496,7 +521,7 @@ button, input, select, textarea { font-family: inherit; font-size: inherit; colo
 }
 @media (prefers-reduced-motion: reduce) {
   .fg-cat, .fg-act, .fg-bob { animation: none; }
-  .fg-cat-a { transform: translateX(15vw); }
-  .fg-cat-b { transform: translateX(55vw); }
-  .fg-cat-c { transform: translateX(35vw); }
+  .fg-cat-a { transform: translate(12vw, 18vh); }
+  .fg-cat-b { transform: translate(60vw, 70vh); }
+  .fg-cat-c { transform: translate(40vw, 45vh); }
 }
