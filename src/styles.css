@@ -460,6 +460,10 @@ button, input, select, textarea { font-family: inherit; font-size: inherit; colo
 .fg-cat-b .fg-act { animation: catAct 56s ease-in-out infinite; animation-delay: -28s; }
 .fg-cat-b .fg-bob { animation: catBob2 0.55s ease-in-out infinite; }
 
+.fg-cat-c { top: 208px; opacity: .93; animation: catRoam 50s ease-in-out infinite; animation-delay: -16s; }
+.fg-cat-c .fg-act { animation: catAct 50s ease-in-out infinite; animation-delay: -16s; }
+.fg-cat-c .fg-bob { animation: catBob2 0.52s ease-in-out infinite; }
+
 /* เดินทั่วจอ: เดินขวา → หยุดกระโดด → เดินต่อ → กลิ้ง → กลับตัว → เดินกลับซ้าย */
 @keyframes catRoam {
   0%   { transform: translateX(2vw)  scaleX(1); }
@@ -494,4 +498,5 @@ button, input, select, textarea { font-family: inherit; font-size: inherit; colo
   .fg-cat, .fg-act, .fg-bob { animation: none; }
   .fg-cat-a { transform: translateX(15vw); }
   .fg-cat-b { transform: translateX(55vw); }
+  .fg-cat-c { transform: translateX(35vw); }
 }

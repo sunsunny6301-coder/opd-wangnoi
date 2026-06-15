@@ -529,7 +529,7 @@ function BgCats() {
 }
 
 // ── แมวสีสันตัวเล็ก มีชีวิตชีวา เดิน/กระโดด/กลิ้ง เดินทั่วหน้าจอ ──
-function CatColor({ body, belly, stripe, ear, eye, nose }) {
+function CatColor({ body, belly, stripe, ear, eye, nose, patches, headPatches, earL, earR }) {
   return (
     <svg viewBox="0 0 64 50" width="42" height="33" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
       {/* หาง */}
@@ -545,6 +545,8 @@ function CatColor({ body, belly, stripe, ear, eye, nose }) {
       <rect x="22" y="44.5" width="4.5" height="2.5" rx="1.2" fill={belly} />
       {/* ลำตัว */}
       <ellipse cx="29" cy="31" rx="18" ry="10.5" fill={body} />
+      {/* แต้มสีบนลำตัว (แมวสามสี) */}
+      {(patches || []).map((p, i) => <ellipse key={i} cx={p.cx} cy={p.cy} rx={p.rx} ry={p.ry} fill={p.fill} />)}
       {/* พุงสีอ่อน */}
       <ellipse cx="31" cy="35" rx="13" ry="6" fill={belly} />
       {/* ขาหน้า */}
@@ -560,9 +562,11 @@ function CatColor({ body, belly, stripe, ear, eye, nose }) {
       </g>
       {/* หัว */}
       <circle cx="49" cy="19" r="11" fill={body} />
-      {/* หู */}
-      <path d="M40,13 L37,2 L47,7 Z" fill={body} />
-      <path d="M51,7 L59,1 L60,13 Z" fill={body} />
+      {/* แต้มสีบนหัว (แมวสามสี) */}
+      {(headPatches || []).map((p, i) => <ellipse key={'h' + i} cx={p.cx} cy={p.cy} rx={p.rx} ry={p.ry} fill={p.fill} />)}
+      {/* หู (ระบุสีแยกซ้าย/ขวาได้) */}
+      <path d="M40,13 L37,2 L47,7 Z" fill={earL || body} />
+      <path d="M51,7 L59,1 L60,13 Z" fill={earR || body} />
       <path d="M41,11 L39.5,4.5 L45,7.5 Z" fill={ear} />
       <path d="M52,8 L57,3.5 L57.8,11 Z" fill={ear} />
       {/* ปาก/แก้มสีอ่อน */}
@@ -589,11 +593,24 @@ function CatColor({ body, belly, stripe, ear, eye, nose }) {
 }
 const CAT_GINGER = { body: '#F2A24E', belly: '#FCE7CE', stripe: '#D2761F', ear: '#F4A9B8', eye: '#5FB389', nose: '#E2738F' };
 const CAT_GRAY = { body: '#9AA8BA', belly: '#ECF1F6', stripe: '#5E6C7E', ear: '#F4A9B8', eye: '#E6B24A', nose: '#E2738F' };
+// แมวสามสี (calico): ขาว + ส้ม + ดำ พร้อมแต้มสีบนตัว/หัว และหูคนละสี
+const CAT_CALICO = {
+  body: '#F7F2EA', belly: '#FFFFFF', stripe: '#CD9258', ear: '#F4A9B8', eye: '#E0A53A', nose: '#E2738F',
+  earL: '#ED9A4C', earR: '#46414C',
+  patches: [
+    { fill: '#ED9A4C', cx: 23, cy: 26, rx: 8.5, ry: 6 },
+    { fill: '#46414C', cx: 37.5, cy: 29, rx: 6, ry: 4.6 },
+  ],
+  headPatches: [
+    { fill: '#ED9A4C', cx: 44, cy: 11.5, rx: 5, ry: 4 },
+  ],
+};
 function FgCats() {
   return (
     <div className="fg-cats" aria-hidden="true">
       <span className="fg-cat fg-cat-a"><span className="fg-act"><span className="fg-bob"><CatColor {...CAT_GINGER} /></span></span></span>
       <span className="fg-cat fg-cat-b"><span className="fg-act"><span className="fg-bob"><CatColor {...CAT_GRAY} /></span></span></span>
+      <span className="fg-cat fg-cat-c"><span className="fg-act"><span className="fg-bob"><CatColor {...CAT_CALICO} /></span></span></span>
     </div>
   );
 }
