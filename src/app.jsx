@@ -42,6 +42,13 @@ function App() {
   const receipts = state.receipts || [];
   const receiptSeq = state.receiptSeq || {};
   const receiptVoids = state.receiptVoids || {};
+  // คลังเพ็ทช้อปแยกจากคลังคลินิก (stock) — ครั้งแรกถ้ายังไม่มีให้ก๊อปจาก stock มาตั้งต้น แล้วต่อไปไม่ลิ้งกัน
+  const shopStock = state.shopStock || stock;
+  useEffect(() => {
+    if (state.shopStock === undefined) {
+      setState((s) => s.shopStock === undefined ? { ...s, shopStock: JSON.parse(JSON.stringify(s.stock || [])) } : s);
+    }
+  }, [state.shopStock]);
 
   const addAppointment = (appt) => {
     setState((s) => ({ ...s, appointments: [...(s.appointments || []), appt] }));
@@ -416,13 +423,13 @@ function App() {
 
   const shopCheckout = (cart, method, total) => {
     const charges = cart.map((c) => ({ stockId: c.id, qty: c.qty }));
-    const [newStock, deducted] = deductStock(stock, charges);
+    const [newShopStock, deducted] = deductStock(shopStock, charges);
     const receipt = nextReceiptNo();
     const { no } = receipt;
     setState((s) => {
       const con = consumeReceipt(receipt, s);
       return {
-        ...s, stock: newStock,
+        ...s, shopStock: newShopStock,
         receipts: [...(s.receipts || []), {
           no, date: new Date().toISOString().slice(0, 10), type: 'shop',
           petName: '-', ownerName: '-', items: cart.map((c) => [c.name, c.qty, c.price]),
@@ -455,11 +462,57 @@ function App() {
     setState((s) => ({ ...s, stock: s.stock.map((x) => x.id === id ? { ...x, ...patch, emoji: CAT_EMOJIS[patch.cat] || x.emoji || '📦' } : x) }));
     pushToast(`อัปเดต "${patch.name}" แล้ว`);
   };
+  // รวมไฟล์ import เข้าคลังเดิม: ชื่อซ้ำ → จำนวนบวกเพิ่ม, ต้นทุนเอาสูงสุด, ราคาขายคงเดิม · ชื่อใหม่ → เพิ่มรายการ
+  const mergeImport = (existing, incoming, idPrefix) => {
+    const EMO = { 'ยา': '💊', 'เวชภัณฑ์': '🩹', 'อาหาร': '🥫', 'ของใช้': '🧸' };
+    const result = (existing || []).map((x) => ({ ...x }));
+    const byName = new Map();
+    result.forEach((x) => byName.set(String(x.name || '').trim(), x));
+    let added = 0, merged = 0;
+    (incoming || []).forEach((inc) => {
+      const key = String(inc.name || '').trim();
+      const cur = key && byName.get(key);
+      if (cur) {
+        cur.qty = (Number(cur.qty) || 0) + (Number(inc.qty) || 0);          // บวกจำนวน
+        cur.cost = Math.max(Number(cur.cost) || 0, Number(inc.cost) || 0);  // ต้นทุนสูงสุด
+        if ((cur.min == null || cur.min === '') && inc.min != null) cur.min = inc.min;
+        // ราคาขาย (price) คงเดิม — ไม่แตะ
+        merged++;
+      } else {
+        const ni = { ...inc, id: idPrefix + Date.now() + Math.random().toString(36).slice(2), emoji: inc.emoji || EMO[inc.cat] || '📦' };
+        result.push(ni); if (key) byName.set(key, ni); added++;
+      }
+    });
+    return { result, added, merged };
+  };
   const importStockItems = (items) => {
-    const CAT_EMOJIS = { 'ยา': '💊', 'เวชภัณฑ์': '🩹', 'อาหาร': '🥫', 'ของใช้': '🧸' };
-    const newItems = items.map((item) => ({ ...item, id: 'st' + Date.now() + Math.random().toString(36).slice(2), emoji: item.emoji || CAT_EMOJIS[item.cat] || '📦' }));
-    setState((s) => ({ ...s, stock: [...s.stock, ...newItems] }));
-    pushToast(`นำเข้าสต็อก ${newItems.length} รายการแล้ว`);
+    let res;
+    setState((s) => { res = mergeImport(s.stock, items, 'st'); return { ...s, stock: res.result }; });
+    pushToast(`นำเข้าสต็อกคลินิก — เพิ่มใหม่ ${res.added}` + (res.merged ? ` · รวมของเดิม ${res.merged} (บวกจำนวน/ต้นทุนสูงสุด)` : '') + ' รายการ');
+  };
+  /* ── เพ็ทช้อป: คลังแยกของตัวเอง (shopStock) ── */
+  const addShopItem = (item) => {
+    const EMO = { 'ยา': '💊', 'เวชภัณฑ์': '🩹', 'อาหาร': '🥫', 'ของใช้': '🧸' };
+    setState((s) => ({ ...s, shopStock: [...(s.shopStock || s.stock || []), { ...item, id: 'sh' + Date.now(), emoji: EMO[item.cat] || '📦' }] }));
+    pushToast(`เพิ่ม "${item.name}" เข้าเพ็ทช้อปแล้ว`);
+  };
+  const updateShopItem = (id, patch) => {
+    const EMO = { 'ยา': '💊', 'เวชภัณฑ์': '🩹', 'อาหาร': '🥫', 'ของใช้': '🧸' };
+    setState((s) => ({ ...s, shopStock: (s.shopStock || s.stock || []).map((x) => x.id === id ? { ...x, ...patch, emoji: EMO[patch.cat] || x.emoji || '📦' } : x) }));
+    pushToast(`อัปเดต "${patch.name}" แล้ว`);
+  };
+  const deleteShopItem = (id) => {
+    const name = (shopStock.find((x) => x.id === id) || {}).name || '';
+    setState((s) => ({ ...s, shopStock: (s.shopStock || s.stock || []).filter((x) => x.id !== id) }));
+    pushToast(`ลบ "${name}" ออกจากเพ็ทช้อปแล้ว`);
+  };
+  const adjustShop = (id, d) =>
+  setState((s) => ({ ...s, shopStock: (s.shopStock || s.stock || []).map((x) => x.id === id ? { ...x, qty: Math.max(0, x.qty + d) } : x) }));
+  const clearShop = () => { setState((s) => ({ ...s, shopStock: [] })); pushToast('ล้างสินค้าเพ็ทช้อปทั้งหมดแล้ว'); };
+  const importShopItems = (items) => {
+    let res;
+    setState((s) => { res = mergeImport(s.shopStock || s.stock || [], items, 'sh'); return { ...s, shopStock: res.result }; });
+    pushToast(`นำเข้าเพ็ทช้อป — เพิ่มใหม่ ${res.added}` + (res.merged ? ` · รวมของเดิม ${res.merged} (บวกจำนวน/ต้นทุนสูงสุด)` : '') + ' รายการ');
   };
 
   /* ── nav ── */
@@ -541,7 +594,7 @@ function App() {
           onUpdatePet={updatePet} onAddService={addService} onDeleteService={deleteService} onUpdateService={updateService} onSaveDraft={saveDraft} previewReceiptNo={nextReceiptNo().no} /> :
           null}
           {page === 'appointments' ? <AppointmentsView appointments={appointments} pets={pets} onAdd={addAppointment} onUpdate={updateAppointment} /> : null}
-          {page === 'shop' ? <PetShop stock={stock} onCheckout={shopCheckout} previewReceiptNo={nextReceiptNo().no} onDeleteItem={deleteStockItem} onAddItem={addStockItem} onImportStock={importStockItems} onUpdateItem={updateStockItem} /> : null}
+          {page === 'shop' ? <PetShop stock={shopStock} onCheckout={shopCheckout} previewReceiptNo={nextReceiptNo().no} onDeleteItem={deleteShopItem} onAddItem={addShopItem} onImportStock={importShopItems} onUpdateItem={updateShopItem} /> : null}
           {page === 'stock' ? <StockView stock={stock} onAdjust={adjustStock} onAddItem={addStockItem} onImportStock={importStockItems} onDeleteItem={deleteStockItem} onClearAll={clearStock} onUpdateItem={updateStockItem} /> : null}
           {page === 'reports' ? <ReportsView pets={pets} queue={queue} stock={stock} receipts={receipts} onCancelReceipt={cancelReceipt} /> : null}
           {page === 'history' ? <HistoryView pets={pets} /> : null}
