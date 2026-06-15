@@ -186,7 +186,11 @@ function PetShop({ stock, onCheckout, previewReceiptNo, onDeleteItem, onAddItem,
   const [editItem, setEditItem] = useState(null);
   const [ef, setEf] = useState({});
   const [nf, setNf] = useState({ name: '', cat: 'ของใช้', unit: 'ชิ้น', qty: '', min: '', price: '', cost: '' });
-  const cats = ['ทั้งหมด', 'อาหาร', 'ของใช้', 'เวชภัณฑ์', 'ยา'];
+  // หมวดสร้างจากข้อมูลจริง (เดิม hardcode 'อาหาร' ฯลฯ ไม่ตรงกับหมวดจริง เช่น 'อาหารสัตว์' ทำให้กรองแล้วไม่เจอสินค้า)
+  const cats = useMemo(() => {
+    const set = new Set(stock.map((s) => s.cat).filter(Boolean));
+    return ['ทั้งหมด', ...Array.from(set).sort()];
+  }, [stock]);
 
   const openEdit = (p) => { setEditItem(p); setEf({ qty: String(p.qty ?? ''), price: String(p.price ?? ''), name: p.name, cost: String(p.cost ?? '') }); };
   const saveEdit = () => {

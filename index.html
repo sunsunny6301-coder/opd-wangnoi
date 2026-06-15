@@ -1155,6 +1155,15 @@ Object.assign(window, { Icon, Modal, useToasts, Field, SPECIES_EMOJI, TYPE_CHIP,
 // ── Tax Invoice / Receipt — ใบเสร็จรับเงิน / ใบกำกับภาษี ──
 var { useState, useEffect, useRef, useMemo } = React;
 
+// ── ตัวช่วยกลาง: เคส OPD ที่ "ยังมีใบเสร็จจริง" (กรองเคสที่ใบเสร็จถูกยกเลิกออกจากยอดเงิน/ภาษี/รายงาน) ──
+// ใบเสร็จ OPD จับคู่กับ visit ด้วย key = HN|เลขคิว|วันที่
+function activeOpdReceiptKeys(receipts) {
+  return new Set((receipts || [])
+    .filter((r) => (r.type || 'opd') === 'opd')
+    .map((r) => `${r.hn}|${r.q || ''}|${r.date}`));
+}
+function visitReceiptKey(petHn, v) { return `${petHn}|${v.q || ''}|${v.date}`; }
+
 const CLINIC = {
   nameTH: 'บริษัท วังน้อยสัตวแพทย์ จำกัด',
   nameEN: 'WANGNOIVETERINARY CO.,LTD.',
@@ -1181,13 +1190,14 @@ function fmtNum(n) {
   return Number(n || 0).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
-function TaxInvoice({ items, petName, ownerName, ownerPhone, ownerAddr, ownerTaxId, method, vatMode, no }) {
+function TaxInvoice({ items, petName, ownerName, ownerPhone, ownerAddr, ownerTaxId, method, vatMode, no, date }) {
   const subtotal = items.reduce((s, it) => s + it.qty * it.price, 0);
   const { beforeVat, vatAmt, grandTotal } = calcVat(subtotal, vatMode);
   const totalQty = items.reduce((s, it) => s + it.qty, 0);
-  const now = new Date();
-  const dateTH = now.toLocaleDateString('th-TH', { day: 'numeric', month: 'numeric', year: 'numeric' });
-  const timeTH = now.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' });
+  // ถ้าส่งวันที่ใบเสร็จมา (เช่น พิมพ์ย้อนหลังรายเดือน) ใช้วันที่นั้น ไม่งั้นใช้วันนี้ (พิมพ์สดตอนชำระ)
+  const dateObj = date ? new Date(date + 'T00:00:00') : new Date();
+  const dateTH = dateObj.toLocaleDateString('th-TH', { day: 'numeric', month: 'numeric', year: 'numeric' });
+  const timeTH = date ? null : new Date().toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' });
 
   const S = {
     page: { fontFamily: "'Anuphan', sans-serif", color: '#1a1a2e', fontSize: 14, lineHeight: 1.5, background: '#fff', width: '100%', maxWidth: 720, margin: '0 auto' },
@@ -1236,7 +1246,7 @@ function TaxInvoice({ items, petName, ownerName, ownerPhone, ownerAddr, ownerTax
         <div>
           <div><span style={S.label}>เลขที่:</span> <b>{no}</b></div>
           <div><span style={S.label}>วันที่:</span> {dateTH}</div>
-          <div><span style={S.label}>เวลา:</span> {timeTH}</div>
+          {timeTH ? <div><span style={S.label}>เวลา:</span> {timeTH}</div> : null}
         </div>
         <div style={{ textAlign: 'right' }}>
           {ownerName ? <div><span style={S.label}>ลูกค้า:</span> <b>{ownerName}</b></div> : null}
@@ -2132,7 +2142,7 @@ function FgCats() {
   );
 }
 
-function Dashboard({ pets, queue, appointments, admitted, onOpenCase, onOpenPet, onMove, onPay, onWalkIn, onUpdateAppointment, onDischargeAdmitted, onUpdateAdmitted, onOpenAdmittedCase, onCancelQueue, onCancelAdmit }) {
+function Dashboard({ pets, queue, appointments, admitted, receipts = [], onOpenCase, onOpenPet, onMove, onPay, onWalkIn, onUpdateAppointment, onDischargeAdmitted, onUpdateAdmitted, onOpenAdmittedCase, onCancelQueue, onCancelAdmit }) {
   const [showWalkIn, setShowWalkIn] = useState(false);
   const [walkInPrefillHn, setWalkInPrefillHn] = useState(null);
   const openWalkIn = (opts) => {
@@ -2153,7 +2163,8 @@ function Dashboard({ pets, queue, appointments, admitted, onOpenCase, onOpenPet,
     });
   };
   const todayISO = new Date().toISOString().slice(0, 10);
-  const revenue = queue.filter((x) => x.status === 'done' && (!x.doneDate || x.doneDate === todayISO)).reduce((s, x) => s + (x.paid || 0), 0);
+  // รายรับวันนี้คิดจากใบเสร็จ OPD ของวันนี้ที่ยังไม่ถูกยกเลิก (ยกเลิกใบเสร็จแล้วยอดจะหายตามจริง)
+  const revenue = (receipts || []).filter((r) => (r.type || 'opd') === 'opd' && r.date === todayISO).reduce((s, r) => s + (r.total || 0), 0);
   const todayAppts = (appointments || []).
   filter((a) => a.date === todayISO && a.status !== 'cancelled').
   sort((a, b) => (a.time || '').localeCompare(b.time || ''));
@@ -3328,7 +3339,11 @@ function PetShop({ stock, onCheckout, previewReceiptNo, onDeleteItem, onAddItem,
   const [editItem, setEditItem] = useState(null);
   const [ef, setEf] = useState({});
   const [nf, setNf] = useState({ name: '', cat: 'ของใช้', unit: 'ชิ้น', qty: '', min: '', price: '', cost: '' });
-  const cats = ['ทั้งหมด', 'อาหาร', 'ของใช้', 'เวชภัณฑ์', 'ยา'];
+  // หมวดสร้างจากข้อมูลจริง (เดิม hardcode 'อาหาร' ฯลฯ ไม่ตรงกับหมวดจริง เช่น 'อาหารสัตว์' ทำให้กรองแล้วไม่เจอสินค้า)
+  const cats = useMemo(() => {
+    const set = new Set(stock.map((s) => s.cat).filter(Boolean));
+    return ['ทั้งหมด', ...Array.from(set).sort()];
+  }, [stock]);
 
   const openEdit = (p) => { setEditItem(p); setEf({ qty: String(p.qty ?? ''), price: String(p.price ?? ''), name: p.name, cost: String(p.cost ?? '') }); };
   const saveEdit = () => {
@@ -3938,7 +3953,7 @@ function ReceiptExportModal({ receipts, onClose }) {
                 items={(r.items || []).map((it) => Array.isArray(it) ? { name: it[0], qty: it[1], price: it[2] } : it)}
                 petName={r.petName !== '-' ? r.petName : ''}
                 ownerName={r.ownerName !== '-' ? r.ownerName : ''}
-                method={r.method} vatMode="none" no={r.no}
+                method={r.method} vatMode="none" no={r.no} date={r.date}
               />
             </div>
           ))}
@@ -4053,13 +4068,9 @@ function exportToExcel(visits, receipts, rangeLabel, stock = [], dateRange = nul
   const header = ['วันที่', 'HN', 'ชื่อสัตว์', 'ชนิด', 'เจ้าของ', 'เบอร์โทร', 'CC', 'Dx', 'รายการ', 'จำนวน', 'ราคารักษา', 'ราคาอาหารสัตว์', 'รวม'];
   let sumTreat = 0, sumFood = 0;
   // เอาเฉพาะเคสที่ยังมีใบเสร็จ OPD อยู่จริง (ใบเสร็จที่ยกเลิกไปแล้วจะไม่ถูกนับ — จับคู่ด้วย HN+คิว+วันที่)
-  const activeOpdKeys = new Set(
-    (receipts || [])
-      .filter((r) => (r.type || 'opd') === 'opd')
-      .map((r) => `${r.hn}|${r.q || ''}|${r.date}`)
-  );
+  const activeOpdKeys = activeOpdReceiptKeys(receipts);
   // แถวจากเคสตรวจรักษา (OPD)
-  const visitRows = visits.filter((v) => activeOpdKeys.has(`${v.petHn}|${v.q || ''}|${v.date}`)).map((v) => {
+  const visitRows = visits.filter((v) => activeOpdKeys.has(visitReceiptKey(v.petHn, v))).map((v) => {
     const items = (v.items || []).map((it) => Array.isArray(it) ? it : [it.name, it.qty, it.price, it.stockId]);
     let treat = 0, food = 0, qtyTotal = 0;
     const names = [];
@@ -4120,7 +4131,11 @@ function ReportsView({ pets, queue, stock, receipts = [], onCancelReceipt }) {
   const [range, setRange] = useState('week');
   const [showExport, setShowExport] = useState(false);
   const dateRange = useMemo(() => getDateRange(range), [range]);
-  const visits = useMemo(() => filterVisits(pets, dateRange), [pets, dateRange]);
+  // เฉพาะเคสที่ยังมีใบเสร็จจริง (ตัดเคสที่ใบเสร็จถูกยกเลิกออก ให้ยอด/กราฟตรงกับใบเสร็จและไฟล์ export)
+  const visits = useMemo(() => {
+    const keys = activeOpdReceiptKeys(receipts);
+    return filterVisits(pets, dateRange).filter((v) => keys.has(visitReceiptKey(v.petHn, v)));
+  }, [pets, dateRange, receipts]);
   const m = useMemo(() => calcMetrics(pets, queue, stock, visits), [pets, queue, stock, visits]);
 
   const kpiCards = [
@@ -4950,17 +4965,15 @@ function getTotal(items) {
   return (items||[]).reduce((s,c) => Array.isArray(c) ? s+(Number(c[1])||1)*(Number(c[2])||0) : s+(Number(c.qty)||1)*(Number(c.price)||0), 0);
 }
 
+// ภาษีขายอ้างอิงจาก "ใบเสร็จจริง" โดยตรง — ใบเสร็จที่ยกเลิกไปแล้วจะไม่ถูกนับ และไม่นับซ้ำ/ไม่พลาดกรณีคีย์ข้ามวัน
 function buildSalesTx(pets, receipts) {
-  const txs = []; let seq = 0;
-  const sorted = [...(pets||[])].flatMap(p=>(p.visits||[]).map(v=>({v,p}))).sort((a,b)=>a.v.date.localeCompare(b.v.date));
-  sorted.forEach(({v,p})=>{
-    const total = n2(getTotal(v.items)); if (total <= 0) return; seq++;
-    const y = v.date.slice(0,4);
-    txs.push({ id:'opd_'+seq, invNo:`INV-${y}-${String(seq).padStart(6,'0')}`, date:v.date, buyerName:p.owner.name, buyerTaxId:'-', vatScope:'ทั้งหมด', total, beforeVat:n2(total/1.07), vat:n2(total-total/1.07), hasVat:true });
+  const txs = [];
+  (receipts||[]).filter(r=>(r.type||'opd')==='opd').forEach(r=>{
+    const total = n2(r.total||0); if (total <= 0) return;
+    txs.push({ id:'opd_'+r.no, invNo:r.no, date:r.date, buyerName:r.ownerName||'-', buyerTaxId:'-', vatScope:'ทั้งหมด', total, beforeVat:n2(total/1.07), vat:n2(total-total/1.07), hasVat:true });
   });
   (receipts||[]).filter(r=>r.type==='shop').forEach(r=>{
-    seq++;
-    txs.push({ id:'shop_'+seq, invNo:r.no, date:r.date, buyerName:'-', buyerTaxId:'-', vatScope:'-', total:n2(r.total), beforeVat:n2(r.total), vat:0, hasVat:false });
+    txs.push({ id:'shop_'+r.no, invNo:r.no, date:r.date, buyerName:r.ownerName&&r.ownerName!=='-'?r.ownerName:'-', buyerTaxId:'-', vatScope:'-', total:n2(r.total||0), beforeVat:n2(r.total||0), vat:0, hasVat:false });
   });
   return txs.sort((a,b)=>b.date.localeCompare(a.date));
 }
@@ -6307,7 +6320,7 @@ function App() {
 
         <main className="main-body" data-screen-label={titles[page]}>
           {page === 'dashboard' ?
-          <Dashboard pets={pets} queue={queue} appointments={appointments} admitted={admitted}
+          <Dashboard pets={pets} queue={queue} appointments={appointments} admitted={admitted} receipts={receipts}
           onOpenCase={openCase} onOpenPet={openPet}
           onMove={moveQ} onPay={setPayFor} onWalkIn={walkIn}
           onUpdateAppointment={updateAppointment} onDischargeAdmitted={dischargeAdmitted} onUpdateAdmitted={updateAdmitted} onOpenAdmittedCase={openAdmittedCase} onCancelQueue={cancelQueue} onCancelAdmit={cancelAdmit} /> :

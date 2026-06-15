@@ -57,17 +57,15 @@ function getTotal(items) {
   return (items||[]).reduce((s,c) => Array.isArray(c) ? s+(Number(c[1])||1)*(Number(c[2])||0) : s+(Number(c.qty)||1)*(Number(c.price)||0), 0);
 }
 
+// ภาษีขายอ้างอิงจาก "ใบเสร็จจริง" โดยตรง — ใบเสร็จที่ยกเลิกไปแล้วจะไม่ถูกนับ และไม่นับซ้ำ/ไม่พลาดกรณีคีย์ข้ามวัน
 function buildSalesTx(pets, receipts) {
-  const txs = []; let seq = 0;
-  const sorted = [...(pets||[])].flatMap(p=>(p.visits||[]).map(v=>({v,p}))).sort((a,b)=>a.v.date.localeCompare(b.v.date));
-  sorted.forEach(({v,p})=>{
-    const total = n2(getTotal(v.items)); if (total <= 0) return; seq++;
-    const y = v.date.slice(0,4);
-    txs.push({ id:'opd_'+seq, invNo:`INV-${y}-${String(seq).padStart(6,'0')}`, date:v.date, buyerName:p.owner.name, buyerTaxId:'-', vatScope:'ทั้งหมด', total, beforeVat:n2(total/1.07), vat:n2(total-total/1.07), hasVat:true });
+  const txs = [];
+  (receipts||[]).filter(r=>(r.type||'opd')==='opd').forEach(r=>{
+    const total = n2(r.total||0); if (total <= 0) return;
+    txs.push({ id:'opd_'+r.no, invNo:r.no, date:r.date, buyerName:r.ownerName||'-', buyerTaxId:'-', vatScope:'ทั้งหมด', total, beforeVat:n2(total/1.07), vat:n2(total-total/1.07), hasVat:true });
   });
   (receipts||[]).filter(r=>r.type==='shop').forEach(r=>{
-    seq++;
-    txs.push({ id:'shop_'+seq, invNo:r.no, date:r.date, buyerName:'-', buyerTaxId:'-', vatScope:'-', total:n2(r.total), beforeVat:n2(r.total), vat:0, hasVat:false });
+    txs.push({ id:'shop_'+r.no, invNo:r.no, date:r.date, buyerName:r.ownerName&&r.ownerName!=='-'?r.ownerName:'-', buyerTaxId:'-', vatScope:'-', total:n2(r.total||0), beforeVat:n2(r.total||0), vat:0, hasVat:false });
   });
   return txs.sort((a,b)=>b.date.localeCompare(a.date));
 }

@@ -1,6 +1,15 @@
 // ── Tax Invoice / Receipt — ใบเสร็จรับเงิน / ใบกำกับภาษี ──
 var { useState, useEffect, useRef, useMemo } = React;
 
+// ── ตัวช่วยกลาง: เคส OPD ที่ "ยังมีใบเสร็จจริง" (กรองเคสที่ใบเสร็จถูกยกเลิกออกจากยอดเงิน/ภาษี/รายงาน) ──
+// ใบเสร็จ OPD จับคู่กับ visit ด้วย key = HN|เลขคิว|วันที่
+function activeOpdReceiptKeys(receipts) {
+  return new Set((receipts || [])
+    .filter((r) => (r.type || 'opd') === 'opd')
+    .map((r) => `${r.hn}|${r.q || ''}|${r.date}`));
+}
+function visitReceiptKey(petHn, v) { return `${petHn}|${v.q || ''}|${v.date}`; }
+
 const CLINIC = {
   nameTH: 'บริษัท วังน้อยสัตวแพทย์ จำกัด',
   nameEN: 'WANGNOIVETERINARY CO.,LTD.',
@@ -27,13 +36,14 @@ function fmtNum(n) {
   return Number(n || 0).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
-function TaxInvoice({ items, petName, ownerName, ownerPhone, ownerAddr, ownerTaxId, method, vatMode, no }) {
+function TaxInvoice({ items, petName, ownerName, ownerPhone, ownerAddr, ownerTaxId, method, vatMode, no, date }) {
   const subtotal = items.reduce((s, it) => s + it.qty * it.price, 0);
   const { beforeVat, vatAmt, grandTotal } = calcVat(subtotal, vatMode);
   const totalQty = items.reduce((s, it) => s + it.qty, 0);
-  const now = new Date();
-  const dateTH = now.toLocaleDateString('th-TH', { day: 'numeric', month: 'numeric', year: 'numeric' });
-  const timeTH = now.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' });
+  // ถ้าส่งวันที่ใบเสร็จมา (เช่น พิมพ์ย้อนหลังรายเดือน) ใช้วันที่นั้น ไม่งั้นใช้วันนี้ (พิมพ์สดตอนชำระ)
+  const dateObj = date ? new Date(date + 'T00:00:00') : new Date();
+  const dateTH = dateObj.toLocaleDateString('th-TH', { day: 'numeric', month: 'numeric', year: 'numeric' });
+  const timeTH = date ? null : new Date().toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' });
 
   const S = {
     page: { fontFamily: "'Anuphan', sans-serif", color: '#1a1a2e', fontSize: 14, lineHeight: 1.5, background: '#fff', width: '100%', maxWidth: 720, margin: '0 auto' },
@@ -82,7 +92,7 @@ function TaxInvoice({ items, petName, ownerName, ownerPhone, ownerAddr, ownerTax
         <div>
           <div><span style={S.label}>เลขที่:</span> <b>{no}</b></div>
           <div><span style={S.label}>วันที่:</span> {dateTH}</div>
-          <div><span style={S.label}>เวลา:</span> {timeTH}</div>
+          {timeTH ? <div><span style={S.label}>เวลา:</span> {timeTH}</div> : null}
         </div>
         <div style={{ textAlign: 'right' }}>
           {ownerName ? <div><span style={S.label}>ลูกค้า:</span> <b>{ownerName}</b></div> : null}

@@ -185,7 +185,7 @@ function ReceiptExportModal({ receipts, onClose }) {
                 items={(r.items || []).map((it) => Array.isArray(it) ? { name: it[0], qty: it[1], price: it[2] } : it)}
                 petName={r.petName !== '-' ? r.petName : ''}
                 ownerName={r.ownerName !== '-' ? r.ownerName : ''}
-                method={r.method} vatMode="none" no={r.no}
+                method={r.method} vatMode="none" no={r.no} date={r.date}
               />
             </div>
           ))}
@@ -300,13 +300,9 @@ function exportToExcel(visits, receipts, rangeLabel, stock = [], dateRange = nul
   const header = ['วันที่', 'HN', 'ชื่อสัตว์', 'ชนิด', 'เจ้าของ', 'เบอร์โทร', 'CC', 'Dx', 'รายการ', 'จำนวน', 'ราคารักษา', 'ราคาอาหารสัตว์', 'รวม'];
   let sumTreat = 0, sumFood = 0;
   // เอาเฉพาะเคสที่ยังมีใบเสร็จ OPD อยู่จริง (ใบเสร็จที่ยกเลิกไปแล้วจะไม่ถูกนับ — จับคู่ด้วย HN+คิว+วันที่)
-  const activeOpdKeys = new Set(
-    (receipts || [])
-      .filter((r) => (r.type || 'opd') === 'opd')
-      .map((r) => `${r.hn}|${r.q || ''}|${r.date}`)
-  );
+  const activeOpdKeys = activeOpdReceiptKeys(receipts);
   // แถวจากเคสตรวจรักษา (OPD)
-  const visitRows = visits.filter((v) => activeOpdKeys.has(`${v.petHn}|${v.q || ''}|${v.date}`)).map((v) => {
+  const visitRows = visits.filter((v) => activeOpdKeys.has(visitReceiptKey(v.petHn, v))).map((v) => {
     const items = (v.items || []).map((it) => Array.isArray(it) ? it : [it.name, it.qty, it.price, it.stockId]);
     let treat = 0, food = 0, qtyTotal = 0;
     const names = [];
@@ -367,7 +363,11 @@ function ReportsView({ pets, queue, stock, receipts = [], onCancelReceipt }) {
   const [range, setRange] = useState('week');
   const [showExport, setShowExport] = useState(false);
   const dateRange = useMemo(() => getDateRange(range), [range]);
-  const visits = useMemo(() => filterVisits(pets, dateRange), [pets, dateRange]);
+  // เฉพาะเคสที่ยังมีใบเสร็จจริง (ตัดเคสที่ใบเสร็จถูกยกเลิกออก ให้ยอด/กราฟตรงกับใบเสร็จและไฟล์ export)
+  const visits = useMemo(() => {
+    const keys = activeOpdReceiptKeys(receipts);
+    return filterVisits(pets, dateRange).filter((v) => keys.has(visitReceiptKey(v.petHn, v)));
+  }, [pets, dateRange, receipts]);
   const m = useMemo(() => calcMetrics(pets, queue, stock, visits), [pets, queue, stock, visits]);
 
   const kpiCards = [

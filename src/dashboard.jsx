@@ -615,7 +615,7 @@ function FgCats() {
   );
 }
 
-function Dashboard({ pets, queue, appointments, admitted, onOpenCase, onOpenPet, onMove, onPay, onWalkIn, onUpdateAppointment, onDischargeAdmitted, onUpdateAdmitted, onOpenAdmittedCase, onCancelQueue, onCancelAdmit }) {
+function Dashboard({ pets, queue, appointments, admitted, receipts = [], onOpenCase, onOpenPet, onMove, onPay, onWalkIn, onUpdateAppointment, onDischargeAdmitted, onUpdateAdmitted, onOpenAdmittedCase, onCancelQueue, onCancelAdmit }) {
   const [showWalkIn, setShowWalkIn] = useState(false);
   const [walkInPrefillHn, setWalkInPrefillHn] = useState(null);
   const openWalkIn = (opts) => {
@@ -636,7 +636,8 @@ function Dashboard({ pets, queue, appointments, admitted, onOpenCase, onOpenPet,
     });
   };
   const todayISO = new Date().toISOString().slice(0, 10);
-  const revenue = queue.filter((x) => x.status === 'done' && (!x.doneDate || x.doneDate === todayISO)).reduce((s, x) => s + (x.paid || 0), 0);
+  // รายรับวันนี้คิดจากใบเสร็จ OPD ของวันนี้ที่ยังไม่ถูกยกเลิก (ยกเลิกใบเสร็จแล้วยอดจะหายตามจริง)
+  const revenue = (receipts || []).filter((r) => (r.type || 'opd') === 'opd' && r.date === todayISO).reduce((s, r) => s + (r.total || 0), 0);
   const todayAppts = (appointments || []).
   filter((a) => a.date === todayISO && a.status !== 'cancelled').
   sort((a, b) => (a.time || '').localeCompare(b.time || ''));

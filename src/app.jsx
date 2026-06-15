@@ -578,7 +578,7 @@ function App() {
 
         <main className="main-body" data-screen-label={titles[page]}>
           {page === 'dashboard' ?
-          <Dashboard pets={pets} queue={queue} appointments={appointments} admitted={admitted}
+          <Dashboard pets={pets} queue={queue} appointments={appointments} admitted={admitted} receipts={receipts}
           onOpenCase={openCase} onOpenPet={openPet}
           onMove={moveQ} onPay={setPayFor} onWalkIn={walkIn}
           onUpdateAppointment={updateAppointment} onDischargeAdmitted={dischargeAdmitted} onUpdateAdmitted={updateAdmitted} onOpenAdmittedCase={openAdmittedCase} onCancelQueue={cancelQueue} onCancelAdmit={cancelAdmit} /> :
