@@ -289,7 +289,7 @@ function App() {
       newPets = [...pets, {
         hn, name: f.pet, species: f.species, breed: '-', sex: f.sex,
         birth: d.toISOString().slice(0, 10), color: '-',
-        weight: parseFloat(f.weight) || null, sterilized: false,
+        weight: parseFloat(f.weight) || null, sterilized: null,
         owner: ownerObj, allergies: [], visits: []
       }];
     } else {

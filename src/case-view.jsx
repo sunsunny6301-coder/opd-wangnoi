@@ -349,6 +349,11 @@ function CaseView({ pet, queueItem, vets, services, stock, allPets, onBack, onFi
     const a = [x[0], x[1], x[2], x[3]]; a[k] = v; return a;
   }));
   const total = charges.reduce((s, c) => s + c[1] * c[2], 0);
+  // สถานะทำหมัน: "ทำหมันแล้ว" ถ้าตั้งค่าไว้ หรือเคยมีรายการ "ทำหมัน" ในประวัติที่บันทึกแล้ว
+  const neuteredByHistory =
+    (pet.visits || []).some((v) => (v.items || []).some((it) => String(Array.isArray(it) ? it[0] : (it && it.name) || '').includes('ทำหมัน')));
+  const neuterLabel = (neuteredByHistory || pet.sterilized === true) ? 'ทำหมันแล้ว'
+    : pet.sterilized === false ? 'ยังไม่ทำหมัน' : 'ไม่ระบุ';
   // ประวัติเรียงล่าสุดบนสุด → บันทึกใหม่ใส่หน้าสุดของ visits
   const buildVisit = () => ({
     date: todayISO(), vet: rec.vet, cc: rec.cc, pe: rec.pe, dx: rec.dx, plan: rec.plan,
@@ -399,10 +404,20 @@ function CaseView({ pet, queueItem, vets, services, stock, allPets, onBack, onFi
                   <div><span style={{ color: 'var(--ink-faint)', fontSize: 11, fontWeight: 700, textTransform: 'uppercase' }}>เพศ</span><div style={{ fontWeight: 700 }}>{pet.sex}</div></div>
                   <div><span style={{ color: 'var(--ink-faint)', fontSize: 11, fontWeight: 700, textTransform: 'uppercase' }}>อายุ</span><div style={{ fontWeight: 700 }}>{pet.birth ? calcAge(pet.birth) : '—'}</div></div>
                   <div><span style={{ color: 'var(--ink-faint)', fontSize: 11, fontWeight: 700, textTransform: 'uppercase' }}>สี/ตำหนิ</span><div style={{ fontWeight: 700 }}>{pet.color || '—'}</div></div>
+                  <div style={{ gridColumn: '1 / -1' }}>
+                    <span style={{ color: 'var(--ink-faint)', fontSize: 11, fontWeight: 700, textTransform: 'uppercase' }}>ทำหมัน</span>
+                    <div style={{ fontWeight: 700, marginTop: 2 }}>
+                      {neuterLabel === 'ทำหมันแล้ว'
+                        ? <span className="chip chip-mint" style={{ fontSize: 12 }}>✓ ทำหมันแล้ว</span>
+                        : neuterLabel === 'ยังไม่ทำหมัน'
+                          ? <span className="chip chip-butter" style={{ fontSize: 12 }}>ยังไม่ทำหมัน</span>
+                          : <span style={{ color: 'var(--ink-faint)' }}>ไม่ระบุ</span>}
+                    </div>
+                  </div>
                 </div>
               </div>
               <input ref={avatarRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={async (e) => { const f = e.target.files[0]; if (f) { try { const url = await imageToDataURL(f, 260, 0.78); setPetAvatar(url); onUpdatePet && onUpdatePet({ ...pet, avatar: url }); } catch (err) { pushToast && pushToast('อ่านไฟล์รูปไม่สำเร็จ'); } } }} />
-              <button className="btn btn-sm" onClick={() => setEditPetInfo({ kind: 'pet', name: pet.name, breed: pet.breed || '', sex: pet.sex || 'ผู้', sterilized: String(!!pet.sterilized), color: pet.color || '', birth: pet.birth || '' })}><Icon name="edit" size={14} /> แก้ไข</button>
+              <button className="btn btn-sm" onClick={() => setEditPetInfo({ kind: 'pet', name: pet.name, breed: pet.breed || '', sex: pet.sex || 'ผู้', sterilized: pet.sterilized === true ? 'true' : pet.sterilized === false ? 'false' : '', color: pet.color || '', birth: pet.birth || '' })}><Icon name="edit" size={14} /> แก้ไข</button>
             </div>
           </div>
 
@@ -694,7 +709,7 @@ function CaseView({ pet, queueItem, vets, services, stock, allPets, onBack, onFi
           <button className="btn" onClick={() => setEditPetInfo(null)}>ยกเลิก</button>
           <button className="btn btn-primary" onClick={() => {
             const f = editPetInfo;
-            if (f.kind === 'pet') onUpdatePet && onUpdatePet({ ...pet, name: f.name.trim() || pet.name, breed: f.breed, sex: f.sex, sterilized: f.sterilized === 'true', color: f.color, birth: f.birth });
+            if (f.kind === 'pet') onUpdatePet && onUpdatePet({ ...pet, name: f.name.trim() || pet.name, breed: f.breed, sex: f.sex, sterilized: f.sterilized === 'true' ? true : f.sterilized === 'false' ? false : null, color: f.color, birth: f.birth });
             else onUpdatePet && onUpdatePet({ ...pet, owner: { ...pet.owner, name: f.ownerName.trim() || pet.owner.name, phone: f.phone } });
             setEditPetInfo(null); pushToast && pushToast('บันทึกข้อมูลแล้ว');
           }}>บันทึก</button>
@@ -704,7 +719,7 @@ function CaseView({ pet, queueItem, vets, services, stock, allPets, onBack, onFi
               <Field label="ชื่อสัตว์เลี้ยง"><input className="input" value={editPetInfo.name} onChange={(e) => setEditPetInfo({ ...editPetInfo, name: e.target.value })} placeholder="ชื่อสัตว์" /></Field>
               <Field label="สายพันธุ์"><input className="input" value={editPetInfo.breed} onChange={(e) => setEditPetInfo({ ...editPetInfo, breed: e.target.value })} placeholder="เช่น ปอมเมอเรเนียน" /></Field>
               <Field label="เพศ"><select className="select" value={editPetInfo.sex} onChange={(e) => setEditPetInfo({ ...editPetInfo, sex: e.target.value })}><option value="ผู้">ผู้</option><option value="เมีย">เมีย</option><option value="ไม่ระบุ">ไม่ระบุ</option></select></Field>
-              <Field label="ทำหมันแล้ว?"><select className="select" value={editPetInfo.sterilized} onChange={(e) => setEditPetInfo({ ...editPetInfo, sterilized: e.target.value })}><option value="false">ยังไม่ได้ทำหมัน</option><option value="true">ทำหมันแล้ว</option></select></Field>
+              <Field label="ทำหมันแล้ว?"><select className="select" value={editPetInfo.sterilized} onChange={(e) => setEditPetInfo({ ...editPetInfo, sterilized: e.target.value })}><option value="">ไม่ระบุ</option><option value="false">ยังไม่ได้ทำหมัน</option><option value="true">ทำหมันแล้ว</option></select></Field>
               <Field label="สี/ตำหนิ"><input className="input" value={editPetInfo.color} onChange={(e) => setEditPetInfo({ ...editPetInfo, color: e.target.value })} placeholder="เช่น สีขาว มีจุดดำ" /></Field>
               <Field label="วันเกิด (ถ้ามี)"><input className="input" type="date" value={editPetInfo.birth || ''} onChange={(e) => setEditPetInfo({ ...editPetInfo, birth: e.target.value })} /></Field>
             </div>
