@@ -4044,9 +4044,10 @@ function DonutChart({ data, size = 160 }) {
 function exportToExcel(visits, receipts, rangeLabel, stock = [], dateRange = null) {
   const stockById = {};
   (stock || []).forEach((st) => { if (st && st.id != null) stockById[st.id] = st; });
+  // หมวดที่ถือเป็น "อาหารสัตว์" — จับทุกหมวดที่มีคำว่า "อาหาร" (อาหารสัตว์ / อาหารรักษาโรค / อาหารเสริมและบำรุง ฯลฯ)
   const isFood = (name, stockId) => {
     const st = (stockId != null && stockById[stockId]) || (stock || []).find((x) => x && x.name === name);
-    return !!(st && st.cat === 'อาหาร');
+    return !!(st && /อาหาร/.test(st.cat || ''));
   };
   const cell = (n) => (n ? n : '');  // ช่องว่างเมื่อเป็น 0 ให้อ่านง่าย
   const header = ['วันที่', 'HN', 'ชื่อสัตว์', 'ชนิด', 'เจ้าของ', 'เบอร์โทร', 'CC', 'Dx', 'รายการ', 'จำนวน', 'ราคารักษา', 'ราคาอาหารสัตว์', 'รวม'];
