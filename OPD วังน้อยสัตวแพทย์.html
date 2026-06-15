@@ -451,47 +451,59 @@ button, input, select, textarea { font-family: inherit; font-size: inherit; colo
   .bg-cat-3 { transform: translateX(70vw); }
 }
 
-/* ── แมวตัวเล็กลายชัด เดินเล่นไปมาบนการ์ด/หัวข้อ (foreground) ── */
+/* ── แมวสีสัน 2 ตัว มีชีวิตชีวา เดิน/กระโดด/กลิ้ง เดินทั่วหน้าจอ (foreground) ── */
 .dash-root { position: relative; }
 .fg-cats {
   position: absolute; inset: 0;
   pointer-events: none; z-index: 5; overflow: hidden;
 }
-.fg-cat { position: absolute; will-change: transform; }
+.fg-cat { position: absolute; left: 0; will-change: transform; }
 .fg-cat svg { display: block; }
-.fg-cat-bob { display: inline-block; animation: catBob2 0.5s ease-in-out infinite; }
+.fg-act { display: inline-block; will-change: transform; }
+.fg-bob { display: inline-block; }
 
-.fg-cat-a { top: 60px;  left: 6px;   color: var(--navy-deep);  opacity: .72; animation: strollA 24s ease-in-out infinite; }
-.fg-cat-b { top: 92px;  left: 300px; color: var(--blush-deep); opacity: .62; animation: strollB 32s ease-in-out infinite; animation-delay: -7s; }
-.fg-cat-c { top: 360px; left: 360px; color: var(--butter-deep); opacity: .6; animation: strollC 28s ease-in-out infinite; animation-delay: -14s; }
+.fg-cat-a { top: 66px;  opacity: .94; animation: catRoam 46s ease-in-out infinite; }
+.fg-cat-a .fg-act { animation: catAct 46s ease-in-out infinite; }
+.fg-cat-a .fg-bob { animation: catBob2 0.5s ease-in-out infinite; }
 
-@keyframes strollA {
-  0%   { transform: translateX(0)     scaleX(1); }
-  46%  { transform: translateX(150px) scaleX(1); }
-  50%  { transform: translateX(150px) scaleX(-1); }
-  96%  { transform: translateX(0)     scaleX(-1); }
-  100% { transform: translateX(0)     scaleX(1); }
+.fg-cat-b { top: 352px; opacity: .92; animation: catRoam 56s ease-in-out infinite; animation-delay: -28s; }
+.fg-cat-b .fg-act { animation: catAct 56s ease-in-out infinite; animation-delay: -28s; }
+.fg-cat-b .fg-bob { animation: catBob2 0.55s ease-in-out infinite; }
+
+/* เดินทั่วจอ: เดินขวา → หยุดกระโดด → เดินต่อ → กลิ้ง → กลับตัว → เดินกลับซ้าย */
+@keyframes catRoam {
+  0%   { transform: translateX(2vw)  scaleX(1); }
+  4%   { transform: translateX(2vw)  scaleX(1); }
+  20%  { transform: translateX(26vw) scaleX(1); }
+  25%  { transform: translateX(26vw) scaleX(1); }
+  44%  { transform: translateX(52vw) scaleX(1); }
+  48%  { transform: translateX(52vw) scaleX(1); }
+  58%  { transform: translateX(52vw) scaleX(1); }
+  62%  { transform: translateX(52vw) scaleX(-1); }
+  92%  { transform: translateX(2vw)  scaleX(-1); }
+  97%  { transform: translateX(2vw)  scaleX(-1); }
+  100% { transform: translateX(2vw)  scaleX(1); }
 }
-@keyframes strollB {
-  0%   { transform: translateX(0)     scaleX(1); }
-  46%  { transform: translateX(260px) scaleX(1); }
-  50%  { transform: translateX(260px) scaleX(-1); }
-  96%  { transform: translateX(0)     scaleX(-1); }
-  100% { transform: translateX(0)     scaleX(1); }
-}
-@keyframes strollC {
-  0%   { transform: translateX(0)     scaleX(1); }
-  46%  { transform: translateX(200px) scaleX(1); }
-  50%  { transform: translateX(200px) scaleX(-1); }
-  96%  { transform: translateX(0)     scaleX(-1); }
-  100% { transform: translateX(0)     scaleX(1); }
+/* ท่าทาง: กระโดด (~22%) แล้วล้มตัวนอนหงาย+กลิ้ง (~50-58%) */
+@keyframes catAct {
+  0%, 19% { transform: translateY(0) rotate(0deg); }
+  22%     { transform: translateY(-20px) rotate(-6deg); }
+  25%     { transform: translateY(0) rotate(0deg); }
+  47%     { transform: translateY(0) rotate(0deg); }
+  50%     { transform: translateY(4px) rotate(130deg); }
+  54%     { transform: translateY(5px) rotate(250deg); }
+  57%     { transform: translateY(2px) rotate(360deg); }
+  59%     { transform: translateY(0) rotate(360deg); }
+  100%    { transform: translateY(0) rotate(360deg); }
 }
 @keyframes catBob2 {
   0%, 100% { transform: translateY(0); }
-  50%      { transform: translateY(-2.5px); }
+  50%      { transform: translateY(-2px); }
 }
 @media (prefers-reduced-motion: reduce) {
-  .fg-cat, .fg-cat-bob { animation: none; }
+  .fg-cat, .fg-act, .fg-bob { animation: none; }
+  .fg-cat-a { transform: translateX(15vw); }
+  .fg-cat-b { transform: translateX(55vw); }
 }
 </style>
 </head>
@@ -2003,53 +2015,72 @@ function BgCats() {
   );
 }
 
-// ── แมวตัวเล็กลายชัด เดินเล่นไปมาบนการ์ด/หัวข้อ (สีเข้มกว่า มีหน้าตา) ──
-function CatPlay() {
+// ── แมวสีสันตัวเล็ก มีชีวิตชีวา เดิน/กระโดด/กลิ้ง เดินทั่วหน้าจอ ──
+function CatColor({ body, belly, stripe, ear, eye, nose }) {
   return (
-    <svg viewBox="0 0 66 52" width="34" height="27" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-      <g fill="currentColor">
-        {/* หางฟู โค้งขึ้น */}
-        <path d="M11,34 C2,33 -1,19 8,13 C10,11 13,13 11,16 C5,20 7,29 14,30 Z" />
-        {/* ลำตัว */}
-        <ellipse cx="30" cy="33" rx="19" ry="11" />
-        {/* ขา 4 ขา (สลับสูงต่ำให้ดูกำลังก้าว) */}
-        <rect x="16" y="40" width="4" height="9" rx="2" />
-        <rect x="25" y="41" width="4" height="8" rx="2" />
-        <rect x="35" y="40" width="4" height="9" rx="2" />
-        <rect x="44" y="41" width="4" height="8" rx="2" />
-        {/* หัว */}
-        <circle cx="51" cy="21" r="11" />
-        {/* หู */}
-        <path d="M42,15 L39,3 L50,9 Z" />
-        <path d="M53,9 L61,1 L62,14 Z" />
+    <svg viewBox="0 0 64 50" width="42" height="33" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+      {/* หาง */}
+      <path d="M12,33 C2,31 0,15 10,12 C13,11 14,15 12,16 C5,19 7,28 15,28 Z" fill={body} />
+      <g stroke={stripe} strokeWidth="1.6" strokeLinecap="round" opacity=".85">
+        <path d="M9,26 q-3,-4 -1,-8" fill="none" />
+        <path d="M5,19 q0,-4 4,-6" fill="none" />
       </g>
-      {/* หูชั้นใน */}
-      <path d="M43.5,13 L42,6 L48,9.5 Z" fill="rgba(255,255,255,.5)" />
-      <path d="M54.5,10 L59,5 L59.5,12.5 Z" fill="rgba(255,255,255,.5)" />
-      {/* หน้าตา */}
-      <path d="M47,21 q2,2.4 4,0" fill="none" stroke="#fff" strokeWidth="1.6" strokeLinecap="round" />
-      <path d="M55,20.5 q2,2.4 4,0" fill="none" stroke="#fff" strokeWidth="1.6" strokeLinecap="round" />
-      <circle cx="53.5" cy="25.5" r="1.5" fill="#fff" />
-      {/* หนวด */}
-      <g stroke="#fff" strokeWidth="1" strokeLinecap="round" opacity=".75">
-        <line x1="56" y1="25" x2="64" y2="23" />
-        <line x1="56" y1="26.5" x2="64" y2="27" />
-      </g>
+      {/* ขาหลัง */}
+      <rect x="15" y="37" width="4.5" height="10" rx="2.2" fill={body} />
+      <rect x="22" y="38" width="4.5" height="9" rx="2.2" fill={body} />
+      <rect x="15" y="44.5" width="4.5" height="3" rx="1.5" fill={belly} />
+      <rect x="22" y="44.5" width="4.5" height="2.5" rx="1.2" fill={belly} />
+      {/* ลำตัว */}
+      <ellipse cx="29" cy="31" rx="18" ry="10.5" fill={body} />
+      {/* พุงสีอ่อน */}
+      <ellipse cx="31" cy="35" rx="13" ry="6" fill={belly} />
+      {/* ขาหน้า */}
+      <rect x="36" y="37" width="4.5" height="10" rx="2.2" fill={body} />
+      <rect x="43" y="38" width="4.5" height="9" rx="2.2" fill={body} />
+      <rect x="36" y="44.5" width="4.5" height="3" rx="1.5" fill={belly} />
+      <rect x="43" y="44.5" width="4.5" height="2.5" rx="1.2" fill={belly} />
       {/* ลายทางบนตัว */}
-      <g stroke="rgba(255,255,255,.4)" strokeWidth="1.6" strokeLinecap="round">
-        <line x1="28" y1="24" x2="26" y2="29" />
-        <line x1="34" y1="24" x2="32" y2="29" />
-        <line x1="40" y1="25" x2="38" y2="30" />
+      <g stroke={stripe} strokeWidth="2" strokeLinecap="round" opacity=".8">
+        <path d="M24,23 q-1,3 -2.5,5" fill="none" />
+        <path d="M30,22 q-1,3 -2.5,5.5" fill="none" />
+        <path d="M36,23 q-1,3 -2.5,5" fill="none" />
+      </g>
+      {/* หัว */}
+      <circle cx="49" cy="19" r="11" fill={body} />
+      {/* หู */}
+      <path d="M40,13 L37,2 L47,7 Z" fill={body} />
+      <path d="M51,7 L59,1 L60,13 Z" fill={body} />
+      <path d="M41,11 L39.5,4.5 L45,7.5 Z" fill={ear} />
+      <path d="M52,8 L57,3.5 L57.8,11 Z" fill={ear} />
+      {/* ปาก/แก้มสีอ่อน */}
+      <ellipse cx="52" cy="23" rx="6.5" ry="5" fill={belly} />
+      {/* ลายหน้า */}
+      <g stroke={stripe} strokeWidth="1.5" strokeLinecap="round" opacity=".75">
+        <path d="M46,11 q1.5,2 0.5,4.5" fill="none" />
+        <path d="M50,10.5 q0.5,2 0,4.5" fill="none" />
+      </g>
+      {/* ตา */}
+      <ellipse cx="50.5" cy="17.5" rx="3" ry="3.4" fill="#fff" />
+      <circle cx="50.8" cy="18" r="2.1" fill={eye} />
+      <circle cx="50.8" cy="18" r="1" fill="#222" />
+      <circle cx="51.5" cy="17.2" r="0.6" fill="#fff" />
+      {/* จมูก */}
+      <path d="M56.5,21 L60,21 L58.2,23.4 Z" fill={nose} />
+      {/* หนวด */}
+      <g stroke="#5b5b5b" strokeWidth="0.8" strokeLinecap="round" opacity=".5">
+        <line x1="57" y1="23" x2="64" y2="21.5" />
+        <line x1="57" y1="24.5" x2="64" y2="25.5" />
       </g>
     </svg>
   );
 }
+const CAT_GINGER = { body: '#F2A24E', belly: '#FCE7CE', stripe: '#D2761F', ear: '#F4A9B8', eye: '#5FB389', nose: '#E2738F' };
+const CAT_GRAY = { body: '#9AA8BA', belly: '#ECF1F6', stripe: '#5E6C7E', ear: '#F4A9B8', eye: '#E6B24A', nose: '#E2738F' };
 function FgCats() {
   return (
     <div className="fg-cats" aria-hidden="true">
-      <span className="fg-cat fg-cat-a"><span className="fg-cat-bob"><CatPlay /></span></span>
-      <span className="fg-cat fg-cat-b"><span className="fg-cat-bob"><CatPlay /></span></span>
-      <span className="fg-cat fg-cat-c"><span className="fg-cat-bob"><CatPlay /></span></span>
+      <span className="fg-cat fg-cat-a"><span className="fg-act"><span className="fg-bob"><CatColor {...CAT_GINGER} /></span></span></span>
+      <span className="fg-cat fg-cat-b"><span className="fg-act"><span className="fg-bob"><CatColor {...CAT_GRAY} /></span></span></span>
     </div>
   );
 }
