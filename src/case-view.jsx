@@ -336,11 +336,11 @@ function CaseView({ pet, queueItem, vets, services, stock, allPets, onBack, onFi
     ...((queueItem.dailyRecords || []).flatMap((r) => (r.charges || []).map((c) => ({ name: `${c[0]} (${r.date})`, qty: Number(c[1]) || 1, price: Number(c[2]) || 0 })))),
     ...pendingCharges.map((c) => ({ name: c[0], qty: Number(c[1]) || 1, price: Number(c[2]) || 0 })),
   ] : null;
-  const dischargeAdmitted = (method) => {
+  const dischargeAdmitted = (method, paidTotal) => {
     const extraRec = pendingCharges.length > 0
       ? { date: todayISO(), vet: rec.vet, weight: rec.weight, cc: rec.cc, pe: rec.pe, dx: rec.dx, plan: rec.plan, media: media.filter((m) => !m.session), charges: pendingCharges.map((c) => [c[0], c[1], c[2], c[3] || null]) }
       : null;
-    onDischargeAdmitted && onDischargeAdmitted(queueItem.id, method, extraRec);
+    onDischargeAdmitted && onDischargeAdmitted(queueItem.id, method, extraRec, paidTotal);
     setShowReceipt(false);
     onBack();
   };
@@ -356,8 +356,8 @@ function CaseView({ pet, queueItem, vets, services, stock, allPets, onBack, onFi
     media: media.filter((m) => !m.session),
     q: queueItem?.q,  // ผูกกับเลขคิว เพื่อกันบันทึกประวัติซ้ำเมื่อบันทึกรอบเดิมซ้ำ
   });
-  const save = (status, method) => {
-    onFinish && onFinish({ ...pet, visits: [buildVisit(), ...pet.visits] }, queueItem, status, method);
+  const save = (status, method, paidTotal) => {
+    onFinish && onFinish({ ...pet, visits: [buildVisit(), ...pet.visits] }, queueItem, status, method, paidTotal);
   };
 
   return (
@@ -754,7 +754,7 @@ function CaseView({ pet, queueItem, vets, services, stock, allPets, onBack, onFi
           petName={pet.name} ownerName={pet.owner.name} ownerPhone={pet.owner.phone}
           receiptNo={previewReceiptNo}
           onClose={() => setShowReceipt(false)}
-          onConfirm={(method) => { setShowReceipt(false); isAdmittedMode ? dischargeAdmitted(method) : save('paid', method); }}
+          onConfirm={(method, grandTotal) => { setShowReceipt(false); isAdmittedMode ? dischargeAdmitted(method, grandTotal) : save('paid', method, grandTotal); }}
           confirmLabel={isAdmittedMode ? 'จำหน่าย + ออกใบเสร็จ' : 'รับชำระ + ปิดเคส'}
         />
       ) : null}

@@ -2579,11 +2579,11 @@ function CaseView({ pet, queueItem, vets, services, stock, allPets, onBack, onFi
     ...((queueItem.dailyRecords || []).flatMap((r) => (r.charges || []).map((c) => ({ name: `${c[0]} (${r.date})`, qty: Number(c[1]) || 1, price: Number(c[2]) || 0 })))),
     ...pendingCharges.map((c) => ({ name: c[0], qty: Number(c[1]) || 1, price: Number(c[2]) || 0 })),
   ] : null;
-  const dischargeAdmitted = (method) => {
+  const dischargeAdmitted = (method, paidTotal) => {
     const extraRec = pendingCharges.length > 0
       ? { date: todayISO(), vet: rec.vet, weight: rec.weight, cc: rec.cc, pe: rec.pe, dx: rec.dx, plan: rec.plan, media: media.filter((m) => !m.session), charges: pendingCharges.map((c) => [c[0], c[1], c[2], c[3] || null]) }
       : null;
-    onDischargeAdmitted && onDischargeAdmitted(queueItem.id, method, extraRec);
+    onDischargeAdmitted && onDischargeAdmitted(queueItem.id, method, extraRec, paidTotal);
     setShowReceipt(false);
     onBack();
   };
@@ -2599,8 +2599,8 @@ function CaseView({ pet, queueItem, vets, services, stock, allPets, onBack, onFi
     media: media.filter((m) => !m.session),
     q: queueItem?.q,  // ผูกกับเลขคิว เพื่อกันบันทึกประวัติซ้ำเมื่อบันทึกรอบเดิมซ้ำ
   });
-  const save = (status, method) => {
-    onFinish && onFinish({ ...pet, visits: [buildVisit(), ...pet.visits] }, queueItem, status, method);
+  const save = (status, method, paidTotal) => {
+    onFinish && onFinish({ ...pet, visits: [buildVisit(), ...pet.visits] }, queueItem, status, method, paidTotal);
   };
 
   return (
@@ -2997,7 +2997,7 @@ function CaseView({ pet, queueItem, vets, services, stock, allPets, onBack, onFi
           petName={pet.name} ownerName={pet.owner.name} ownerPhone={pet.owner.phone}
           receiptNo={previewReceiptNo}
           onClose={() => setShowReceipt(false)}
-          onConfirm={(method) => { setShowReceipt(false); isAdmittedMode ? dischargeAdmitted(method) : save('paid', method); }}
+          onConfirm={(method, grandTotal) => { setShowReceipt(false); isAdmittedMode ? dischargeAdmitted(method, grandTotal) : save('paid', method, grandTotal); }}
           confirmLabel={isAdmittedMode ? 'จำหน่าย + ออกใบเสร็จ' : 'รับชำระ + ปิดเคส'}
         />
       ) : null}
@@ -5679,7 +5679,7 @@ function App() {
     pushToast(`ยกเลิกแอดมิด ${adm.petName} — กลับเข้ารอตรวจ`);
   };
   // จำหน่าย: บันทึกทุกวันที่แอดมิดลงประวัติสัตว์ + ออกใบเสร็จรวม + ปิดคิว
-  const dischargeAdmitted = (admId, method, extraRec) => {
+  const dischargeAdmitted = (admId, method, extraRec, paidTotal) => {
     const adm = admitted.find((a) => a.id === admId);
     if (!adm) return;
     const records = [...(adm.dailyRecords || []), ...(extraRec ? [extraRec] : [])];
@@ -5689,7 +5689,8 @@ function App() {
       media: r.media || [], items: (r.charges || []).map((c) => [c[0], Number(c[1]) || 1, Number(c[2]) || 0, c[3] || null]),
     })).reverse(); // ล่าสุดอยู่หน้าสุด
     const allItems = records.flatMap((r) => (r.charges || []).map((c) => [`${c[0]} (${r.date})`, Number(c[1]) || 1, Number(c[2]) || 0]));
-    const total = allItems.reduce((s, c) => s + c[1] * c[2], 0);
+    // ยอดจริงที่เก็บเงิน (รวม VAT แล้วถ้าเลือกบวก VAT) — ไม่ส่งมาก็ใช้ยอดรวมรายการตามเดิม
+    const total = (paidTotal != null) ? paidTotal : allItems.reduce((s, c) => s + c[1] * c[2], 0);
     const receipt = total > 0 ? nextReceiptNo() : null;
     setState((s) => {
       const con = consumeReceipt(receipt, s);
@@ -5741,12 +5742,14 @@ function App() {
   const hydrated = useRef(false);
   // เครื่องนี้เคยมีข้อมูลจริงในเครื่องไหม (ไม่ใช่ข้อมูลตัวอย่าง seed)
   const hadLocal = useRef(!!localStorage.getItem(LS_KEY));
+  // เวลาอัปเดตล่าสุดที่เครื่องนี้รับรู้/เขียนเอง — ใช้เทียบว่ามีเครื่องอื่นแก้มาใหม่ไหม
+  const lastSyncedAt = useRef(null);
 
   // sync Supabase → local on first load
   useEffect(() => {
     if (!supa) { console.warn('[SB] supabase client not available'); hydrated.current = true; return; }
     console.log('[SB] loading from Supabase...');
-    supa.from('app_state').select('data').eq('id', 'main').maybeSingle().then(({ data, error }) => {
+    supa.from('app_state').select('data, updated_at').eq('id', 'main').maybeSingle().then(({ data, error }) => {
       if (error) {
         console.warn('[SB] load error:', error.message);
         // โหลดไม่ได้: ถ้าเครื่องนี้มีข้อมูลจริงอยู่แล้ว → save ได้ (กันงานค้าง)
@@ -5758,6 +5761,7 @@ function App() {
         console.log('[SB] loaded state from Supabase ✓');
         setState(data.data);
         try { localStorage.setItem(LS_KEY, JSON.stringify(data.data)); } catch (e) {}
+        lastSyncedAt.current = data.updated_at || null;
       } else {
         console.log('[SB] no data in Supabase yet, using localStorage');
       }
@@ -5771,11 +5775,42 @@ function App() {
     if (supa && hydrated.current) {
       clearTimeout(sbSaveTimer);
       sbSaveTimer = setTimeout(() => {
-        supa.from('app_state').upsert({ id: 'main', data: state, updated_at: new Date().toISOString() })
-          .then(({ error }) => { if (error) console.error('[SB] save error:', error.message); else console.log('[SB] saved to Supabase ✓'); });
+        const ts = new Date().toISOString();
+        supa.from('app_state').upsert({ id: 'main', data: state, updated_at: ts })
+          .then(({ error }) => {
+            if (error) console.error('[SB] save error:', error.message);
+            else { lastSyncedAt.current = ts; console.log('[SB] saved to Supabase ✓'); }
+          });
       }, 2000);
     }
   }, [state]);
+
+  // live-sync หลายเครื่อง: ดึงข้อมูลจากเครื่องอื่นมาแสดงทุก 12 วิ (เฉพาะเมื่อมีการแก้ใหม่จริง)
+  useEffect(() => {
+    if (!supa) return;
+    const iv = setInterval(() => {
+      if (!hydrated.current) return;
+      supa.from('app_state').select('updated_at').eq('id', 'main').maybeSingle().then(({ data, error }) => {
+        if (error || !data || !data.updated_at) return;
+        // ยังไม่เคยมีฐานเวลา → จดไว้เฉยๆ ไม่ดึง
+        if (!lastSyncedAt.current) { lastSyncedAt.current = data.updated_at; return; }
+        // ไม่ใหม่กว่าที่เรารู้ (รวมถึงงานที่เราเพิ่งเขียนเอง) → ข้าม
+        if (data.updated_at <= lastSyncedAt.current) return;
+        // มีเครื่องอื่นแก้มาใหม่ → ดึงข้อมูลเต็มมาลง
+        supa.from('app_state').select('data, updated_at').eq('id', 'main').maybeSingle().then(({ data: full }) => {
+          if (!full?.data?.pets || !full?.data?.queue) return;
+          lastSyncedAt.current = full.updated_at || lastSyncedAt.current;
+          setState((cur) => {
+            try { if (JSON.stringify(cur) === JSON.stringify(full.data)) return cur; } catch (e) {}
+            try { localStorage.setItem(LS_KEY, JSON.stringify(full.data)); } catch (e) {}
+            console.log('[SB] synced changes from another device ✓');
+            return full.data;
+          });
+        });
+      });
+    }, 12000);
+    return () => clearInterval(iv);
+  }, []);
 
   // Close nav on ESC
   useEffect(() => {
@@ -5899,7 +5934,7 @@ function App() {
     return [next, n];
   };
 
-  const finishCase = (updatedPet, queueItem, status, payMethod) => {
+  const finishCase = (updatedPet, queueItem, status, payMethod, paidTotal) => {
     // บันทึกใหม่ถูกใส่ไว้หน้าสุดของ visits (ล่าสุดบนสุด)
     const visit = updatedPet.visits[0];
     if (!visit) return;
@@ -5916,7 +5951,9 @@ function App() {
         : [String(c.name || ''), Number(c.qty) || 1, Number(c.price) || 0, c.stockId || null]
     );
     const receiptItems = charges.map((c) => [c[0], c[1], c[2]]);
-    const total = charges.reduce((s, c) => s + (Number(c[1]) || 1) * (Number(c[2]) || 0), 0);
+    const computedTotal = charges.reduce((s, c) => s + (Number(c[1]) || 1) * (Number(c[2]) || 0), 0);
+    // ยอดจริงที่เก็บเงิน (รวม VAT แล้วถ้าเลือกบวก VAT) — ถ้าไม่ได้ส่งมาใช้ยอดรวมรายการตามเดิม
+    const total = (paidTotal != null) ? paidTotal : computedTotal;
     // ผูกบันทึกกับเลขคิว (q): ถ้าคิวนี้เคยบันทึกประวัติไปแล้ว (เช่น เคยส่งแคชเชียร์/กดย้อนกลับ)
     // ให้แทนที่บันทึกเดิม ไม่เพิ่มซ้ำ
     const encId = queueItem?.q;
