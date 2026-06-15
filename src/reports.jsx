@@ -286,18 +286,56 @@ function DonutChart({ data, size = 160 }) {
 }
 
 // ── Excel Export ──
-function exportToExcel(visits, receipts, rangeLabel) {
-  const header = ['วันที่', 'HN', 'ชื่อสัตว์', 'ชนิด', 'เจ้าของ', 'เบอร์โทร', 'CC', 'Dx', 'รายการ', 'จำนวน', 'ราคา/หน่วย', 'รวม'];
-  const rows = [header, ...visits.flatMap((v) => {
-    const items = (v.items || []).map((it) => Array.isArray(it) ? it : [it.name, it.qty, it.price]);
-    if (items.length === 0) return [[v.date, v.petHn, v.petName, v.petSpecies, v.owner?.name || '', v.owner?.phone || '', v.cc || '', v.dx || '', '', '', '', '']];
-    return items.map(([name, qty, price], j) => [
-      j === 0 ? v.date : '', j === 0 ? v.petHn : '', j === 0 ? v.petName : '', j === 0 ? v.petSpecies : '',
-      j === 0 ? (v.owner?.name || '') : '', j === 0 ? (v.owner?.phone || '') : '',
-      j === 0 ? (v.cc || '') : '', j === 0 ? (v.dx || '') : '',
-      name, qty, price, qty * price,
-    ]);
-  }), [], ['สรุปรายรับทั้งสิ้น', '', '', '', '', '', '', '', '', '', '', visits.reduce((s, v) => s + (v.items || []).reduce((ss, c) => { const it = Array.isArray(c) ? c : [c.name, c.qty, c.price]; return ss + (it[1] || 1) * (it[2] || 0); }, 0), 0)]];
+// 1 แถว = 1 ใบเสร็จ/เคส แยกราคารักษา (รวม VAT แล้ว) กับราคาอาหารสัตว์ (ไม่คิด VAT) ออกจากกัน
+// เคส OPD = แยกอาหาร/รักษาตามหมวดสินค้า · ใบเสร็จเพ็ทช้อป = ลงช่องอาหารทั้งใบ (ไม่มีค่ารักษา)
+function exportToExcel(visits, receipts, rangeLabel, stock = [], dateRange = null) {
+  const stockById = {};
+  (stock || []).forEach((st) => { if (st && st.id != null) stockById[st.id] = st; });
+  const isFood = (name, stockId) => {
+    const st = (stockId != null && stockById[stockId]) || (stock || []).find((x) => x && x.name === name);
+    return !!(st && st.cat === 'อาหาร');
+  };
+  const cell = (n) => (n ? n : '');  // ช่องว่างเมื่อเป็น 0 ให้อ่านง่าย
+  const header = ['วันที่', 'HN', 'ชื่อสัตว์', 'ชนิด', 'เจ้าของ', 'เบอร์โทร', 'CC', 'Dx', 'รายการ', 'จำนวน', 'ราคารักษา', 'ราคาอาหารสัตว์', 'รวม'];
+  let sumTreat = 0, sumFood = 0;
+  // แถวจากเคสตรวจรักษา (OPD)
+  const visitRows = visits.map((v) => {
+    const items = (v.items || []).map((it) => Array.isArray(it) ? it : [it.name, it.qty, it.price, it.stockId]);
+    let treat = 0, food = 0, qtyTotal = 0;
+    const names = [];
+    items.forEach(([name, qty, price, stockId]) => {
+      const q = Number(qty) || 1, line = q * (Number(price) || 0);
+      qtyTotal += q;
+      if (name) names.push(name);
+      if (isFood(name, stockId)) food += line; else treat += line;
+    });
+    sumTreat += treat; sumFood += food;
+    return [
+      v.date, v.petHn, v.petName, v.petSpecies,
+      v.owner?.name || '', v.owner?.phone || '', v.cc || '', v.dx || '',
+      names.join(', '), qtyTotal, cell(treat), cell(food), treat + food,
+    ];
+  });
+  // แถวจากใบเสร็จเพ็ทช้อป (ขายอาหาร/สินค้า) — ลงช่องราคาอาหารสัตว์ทั้งใบ ไม่คิด VAT
+  const [rs, re] = dateRange || ['', '￿'];
+  const shopRows = (receipts || [])
+    .filter((r) => r.type === 'shop' && r.date >= rs && r.date <= re)
+    .map((r) => {
+      const items = (r.items || []).map((it) => Array.isArray(it) ? it : [it.name, it.qty, it.price]);
+      let food = 0, qtyTotal = 0;
+      const names = [];
+      items.forEach(([name, qty, price]) => {
+        const q = Number(qty) || 1;
+        qtyTotal += q;
+        if (name) names.push(name);
+        food += q * (Number(price) || 0);
+      });
+      food = food || Number(r.total) || 0;
+      sumFood += food;
+      const owner = r.ownerName && r.ownerName !== '-' ? r.ownerName : '';
+      return [r.date, '', '', '', owner, '', '', '', names.join(', '), qtyTotal, '', food, food];
+    });
+  const rows = [header, ...visitRows, ...shopRows, [], ['สรุปรายรับทั้งสิ้น', '', '', '', '', '', '', '', '', '', sumTreat, sumFood, sumTreat + sumFood]];
   const csv = '\ufeff' + rows.map((r) => r.map((c) => `"${String(c ?? '').replace(/"/g, '""')}"`).join(',')).join('\n');
   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
   const url = URL.createObjectURL(blob);
@@ -377,7 +415,7 @@ function ReportsView({ pets, queue, stock, receipts = [], onCancelReceipt }) {
           <Icon name="printer" size={16} /> Export ใบเสร็จ PDF
           {receipts.length > 0 ? <span className="chip chip-navy" style={{ marginLeft: 6, fontSize: 11 }}>{receipts.length}</span> : null}
         </button>
-        <button className="btn btn-soft" onClick={() => exportToExcel(visits, receipts, rangeLabel)} style={{ color: 'var(--mint-deep)', borderColor: 'var(--mint-deep)' }}>
+        <button className="btn btn-soft" onClick={() => exportToExcel(visits, receipts, rangeLabel, stock, dateRange)} style={{ color: 'var(--mint-deep)', borderColor: 'var(--mint-deep)' }}>
           📅 Export Excel (.csv)
         </button>
       </div>

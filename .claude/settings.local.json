@@ -15,7 +15,16 @@
       "Bash(bash build.sh)",
       "mcp__Claude_Preview__preview_start",
       "Bash(cd \"/d/OPD วังน้อยสัตวแพทย์\" && rm design_bundle && ls -la)",
-      "Bash(node -e \"const xlsx = require\\('xlsx'\\); console.log\\('xlsx ok'\\);\")"
+      "Bash(node -e \"const xlsx = require\\('xlsx'\\); console.log\\('xlsx ok'\\);\")",
+      "Bash(git add *)",
+      "Bash(git commit *)",
+      "Bash(git push *)",
+      "Bash(curl -s -X POST \"https://lvybmnzuzsefsizgszaf.supabase.co/rest/v1/app_state\" -H \"apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imx2eWJtbnp1enNlZnNpemdzemFmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODEyMTk1NjAsImV4cCI6MjA5Njc5NTU2MH0.h2lu10nj9z8aZwREVUsU8b5cnooQSScZ_QhbfC2kuTQ\" -H \"Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imx2eWJtbnp1enNlZnNpemdzemFmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODEyMTk1NjAsImV4cCI6MjA5Njc5NTU2MH0.h2lu10nj9z8aZwREVUsU8b5cnooQSScZ_QhbfC2kuTQ\" -H \"Content-Type: application/json\" -H \"Prefer: return=minimal\" -d '{\"id\":\"test\",\"data\":{\"test\":true}}')",
+      "mcp__Claude_in_Chrome__list_connected_browsers",
+      "mcp__Claude_in_Chrome__switch_browser",
+      "mcp__Claude_in_Chrome__select_browser",
+      "mcp__Claude_in_Chrome__browser_batch",
+      "Bash(node -e ' *)"
     ]
   }
 }
