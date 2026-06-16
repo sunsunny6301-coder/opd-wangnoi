@@ -255,7 +255,8 @@ function AppointmentsView({ appointments, pets, onAdd, onUpdate }) {
 
   const thisWeek = useMemo(() => {
     const end = new Date(); end.setDate(end.getDate() + 7);
-    const endISO = end.toISOString().slice(0, 10);
+    // format แบบ local (toISOString ทำให้วันเพี้ยนใน UTC+7)
+    const endISO = `${end.getFullYear()}-${String(end.getMonth() + 1).padStart(2, '0')}-${String(end.getDate()).padStart(2, '0')}`;
     return upcoming.filter((a) => a.date <= endISO).length;
   }, [upcoming]);
 

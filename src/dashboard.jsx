@@ -706,7 +706,7 @@ function Dashboard({ pets, queue, appointments, admitted, receipts = [], onOpenC
           </div>
           <div style={{ padding: '10px 8px', display: 'flex', flexDirection: 'column', gap: 7, maxHeight: 540, overflowY: 'auto' }}>
             {dayAppts.length === 0 ?
-            <div className="queue-empty" style={{ background: 'transparent', border: '1.5px dashed #B0B8E0', fontSize: 12.5 }}>{apptDay === todayISO ? 'ไม่มีนัดวันนี้' : 'ไม่มีนัดในวันนี้'.replace('วันนี้', typeof dateTHShort !== 'undefined' ? dateTHShort(apptDay) : apptDay)}</div> :
+            <div className="queue-empty" style={{ background: 'transparent', border: '1.5px dashed #B0B8E0', fontSize: 12.5 }}>{apptDay === todayISO ? 'ไม่มีนัดวันนี้' : `ไม่มีนัดวันที่ ${typeof dateTHShort !== 'undefined' ? dateTHShort(apptDay) : apptDay}`}</div> :
             dayAppts.map((a) => {
               const arrived = a.status === 'arrived';
               const alreadyQueued = queue.some((q) => q.hn === a.hn && ['wait', 'exam', 'cashier'].includes(q.status));

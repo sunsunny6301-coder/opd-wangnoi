@@ -8,13 +8,16 @@ const TIME_RANGES = [
   { id: 'year', label: '1 ปี', days: 365 },
 ];
 
+// format วันที่แบบ local (ห้ามใช้ toISOString — UTC+7 ทำให้วันเพี้ยนถอยหลัง 1 วัน)
+function fmtLocalDate(dt) {
+  return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
+}
 function getDateRange(rangeId) {
-  const end = new Date(); end.setHours(23, 59, 59, 999);
+  const end = new Date();
   const start = new Date(end);
   const range = TIME_RANGES.find((r) => r.id === rangeId);
-  if (range.days === 0) start.setHours(0, 0, 0, 0);
-  else { start.setDate(start.getDate() - range.days); start.setHours(0, 0, 0, 0); }
-  return [start.toISOString().slice(0, 10), end.toISOString().slice(0, 10)];
+  if (range.days > 0) start.setDate(start.getDate() - range.days);
+  return [fmtLocalDate(start), fmtLocalDate(end)];
 }
 
 function filterVisits(pets, [s, e]) {
@@ -389,12 +392,14 @@ function ReportsView({ pets, queue, stock, receipts = [], onCancelReceipt }) {
   // bar chart — all days in range chronologically
   const barData = useMemo(() => {
     const [s, e] = dateRange;
+    const [sy, sm, sd] = s.split('-').map(Number);
+    const [ey, em, ed] = e.split('-').map(Number);
+    const cur = new Date(sy, sm - 1, sd);   // สร้างวันแบบ local — ไม่ผ่าน UTC
+    const end = new Date(ey, em - 1, ed);
+    const today = fmtLocalDate(new Date());
     const days = [];
-    const cur = new Date(s);
-    const end = new Date(e);
-    const today = new Date().toISOString().slice(0, 10);
     while (cur <= end) {
-      const d = cur.toISOString().slice(0, 10);
+      const d = fmtLocalDate(cur);
       days.push({ label: d.slice(5), v: m.dailyRevenue[d] || 0, today: d === today });
       cur.setDate(cur.getDate() + 1);
     }

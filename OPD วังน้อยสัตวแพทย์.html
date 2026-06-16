@@ -2271,7 +2271,7 @@ function Dashboard({ pets, queue, appointments, admitted, receipts = [], onOpenC
           </div>
           <div style={{ padding: '10px 8px', display: 'flex', flexDirection: 'column', gap: 7, maxHeight: 540, overflowY: 'auto' }}>
             {dayAppts.length === 0 ?
-            <div className="queue-empty" style={{ background: 'transparent', border: '1.5px dashed #B0B8E0', fontSize: 12.5 }}>{apptDay === todayISO ? 'ไม่มีนัดวันนี้' : 'ไม่มีนัดในวันนี้'.replace('วันนี้', typeof dateTHShort !== 'undefined' ? dateTHShort(apptDay) : apptDay)}</div> :
+            <div className="queue-empty" style={{ background: 'transparent', border: '1.5px dashed #B0B8E0', fontSize: 12.5 }}>{apptDay === todayISO ? 'ไม่มีนัดวันนี้' : `ไม่มีนัดวันที่ ${typeof dateTHShort !== 'undefined' ? dateTHShort(apptDay) : apptDay}`}</div> :
             dayAppts.map((a) => {
               const arrived = a.status === 'arrived';
               const alreadyQueued = queue.some((q) => q.hn === a.hn && ['wait', 'exam', 'cashier'].includes(q.status));
@@ -3897,13 +3897,16 @@ const TIME_RANGES = [
   { id: 'year', label: '1 ปี', days: 365 },
 ];
 
+// format วันที่แบบ local (ห้ามใช้ toISOString — UTC+7 ทำให้วันเพี้ยนถอยหลัง 1 วัน)
+function fmtLocalDate(dt) {
+  return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
+}
 function getDateRange(rangeId) {
-  const end = new Date(); end.setHours(23, 59, 59, 999);
+  const end = new Date();
   const start = new Date(end);
   const range = TIME_RANGES.find((r) => r.id === rangeId);
-  if (range.days === 0) start.setHours(0, 0, 0, 0);
-  else { start.setDate(start.getDate() - range.days); start.setHours(0, 0, 0, 0); }
-  return [start.toISOString().slice(0, 10), end.toISOString().slice(0, 10)];
+  if (range.days > 0) start.setDate(start.getDate() - range.days);
+  return [fmtLocalDate(start), fmtLocalDate(end)];
 }
 
 function filterVisits(pets, [s, e]) {
@@ -4278,12 +4281,14 @@ function ReportsView({ pets, queue, stock, receipts = [], onCancelReceipt }) {
   // bar chart — all days in range chronologically
   const barData = useMemo(() => {
     const [s, e] = dateRange;
+    const [sy, sm, sd] = s.split('-').map(Number);
+    const [ey, em, ed] = e.split('-').map(Number);
+    const cur = new Date(sy, sm - 1, sd);   // สร้างวันแบบ local — ไม่ผ่าน UTC
+    const end = new Date(ey, em - 1, ed);
+    const today = fmtLocalDate(new Date());
     const days = [];
-    const cur = new Date(s);
-    const end = new Date(e);
-    const today = new Date().toISOString().slice(0, 10);
     while (cur <= end) {
-      const d = cur.toISOString().slice(0, 10);
+      const d = fmtLocalDate(cur);
       days.push({ label: d.slice(5), v: m.dailyRevenue[d] || 0, today: d === today });
       cur.setDate(cur.getDate() + 1);
     }
@@ -4691,7 +4696,8 @@ function AppointmentsView({ appointments, pets, onAdd, onUpdate }) {
 
   const thisWeek = useMemo(() => {
     const end = new Date(); end.setDate(end.getDate() + 7);
-    const endISO = end.toISOString().slice(0, 10);
+    // format แบบ local (toISOString ทำให้วันเพี้ยนใน UTC+7)
+    const endISO = `${end.getFullYear()}-${String(end.getMonth() + 1).padStart(2, '0')}-${String(end.getDate()).padStart(2, '0')}`;
     return upcoming.filter((a) => a.date <= endISO).length;
   }, [upcoming]);
 
@@ -6233,37 +6239,34 @@ function App() {
     // ผูกบันทึกกับเลขคิว (q): ถ้าคิวนี้เคยบันทึกประวัติไปแล้ว (เช่น เคยส่งแคชเชียร์/กดย้อนกลับ)
     // ให้แทนที่บันทึกเดิม ไม่เพิ่มซ้ำ
     const encId = queueItem?.q;
-    const mergedVisits = encId
-      ? [updatedPet.visits[0], ...updatedPet.visits.slice(1).filter((v) => v.q !== encId)]
-      : updatedPet.visits;
-    let newPets = pets.map((p) => p.hn === updatedPet.hn ? { ...updatedPet, visits: mergedVisits } : p);
-    let newQueue = queue;
-    let newReceipts = receipts;
-    let newSeq = receiptSeq;
-    let newVoids = receiptVoids;
-    let newStock = stock;
-    let newShopStock = shopStock;
-    let deducted = 0;
+    // เลขใบเสร็จดึงครั้งเดียว (เหมือน payFromBoard) แล้วค่อย apply กับ state ล่าสุดใน setState
+    const receipt = status === 'paid' ? nextReceiptNo() : null;
+    // จำนวนรายการที่ตัดสต็อก — ใช้แสดง toast เท่านั้น (นับจาก charges ที่มี stockId)
+    const deducted = status === 'paid' ? charges.filter((c) => c[3]).length : 0;
 
-    if (status === 'paid') {
-      const receipt = nextReceiptNo();
-      if (receipt.fromPool) {
-        newVoids = { ...receiptVoids, [receipt.year]: (receiptVoids[receipt.year] || []).filter((n) => n !== receipt.seq) };
-      } else {
-        newSeq = { ...receiptSeq, [receipt.year]: receipt.seq };
+    // อัปเดตทุกอย่างจาก state ล่าสุด (s) ไม่ใช่ closure — กันข้อมูลอีกเครื่องที่ sync เข้ามาหาย/เลขใบเสร็จซ้ำ
+    setState((s) => {
+      const mergedVisits = encId
+        ? [updatedPet.visits[0], ...updatedPet.visits.slice(1).filter((v) => v.q !== encId)]
+        : updatedPet.visits;
+      const newPets = (s.pets || []).map((p) => p.hn === updatedPet.hn ? { ...updatedPet, visits: mergedVisits } : p);
+      let newQueue = s.queue || [];
+      let newReceipts = s.receipts || [];
+      let newStock = s.stock || [];
+      let newShopStock = s.shopStock || s.stock || [];
+      let con = { receiptSeq: s.receiptSeq || {}, receiptVoids: s.receiptVoids || {} };
+      if (status === 'paid') {
+        con = consumeReceipt(receipt, s);
+        newReceipts = [...newReceipts, { no: receipt.no, date: todayISO(), type: 'opd', petName: updatedPet.name, ownerName: updatedPet.owner.name, hn: updatedPet.hn, q: queueItem?.q || '', items: receiptItems, method: payMethod || 'เงินสด', total, noVat: noVatAmt }];
+        newQueue = queueItem?.q ? newQueue.map((x) => x.q === queueItem.q ? { ...x, status: 'done', paid: total, doneDate: todayISO() } : x) : newQueue;
+        // ตัดสต็อก: รายการเพ็ทช้อป (origin='shop') ตัดจากคลังเพ็ทช้อป, ที่เหลือตัดจากคลังคลินิก
+        [newStock] = deductStock(newStock, charges.filter((c) => c[3] && c[4] !== 'shop').map((c) => ({ stockId: c[3], qty: c[1] })));
+        [newShopStock] = deductStock(newShopStock, charges.filter((c) => c[3] && c[4] === 'shop').map((c) => ({ stockId: c[3], qty: c[1] })));
+      } else if (status === 'cashier') {
+        newQueue = queueItem?.q ? newQueue.map((x) => x.q === queueItem.q ? { ...x, status: 'cashier', charges } : x) : newQueue;
       }
-      newReceipts = [...receipts, { no: receipt.no, date: todayISO(), type: 'opd', petName: updatedPet.name, ownerName: updatedPet.owner.name, hn: updatedPet.hn, q: queueItem?.q || '', items: receiptItems, method: payMethod || 'เงินสด', total, noVat: noVatAmt }];
-      newQueue = queueItem?.q ? queue.map((x) => x.q === queueItem.q ? { ...x, status: 'done', paid: total, doneDate: todayISO() } : x) : queue;
-      // ตัดสต็อก: รายการเพ็ทช้อป (origin='shop') ตัดจากคลังเพ็ทช้อป, ที่เหลือตัดจากคลังคลินิก
-      let dC = 0, dS = 0;
-      [newStock, dC] = deductStock(stock, charges.filter((c) => c[3] && c[4] !== 'shop').map((c) => ({ stockId: c[3], qty: c[1] })));
-      [newShopStock, dS] = deductStock(shopStock, charges.filter((c) => c[3] && c[4] === 'shop').map((c) => ({ stockId: c[3], qty: c[1] })));
-      deducted = dC + dS;
-    } else if (status === 'cashier') {
-      newQueue = queueItem?.q ? queue.map((x) => x.q === queueItem.q ? { ...x, status: 'cashier', charges } : x) : queue;
-    }
-
-    setState((s) => ({ ...s, pets: newPets, queue: newQueue, receipts: newReceipts, receiptSeq: newSeq, receiptVoids: newVoids, stock: newStock, shopStock: newShopStock }));
+      return { ...s, pets: newPets, queue: newQueue, receipts: newReceipts, receiptSeq: con.receiptSeq, receiptVoids: con.receiptVoids, stock: newStock, shopStock: newShopStock };
+    });
     setPage('dashboard');
     setCaseCtx(null);
     pushToast(status === 'paid'

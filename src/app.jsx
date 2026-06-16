@@ -361,37 +361,34 @@ function App() {
     // ผูกบันทึกกับเลขคิว (q): ถ้าคิวนี้เคยบันทึกประวัติไปแล้ว (เช่น เคยส่งแคชเชียร์/กดย้อนกลับ)
     // ให้แทนที่บันทึกเดิม ไม่เพิ่มซ้ำ
     const encId = queueItem?.q;
-    const mergedVisits = encId
-      ? [updatedPet.visits[0], ...updatedPet.visits.slice(1).filter((v) => v.q !== encId)]
-      : updatedPet.visits;
-    let newPets = pets.map((p) => p.hn === updatedPet.hn ? { ...updatedPet, visits: mergedVisits } : p);
-    let newQueue = queue;
-    let newReceipts = receipts;
-    let newSeq = receiptSeq;
-    let newVoids = receiptVoids;
-    let newStock = stock;
-    let newShopStock = shopStock;
-    let deducted = 0;
+    // เลขใบเสร็จดึงครั้งเดียว (เหมือน payFromBoard) แล้วค่อย apply กับ state ล่าสุดใน setState
+    const receipt = status === 'paid' ? nextReceiptNo() : null;
+    // จำนวนรายการที่ตัดสต็อก — ใช้แสดง toast เท่านั้น (นับจาก charges ที่มี stockId)
+    const deducted = status === 'paid' ? charges.filter((c) => c[3]).length : 0;
 
-    if (status === 'paid') {
-      const receipt = nextReceiptNo();
-      if (receipt.fromPool) {
-        newVoids = { ...receiptVoids, [receipt.year]: (receiptVoids[receipt.year] || []).filter((n) => n !== receipt.seq) };
-      } else {
-        newSeq = { ...receiptSeq, [receipt.year]: receipt.seq };
+    // อัปเดตทุกอย่างจาก state ล่าสุด (s) ไม่ใช่ closure — กันข้อมูลอีกเครื่องที่ sync เข้ามาหาย/เลขใบเสร็จซ้ำ
+    setState((s) => {
+      const mergedVisits = encId
+        ? [updatedPet.visits[0], ...updatedPet.visits.slice(1).filter((v) => v.q !== encId)]
+        : updatedPet.visits;
+      const newPets = (s.pets || []).map((p) => p.hn === updatedPet.hn ? { ...updatedPet, visits: mergedVisits } : p);
+      let newQueue = s.queue || [];
+      let newReceipts = s.receipts || [];
+      let newStock = s.stock || [];
+      let newShopStock = s.shopStock || s.stock || [];
+      let con = { receiptSeq: s.receiptSeq || {}, receiptVoids: s.receiptVoids || {} };
+      if (status === 'paid') {
+        con = consumeReceipt(receipt, s);
+        newReceipts = [...newReceipts, { no: receipt.no, date: todayISO(), type: 'opd', petName: updatedPet.name, ownerName: updatedPet.owner.name, hn: updatedPet.hn, q: queueItem?.q || '', items: receiptItems, method: payMethod || 'เงินสด', total, noVat: noVatAmt }];
+        newQueue = queueItem?.q ? newQueue.map((x) => x.q === queueItem.q ? { ...x, status: 'done', paid: total, doneDate: todayISO() } : x) : newQueue;
+        // ตัดสต็อก: รายการเพ็ทช้อป (origin='shop') ตัดจากคลังเพ็ทช้อป, ที่เหลือตัดจากคลังคลินิก
+        [newStock] = deductStock(newStock, charges.filter((c) => c[3] && c[4] !== 'shop').map((c) => ({ stockId: c[3], qty: c[1] })));
+        [newShopStock] = deductStock(newShopStock, charges.filter((c) => c[3] && c[4] === 'shop').map((c) => ({ stockId: c[3], qty: c[1] })));
+      } else if (status === 'cashier') {
+        newQueue = queueItem?.q ? newQueue.map((x) => x.q === queueItem.q ? { ...x, status: 'cashier', charges } : x) : newQueue;
       }
-      newReceipts = [...receipts, { no: receipt.no, date: todayISO(), type: 'opd', petName: updatedPet.name, ownerName: updatedPet.owner.name, hn: updatedPet.hn, q: queueItem?.q || '', items: receiptItems, method: payMethod || 'เงินสด', total, noVat: noVatAmt }];
-      newQueue = queueItem?.q ? queue.map((x) => x.q === queueItem.q ? { ...x, status: 'done', paid: total, doneDate: todayISO() } : x) : queue;
-      // ตัดสต็อก: รายการเพ็ทช้อป (origin='shop') ตัดจากคลังเพ็ทช้อป, ที่เหลือตัดจากคลังคลินิก
-      let dC = 0, dS = 0;
-      [newStock, dC] = deductStock(stock, charges.filter((c) => c[3] && c[4] !== 'shop').map((c) => ({ stockId: c[3], qty: c[1] })));
-      [newShopStock, dS] = deductStock(shopStock, charges.filter((c) => c[3] && c[4] === 'shop').map((c) => ({ stockId: c[3], qty: c[1] })));
-      deducted = dC + dS;
-    } else if (status === 'cashier') {
-      newQueue = queueItem?.q ? queue.map((x) => x.q === queueItem.q ? { ...x, status: 'cashier', charges } : x) : queue;
-    }
-
-    setState((s) => ({ ...s, pets: newPets, queue: newQueue, receipts: newReceipts, receiptSeq: newSeq, receiptVoids: newVoids, stock: newStock, shopStock: newShopStock }));
+      return { ...s, pets: newPets, queue: newQueue, receipts: newReceipts, receiptSeq: con.receiptSeq, receiptVoids: con.receiptVoids, stock: newStock, shopStock: newShopStock };
+    });
     setPage('dashboard');
     setCaseCtx(null);
     pushToast(status === 'paid'
