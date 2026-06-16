@@ -702,7 +702,7 @@ function CaseView({ pet, queueItem, vets, services, stock, shopStock = [], allPe
                         <div style={{ fontSize: 12, color: 'var(--ink-faint)', display: 'flex', alignItems: 'center', gap: 5 }}>
                           <Icon name="user" size={13} /> {v.vet}
                         </div>
-                        <button className="btn btn-sm" onClick={() => setEditVisit({ date: v.date, weight: v.weight, cc: v.cc, pe: v.pe, dx: v.dx, plan: v.plan, media: v.media || [], _orig: v })} style={{ marginTop: 8 }}><Icon name="edit" size={13} /> แก้ไข</button>
+                        <button className="btn btn-sm" onClick={() => setEditVisit({ date: v.date, weight: v.weight, cc: v.cc, pe: v.pe, dx: v.dx, plan: v.plan, media: v.media || [], items: v.items || [], _orig: v })} style={{ marginTop: 8 }}><Icon name="edit" size={13} /> แก้ไข</button>
                       </>
                     )}
                   </div>
@@ -738,6 +738,30 @@ function CaseView({ pet, queueItem, vets, services, stock, shopStock = [], allPe
               <Field label="การวินิจฉัย (Dx)" style={{ gridColumn: '1/-1' }}><textarea className="textarea" rows="2" value={editVisit.dx || ''} onChange={(e) => setEditVisit({ ...editVisit, dx: e.target.value })} placeholder="การวินิจฉัย..." /></Field>
               <Field label="แผนการรักษา (Plan)" style={{ gridColumn: '1/-1' }}><textarea className="textarea" rows="2" value={editVisit.plan || ''} onChange={(e) => setEditVisit({ ...editVisit, plan: e.target.value })} placeholder="ขั้นตอนการรักษา..." /></Field>
             </div>
+            {/* รายการค่าใช้จ่ายที่เคยคีย์ไว้ (อ่านอย่างเดียว) — ถ้าต้องแก้ราคา/ตัดสต็อก ให้แก้ในช่องค่าใช้จ่ายของเคสนี้ */}
+            {(editVisit.items || []).length > 0 ? (
+              <div>
+                <div style={{ fontWeight: 700, fontSize: 13, color: 'var(--ink-soft)', marginBottom: 8 }}>💊 รายการค่าใช้จ่ายเดิม</div>
+                <div style={{ border: '1px solid var(--line)', borderRadius: 'var(--radius-sm)', overflow: 'hidden' }}>
+                  {(editVisit.items || []).map((it, i) => {
+                    const name = Array.isArray(it) ? it[0] : (it && it.name) || '';
+                    const qty = Number(Array.isArray(it) ? it[1] : (it && it.qty)) || 1;
+                    const price = Number(Array.isArray(it) ? it[2] : (it && it.price)) || 0;
+                    return (
+                      <div key={i} style={{ display: 'flex', justifyContent: 'space-between', gap: 8, padding: '6px 12px', borderBottom: i < (editVisit.items.length - 1) ? '1px solid var(--line-soft)' : 'none', fontSize: 13 }}>
+                        <span>{name} {qty > 1 ? <span style={{ color: 'var(--ink-faint)' }}>× {qty}</span> : null}</span>
+                        <span style={{ fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>{fmtB(qty * price)}</span>
+                      </div>
+                    );
+                  })}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, padding: '7px 12px', background: 'var(--paper)', fontWeight: 700, fontSize: 13 }}>
+                    <span>รวม</span>
+                    <span style={{ fontVariantNumeric: 'tabular-nums' }}>{fmtB((editVisit.items || []).reduce((s, it) => { const q = Number(Array.isArray(it) ? it[1] : (it && it.qty)) || 1; const p = Number(Array.isArray(it) ? it[2] : (it && it.price)) || 0; return s + q * p; }, 0))}</span>
+                  </div>
+                </div>
+                <div style={{ fontSize: 11.5, color: 'var(--ink-faint)', marginTop: 5 }}>* แก้ไขรายการ/ราคาได้ที่ช่อง “ค่าใช้จ่าย” ของเคสนี้ (เพื่อให้ตัดสต็อก/คิด VAT ถูกต้อง)</div>
+              </div>
+            ) : null}
             <div>
               <div style={{ fontWeight: 700, fontSize: 13, color: 'var(--ink-soft)', marginBottom: 8 }}>📷 รูปภาพ / วิดีโอ</div>
               <MediaUpload media={editVisit.media || []} onChange={(m) => setEditVisit({ ...editVisit, media: m })} />

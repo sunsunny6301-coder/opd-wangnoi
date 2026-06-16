@@ -155,6 +155,10 @@ function ReceiptExportModal({ receipts, onClose }) {
           {filtered.length > 0
             ? <span>{filtered.length} ใบ · ยอดรวม <b>{fmtB(total)}</b></span>
             : <span style={{ color: 'var(--ink-faint)' }}>ไม่มีใบเสร็จในเดือนนี้</span>}
+          {/* ปุ่มพิมพ์ด้านบน — ไม่ต้องเลื่อนลงไปท้ายสุดเวลาใบเสร็จเยอะ */}
+          <button className="btn btn-primary btn-sm" style={{ marginLeft: 'auto' }} onClick={() => window.print()} disabled={filtered.length === 0}>
+            <Icon name="printer" size={15} /> พิมพ์ PDF — {filtered.length} ใบ
+          </button>
         </div>
       </div>
 
@@ -364,9 +368,80 @@ function SimpleBar({ label, value, max, color }) {
   );
 }
 
-function ReportsView({ pets, queue, stock, receipts = [], onCancelReceipt }) {
+// ── แก้ไขใบเสร็จถาวร (ชื่อ/รายการ/ยอด/วันที่) — บันทึกแล้วสะท้อนใน export ทันที ──
+function ReceiptEditModal({ receipt, onClose, onSave, onOpenPet }) {
+  const [petName, setPetName] = useState(receipt.petName || '');
+  const [ownerName, setOwnerName] = useState(receipt.ownerName || '');
+  const [method, setMethod] = useState(receipt.method || 'เงินสด');
+  const [date, setDate] = useState(receipt.date || '');
+  const [items, setItems] = useState(
+    (receipt.items || []).map((it) => Array.isArray(it)
+      ? { name: it[0] || '', qty: Number(it[1]) || 1, price: Number(it[2]) || 0 }
+      : { name: it.name || '', qty: Number(it.qty) || 1, price: Number(it.price) || 0 })
+  );
+  const total = items.reduce((s, it) => s + (Number(it.qty) || 0) * (Number(it.price) || 0), 0);
+  const setItem = (i, k, v) => setItems((prev) => prev.map((x, ix) => ix === i ? { ...x, [k]: v } : x));
+  const addItem = () => setItems((prev) => [...prev, { name: '', qty: 1, price: 0 }]);
+  const delItem = (i) => setItems((prev) => prev.filter((_, ix) => ix !== i));
+  const save = () => {
+    const cleanItems = items.filter((it) => String(it.name).trim())
+      .map((it) => [String(it.name).trim(), Number(it.qty) || 1, Number(it.price) || 0]);
+    const newTotal = cleanItems.reduce((s, c) => s + c[1] * c[2], 0);
+    const newNoVat = Math.min(Number(receipt.noVat) || 0, newTotal); // กัน noVat เกินยอดรวมหลังแก้
+    onSave({ petName: petName.trim() || '-', ownerName: ownerName.trim() || '-', method, date, items: cleanItems, total: newTotal, noVat: newNoVat });
+  };
+  const cellInput = { padding: '5px 8px', fontSize: 13 };
+  return (
+    <Modal title={`✏️ แก้ไขใบเสร็จ ${receipt.no}`} onClose={onClose} wide footer={<>
+      <button className="btn" onClick={onClose}>ยกเลิก (ไม่บันทึก)</button>
+      <button className="btn btn-primary" onClick={save}><Icon name="check" size={16} /> บันทึกลงระบบ — {fmtB(total)}</button>
+    </>}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+        {receipt.hn && onOpenPet ? (
+          <div style={{ background: 'var(--mint-soft)', borderRadius: 'var(--radius-sm)', padding: '8px 12px', fontSize: 12.5, color: 'var(--mint-deep)', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+            <span>HN {receipt.hn} — ถ้าต้องการแก้รายการรักษาพร้อมตัดสต็อก แนะนำให้เข้าเคสนี้</span>
+            <button className="btn btn-sm" style={{ marginLeft: 'auto' }} onClick={() => onOpenPet(receipt.hn)}><Icon name="arrowR" size={13} /> เข้าเคสนี้</button>
+          </div>
+        ) : null}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+          <Field label="วันที่"><input className="input" type="date" value={date} onChange={(e) => setDate(e.target.value)} /></Field>
+          <Field label="ช่องทางชำระ">
+            <select className="select" value={method} onChange={(e) => setMethod(e.target.value)}>
+              {['เงินสด', 'โอนเงิน', 'บัตรเครดิต'].map((m) => <option key={m}>{m}</option>)}
+            </select>
+          </Field>
+          <Field label="ชื่อสัตว์เลี้ยง"><input className="input" value={petName} onChange={(e) => setPetName(e.target.value)} placeholder="—" /></Field>
+          <Field label="ชื่อเจ้าของ"><input className="input" value={ownerName} onChange={(e) => setOwnerName(e.target.value)} placeholder="—" /></Field>
+        </div>
+        <div>
+          <div style={{ fontWeight: 700, fontSize: 13, color: 'var(--ink-soft)', marginBottom: 8 }}>รายการในใบเสร็จ</div>
+          <table className="tbl">
+            <thead><tr><th>รายการ</th><th className="num" style={{ width: 90 }}>จำนวน</th><th className="num" style={{ width: 110 }}>ราคา/หน่วย</th><th className="num" style={{ width: 110 }}>รวม</th><th style={{ width: 40 }}></th></tr></thead>
+            <tbody>
+              {items.map((it, i) => (
+                <tr key={i}>
+                  <td><input className="input" style={cellInput} value={it.name} onChange={(e) => setItem(i, 'name', e.target.value)} placeholder="ชื่อรายการ" /></td>
+                  <td><input className="input" style={{ ...cellInput, textAlign: 'right' }} type="number" value={it.qty} onChange={(e) => setItem(i, 'qty', e.target.value)} /></td>
+                  <td><input className="input" style={{ ...cellInput, textAlign: 'right' }} type="number" value={it.price} onChange={(e) => setItem(i, 'price', e.target.value)} /></td>
+                  <td className="num" style={{ fontWeight: 700 }}>{fmtB((Number(it.qty) || 0) * (Number(it.price) || 0))}</td>
+                  <td style={{ textAlign: 'center' }}><button className="btn btn-sm" style={{ color: 'var(--blush-deep)', padding: '2px 7px' }} onClick={() => delItem(i)}>🗑</button></td>
+                </tr>
+              ))}
+            </tbody>
+            <tfoot><tr style={{ background: 'var(--paper)' }}><td colSpan={3} style={{ fontWeight: 700, textAlign: 'right', padding: '8px 12px' }}>ยอดรวมทั้งสิ้น</td><td className="num" style={{ fontWeight: 800 }}>{fmtB(total)}</td><td></td></tr></tfoot>
+          </table>
+          <button className="btn btn-sm" style={{ marginTop: 8 }} onClick={addItem}><Icon name="plus" size={13} /> เพิ่มรายการ</button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+function ReportsView({ pets, queue, stock, receipts = [], onCancelReceipt, onUpdateReceipt, onOpenPet }) {
   const [range, setRange] = useState('week');
   const [showExport, setShowExport] = useState(false);
+  const [editReceipt, setEditReceipt] = useState(null);
+  const [rcSearch, setRcSearch] = useState('');
   const dateRange = useMemo(() => getDateRange(range), [range]);
   // เฉพาะเคสที่ยังมีใบเสร็จจริง (ตัดเคสที่ใบเสร็จถูกยกเลิกออก ให้ยอด/กราฟตรงกับใบเสร็จและไฟล์ export)
   const visits = useMemo(() => {
@@ -515,13 +590,29 @@ function ReportsView({ pets, queue, stock, receipts = [], onCancelReceipt }) {
         {/* Receipts summary */}
         <div className="card">
           <div className="card-head"><span>สรุปใบเสร็จ</span><span className="chip chip-navy">{receipts.length} ใบ</span></div>
+          {/* ช่องค้นหาเลขใบเสร็จ/ชื่อ */}
+          <div style={{ padding: '8px 12px', borderBottom: '1px solid var(--line)' }}>
+            <div className="search-wrap">
+              <Icon name="search" size={15} />
+              <input className="search-input" placeholder="ค้นหาเลขใบเสร็จ / ชื่อสัตว์ / เจ้าของ..." value={rcSearch} onChange={(e) => setRcSearch(e.target.value)} />
+            </div>
+          </div>
           <div className="card-pad" style={{ maxHeight: 320, overflowY: 'auto' }}>
-            {receipts.length === 0
-              ? <div className="queue-empty">ยังไม่มีใบเสร็จ — ชำระเงินเคสแรกเพื่อเริ่ม</div>
-              : receipts.slice().reverse().map((r, i) => (
+            {(() => {
+              const q = rcSearch.trim().toLowerCase();
+              const list = receipts.slice().reverse().filter((r) => !q
+                || String(r.no || '').toLowerCase().includes(q)
+                || String(r.petName || '').toLowerCase().includes(q)
+                || String(r.ownerName || '').toLowerCase().includes(q));
+              if (receipts.length === 0) return <div className="queue-empty">ยังไม่มีใบเสร็จ — ชำระเงินเคสแรกเพื่อเริ่ม</div>;
+              if (list.length === 0) return <div className="queue-empty">ไม่พบใบเสร็จที่ค้นหา</div>;
+              return list.map((r, i) => (
                 <div key={r.no || i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, padding: '6px 0', borderBottom: '1px solid var(--line-soft)', fontSize: 13.5 }}>
                   <div style={{ minWidth: 0 }}>
-                    <span style={{ fontWeight: 700, color: 'var(--navy)' }}>{r.no}</span>
+                    <button onClick={() => onUpdateReceipt && setEditReceipt(r)} title="คลิกเพื่อดู/แก้ไขใบเสร็จ"
+                      style={{ background: 'none', border: 'none', padding: 0, cursor: onUpdateReceipt ? 'pointer' : 'default', fontWeight: 700, color: 'var(--navy)', textDecoration: onUpdateReceipt ? 'underline' : 'none', textUnderlineOffset: 2 }}>
+                      {r.no}
+                    </button>
                     <span style={{ color: 'var(--ink-faint)', marginLeft: 8 }}>{r.petName !== '-' ? r.petName : 'เพ็ทช้อป'}</span>
                   </div>
                   <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexShrink: 0 }}>
@@ -536,12 +627,21 @@ function ReportsView({ pets, queue, stock, receipts = [], onCancelReceipt }) {
                     )}
                   </div>
                 </div>
-              ))}
+              ));
+            })()}
           </div>
         </div>
       </div>
 
       {showExport ? <ReceiptExportModal receipts={receipts} onClose={() => setShowExport(false)} /> : null}
+      {editReceipt ? (
+        <ReceiptEditModal
+          receipt={editReceipt}
+          onClose={() => setEditReceipt(null)}
+          onOpenPet={onOpenPet}
+          onSave={(patch) => { onUpdateReceipt && onUpdateReceipt(editReceipt.no, patch); setEditReceipt(null); }}
+        />
+      ) : null}
     </div>
   );
 }
