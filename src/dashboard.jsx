@@ -605,12 +605,23 @@ const CAT_CALICO = {
     { fill: '#ED9A4C', cx: 44, cy: 11.5, rx: 5, ry: 4 },
   ],
 };
+// แมวขาวดำ (ทักซิโด้): ตัวดำ + อก/พุง/อุ้งเท้า/ปากขาว + แต้มดำบนหัว + ขีดขาวกลางหน้า
+const CAT_TUXEDO = {
+  body: '#2E2B33', belly: '#FFFFFF', stripe: '#1B1920', ear: '#F4A9B8', eye: '#7CC368', nose: '#E2738F',
+  patches: [
+    { fill: '#FFFFFF', cx: 41, cy: 35, rx: 7, ry: 4.5 },
+  ],
+  headPatches: [
+    { fill: '#FFFFFF', cx: 48, cy: 21, rx: 3, ry: 5 },
+  ],
+};
 function FgCats() {
   return (
     <div className="fg-cats" aria-hidden="true">
       <span className="fg-cat fg-cat-a"><span className="fg-act"><span className="fg-bob"><CatColor {...CAT_GINGER} /></span></span></span>
       <span className="fg-cat fg-cat-b"><span className="fg-act"><span className="fg-bob"><CatColor {...CAT_GRAY} /></span></span></span>
       <span className="fg-cat fg-cat-c"><span className="fg-act"><span className="fg-bob"><CatColor {...CAT_CALICO} /></span></span></span>
+      <span className="fg-cat fg-cat-d"><span className="fg-act"><span className="fg-bob"><CatColor {...CAT_TUXEDO} /></span></span></span>
     </div>
   );
 }

@@ -475,6 +475,10 @@ button, input, select, textarea { font-family: inherit; font-size: inherit; colo
 .fg-cat-c .fg-act { animation: catAct 13s ease-in-out infinite; animation-delay: -8s; }
 .fg-cat-c .fg-bob { animation: catBob2 0.52s ease-in-out infinite; }
 
+.fg-cat-d { opacity: .92; animation: roamD 51s ease-in-out infinite; animation-delay: -33s; }
+.fg-cat-d .fg-act { animation: catAct 13.5s ease-in-out infinite; animation-delay: -3s; }
+.fg-cat-d .fg-bob { animation: catBob2 0.53s ease-in-out infinite; }
+
 /* แต่ละตัวเดินคนละเส้นทาง ครอบคลุมทั้งจอ (ค้นหา/รอตรวจ/กำลังตรวจ/ชำระเงิน/เสร็จแล้ว/ที่ว่าง) */
 @keyframes roamA {
   0%   { transform: translate(3vw, 14vh)  scaleX(1); }
@@ -510,6 +514,17 @@ button, input, select, textarea { font-family: inherit; font-size: inherit; colo
   84%  { transform: translate(46vw, 50vh) scaleX(-1); }
   100% { transform: translate(36vw, 44vh) scaleX(1); }
 }
+@keyframes roamD {
+  0%   { transform: translate(78vw, 60vh) scaleX(-1); }
+  13%  { transform: translate(50vw, 70vh) scaleX(-1); }
+  26%  { transform: translate(20vw, 50vh) scaleX(1); }
+  38%  { transform: translate(8vw, 80vh)  scaleX(1); }
+  50%  { transform: translate(42vw, 86vh) scaleX(1); }
+  62%  { transform: translate(66vw, 68vh) scaleX(1); }
+  74%  { transform: translate(76vw, 34vh) scaleX(-1); }
+  86%  { transform: translate(52vw, 20vh) scaleX(-1); }
+  100% { transform: translate(78vw, 60vh) scaleX(-1); }
+}
 /* ท่าเล่น: กระโดด → ล้มตัวนอนหงาย+กลิ้ง 1 รอบ → เขี่ยเล่น (วนถี่ขณะเดิน) */
 @keyframes catAct {
   0%, 9% { transform: translateY(0) rotate(0deg); }
@@ -534,6 +549,7 @@ button, input, select, textarea { font-family: inherit; font-size: inherit; colo
   .fg-cat-a { transform: translate(12vw, 18vh); }
   .fg-cat-b { transform: translate(60vw, 70vh); }
   .fg-cat-c { transform: translate(40vw, 45vh); }
+  .fg-cat-d { transform: translate(78vw, 30vh); }
 }
 </style>
 </head>
@@ -2154,12 +2170,23 @@ const CAT_CALICO = {
     { fill: '#ED9A4C', cx: 44, cy: 11.5, rx: 5, ry: 4 },
   ],
 };
+// แมวขาวดำ (ทักซิโด้): ตัวดำ + อก/พุง/อุ้งเท้า/ปากขาว + แต้มดำบนหัว + ขีดขาวกลางหน้า
+const CAT_TUXEDO = {
+  body: '#2E2B33', belly: '#FFFFFF', stripe: '#1B1920', ear: '#F4A9B8', eye: '#7CC368', nose: '#E2738F',
+  patches: [
+    { fill: '#FFFFFF', cx: 41, cy: 35, rx: 7, ry: 4.5 },
+  ],
+  headPatches: [
+    { fill: '#FFFFFF', cx: 48, cy: 21, rx: 3, ry: 5 },
+  ],
+};
 function FgCats() {
   return (
     <div className="fg-cats" aria-hidden="true">
       <span className="fg-cat fg-cat-a"><span className="fg-act"><span className="fg-bob"><CatColor {...CAT_GINGER} /></span></span></span>
       <span className="fg-cat fg-cat-b"><span className="fg-act"><span className="fg-bob"><CatColor {...CAT_GRAY} /></span></span></span>
       <span className="fg-cat fg-cat-c"><span className="fg-act"><span className="fg-bob"><CatColor {...CAT_CALICO} /></span></span></span>
+      <span className="fg-cat fg-cat-d"><span className="fg-act"><span className="fg-bob"><CatColor {...CAT_TUXEDO} /></span></span></span>
     </div>
   );
 }

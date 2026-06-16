@@ -465,6 +465,10 @@ button, input, select, textarea { font-family: inherit; font-size: inherit; colo
 .fg-cat-c .fg-act { animation: catAct 13s ease-in-out infinite; animation-delay: -8s; }
 .fg-cat-c .fg-bob { animation: catBob2 0.52s ease-in-out infinite; }
 
+.fg-cat-d { opacity: .92; animation: roamD 51s ease-in-out infinite; animation-delay: -33s; }
+.fg-cat-d .fg-act { animation: catAct 13.5s ease-in-out infinite; animation-delay: -3s; }
+.fg-cat-d .fg-bob { animation: catBob2 0.53s ease-in-out infinite; }
+
 /* แต่ละตัวเดินคนละเส้นทาง ครอบคลุมทั้งจอ (ค้นหา/รอตรวจ/กำลังตรวจ/ชำระเงิน/เสร็จแล้ว/ที่ว่าง) */
 @keyframes roamA {
   0%   { transform: translate(3vw, 14vh)  scaleX(1); }
@@ -500,6 +504,17 @@ button, input, select, textarea { font-family: inherit; font-size: inherit; colo
   84%  { transform: translate(46vw, 50vh) scaleX(-1); }
   100% { transform: translate(36vw, 44vh) scaleX(1); }
 }
+@keyframes roamD {
+  0%   { transform: translate(78vw, 60vh) scaleX(-1); }
+  13%  { transform: translate(50vw, 70vh) scaleX(-1); }
+  26%  { transform: translate(20vw, 50vh) scaleX(1); }
+  38%  { transform: translate(8vw, 80vh)  scaleX(1); }
+  50%  { transform: translate(42vw, 86vh) scaleX(1); }
+  62%  { transform: translate(66vw, 68vh) scaleX(1); }
+  74%  { transform: translate(76vw, 34vh) scaleX(-1); }
+  86%  { transform: translate(52vw, 20vh) scaleX(-1); }
+  100% { transform: translate(78vw, 60vh) scaleX(-1); }
+}
 /* ท่าเล่น: กระโดด → ล้มตัวนอนหงาย+กลิ้ง 1 รอบ → เขี่ยเล่น (วนถี่ขณะเดิน) */
 @keyframes catAct {
   0%, 9% { transform: translateY(0) rotate(0deg); }
@@ -524,4 +539,5 @@ button, input, select, textarea { font-family: inherit; font-size: inherit; colo
   .fg-cat-a { transform: translate(12vw, 18vh); }
   .fg-cat-b { transform: translate(60vw, 70vh); }
   .fg-cat-c { transform: translate(40vw, 45vh); }
+  .fg-cat-d { transform: translate(78vw, 30vh); }
 }
