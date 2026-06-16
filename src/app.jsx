@@ -87,11 +87,12 @@ function App() {
     const newVisits = records.map((r) => ({
       date: r.date, vet: r.vet || vets[0], cc: r.cc || r.note || `แอดมิด (${adm.type})`,
       pe: r.pe, dx: r.dx, plan: r.plan, weight: parseFloat(r.weight) || undefined,
-      media: r.media || [], items: (r.charges || []).map((c) => [c[0], Number(c[1]) || 1, Number(c[2]) || 0, c[3] || null]),
+      media: r.media || [], items: (r.charges || []).map((c) => [c[0], Number(c[1]) || 1, Number(c[2]) || 0, c[3] || null, c[4] || null]),
     })).reverse(); // ล่าสุดอยู่หน้าสุด
     const allItems = records.flatMap((r) => (r.charges || []).map((c) => [`${c[0]} (${r.date})`, Number(c[1]) || 1, Number(c[2]) || 0]));
     // ยอดจริงที่เก็บเงิน (รวม VAT แล้วถ้าเลือกบวก VAT) — ไม่ส่งมาก็ใช้ยอดรวมรายการตามเดิม
     const total = (paidTotal != null) ? paidTotal : allItems.reduce((s, c) => s + c[1] * c[2], 0);
+    const noVatAmt = records.flatMap((r) => (r.charges || [])).filter((c) => c[4] === 'shop').reduce((s, c) => s + (Number(c[1]) || 1) * (Number(c[2]) || 0), 0);
     const receipt = total > 0 ? nextReceiptNo() : null;
     setState((s) => {
       const con = consumeReceipt(receipt, s);
@@ -100,7 +101,7 @@ function App() {
         pets: s.pets.map((p) => p.hn === adm.hn ? { ...p, visits: [...newVisits, ...p.visits] } : p),
         admitted: (s.admitted || []).filter((a) => a.id !== admId),
         queue: adm.q ? (s.queue || []).map((x) => x.q === adm.q ? { ...x, status: 'done', paid: total, doneDate: todayISO() } : x) : (s.queue || []),
-        receipts: receipt ? [...(s.receipts || []), { no: receipt.no, date: todayISO(), type: 'opd', petName: adm.petName, ownerName: adm.owner?.name || '-', hn: adm.hn, q: adm.q || '', items: allItems, method: method || 'เงินสด', total }] : (s.receipts || []),
+        receipts: receipt ? [...(s.receipts || []), { no: receipt.no, date: todayISO(), type: 'opd', petName: adm.petName, ownerName: adm.owner?.name || '-', hn: adm.hn, q: adm.q || '', items: allItems, method: method || 'เงินสด', total, noVat: noVatAmt }] : (s.receipts || []),
         receiptSeq: con.receiptSeq,
         receiptVoids: con.receiptVoids,
       };
@@ -346,12 +347,14 @@ function App() {
       pushToast('เคสนี้ชำระและปิดแล้ว — หากต้องการแก้ไข กรุณายกเลิกใบเสร็จเดิมก่อน');
       return;
     }
-    // charge = [ชื่อ, จำนวน, ราคา, stockId?] — stockId ไว้ตัดสต็อกตอนรับชำระ
+    // charge = [ชื่อ, จำนวน, ราคา, stockId?, origin?] — stockId ตัดสต็อก, origin='shop' = สินค้าเพ็ทช้อป (ตัดคลังเพ็ทช้อป)
     const charges = (visit.items || []).map((c) =>
-      Array.isArray(c) ? [c[0] || '', Number(c[1]) || 1, Number(c[2]) || 0, c[3] || null]
-        : [String(c.name || ''), Number(c.qty) || 1, Number(c.price) || 0, c.stockId || null]
+      Array.isArray(c) ? [c[0] || '', Number(c[1]) || 1, Number(c[2]) || 0, c[3] || null, c[4] || null]
+        : [String(c.name || ''), Number(c.qty) || 1, Number(c.price) || 0, c.stockId || null, c.origin || null]
     );
     const receiptItems = charges.map((c) => [c[0], c[1], c[2]]);
+    // ยอดสินค้าเพ็ทช้อปในบิลนี้ (ไม่คิด VAT) — เก็บไว้ให้หน้าภาษีหักออกจากฐาน VAT
+    const noVatAmt = charges.filter((c) => c[4] === 'shop').reduce((s, c) => s + (Number(c[1]) || 1) * (Number(c[2]) || 0), 0);
     const computedTotal = charges.reduce((s, c) => s + (Number(c[1]) || 1) * (Number(c[2]) || 0), 0);
     // ยอดจริงที่เก็บเงิน (รวม VAT แล้วถ้าเลือกบวก VAT) — ถ้าไม่ได้ส่งมาใช้ยอดรวมรายการตามเดิม
     const total = (paidTotal != null) ? paidTotal : computedTotal;
@@ -367,6 +370,7 @@ function App() {
     let newSeq = receiptSeq;
     let newVoids = receiptVoids;
     let newStock = stock;
+    let newShopStock = shopStock;
     let deducted = 0;
 
     if (status === 'paid') {
@@ -376,14 +380,18 @@ function App() {
       } else {
         newSeq = { ...receiptSeq, [receipt.year]: receipt.seq };
       }
-      newReceipts = [...receipts, { no: receipt.no, date: todayISO(), type: 'opd', petName: updatedPet.name, ownerName: updatedPet.owner.name, hn: updatedPet.hn, q: queueItem?.q || '', items: receiptItems, method: payMethod || 'เงินสด', total }];
+      newReceipts = [...receipts, { no: receipt.no, date: todayISO(), type: 'opd', petName: updatedPet.name, ownerName: updatedPet.owner.name, hn: updatedPet.hn, q: queueItem?.q || '', items: receiptItems, method: payMethod || 'เงินสด', total, noVat: noVatAmt }];
       newQueue = queueItem?.q ? queue.map((x) => x.q === queueItem.q ? { ...x, status: 'done', paid: total, doneDate: todayISO() } : x) : queue;
-      [newStock, deducted] = deductStock(stock, charges.filter((c) => c[3]).map((c) => ({ stockId: c[3], qty: c[1] })));
+      // ตัดสต็อก: รายการเพ็ทช้อป (origin='shop') ตัดจากคลังเพ็ทช้อป, ที่เหลือตัดจากคลังคลินิก
+      let dC = 0, dS = 0;
+      [newStock, dC] = deductStock(stock, charges.filter((c) => c[3] && c[4] !== 'shop').map((c) => ({ stockId: c[3], qty: c[1] })));
+      [newShopStock, dS] = deductStock(shopStock, charges.filter((c) => c[3] && c[4] === 'shop').map((c) => ({ stockId: c[3], qty: c[1] })));
+      deducted = dC + dS;
     } else if (status === 'cashier') {
       newQueue = queueItem?.q ? queue.map((x) => x.q === queueItem.q ? { ...x, status: 'cashier', charges } : x) : queue;
     }
 
-    setState((s) => ({ ...s, pets: newPets, queue: newQueue, receipts: newReceipts, receiptSeq: newSeq, receiptVoids: newVoids, stock: newStock }));
+    setState((s) => ({ ...s, pets: newPets, queue: newQueue, receipts: newReceipts, receiptSeq: newSeq, receiptVoids: newVoids, stock: newStock, shopStock: newShopStock }));
     setPage('dashboard');
     setCaseCtx(null);
     pushToast(status === 'paid'
@@ -396,22 +404,26 @@ function App() {
     const { no } = receipt;
     const petObj = pets.find((p) => p.hn === payFor.hn) || { owner: {} };
     const charges = (payFor.charges || []).map((c) =>
-      Array.isArray(c) ? [c[0] || '', Number(c[1]) || 1, Number(c[2]) || 0, c[3] || null]
-        : [String(c.name || ''), Number(c.qty) || 1, Number(c.price) || 0, c.stockId || null]
+      Array.isArray(c) ? [c[0] || '', Number(c[1]) || 1, Number(c[2]) || 0, c[3] || null, c[4] || null]
+        : [String(c.name || ''), Number(c.qty) || 1, Number(c.price) || 0, c.stockId || null, c.origin || null]
     );
-    const [newStock, deducted] = deductStock(stock, charges.filter((c) => c[3]).map((c) => ({ stockId: c[3], qty: c[1] })));
+    const [newStock, dC] = deductStock(stock, charges.filter((c) => c[3] && c[4] !== 'shop').map((c) => ({ stockId: c[3], qty: c[1] })));
+    const [newShopStock, dS] = deductStock(shopStock, charges.filter((c) => c[3] && c[4] === 'shop').map((c) => ({ stockId: c[3], qty: c[1] })));
+    const deducted = dC + dS;
     setState((s) => {
       const con = consumeReceipt(receipt, s);
       return {
         ...s,
         stock: newStock,
+        shopStock: newShopStock,
         queue: s.queue.map((x) => x.q === payFor.q ? { ...x, status: 'done', paid: total, doneDate: todayISO() } : x),
         receipts: [...(s.receipts || []), {
           no, date: todayISO(), type: 'opd',
           petName: payFor.petName, ownerName: petObj.owner?.name || '-',
           hn: payFor.hn, q: payFor.q,
           items: charges.map((c) => [c[0], c[1], c[2]]),
-          method, total
+          method, total,
+          noVat: charges.filter((c) => c[4] === 'shop').reduce((s, c) => s + (Number(c[1]) || 1) * (Number(c[2]) || 0), 0)
         }],
         receiptSeq: con.receiptSeq,
         receiptVoids: con.receiptVoids,
@@ -585,7 +597,7 @@ function App() {
           null}
           {page === 'case' && casePet ?
           <CaseView pet={casePet} queueItem={caseQItem}
-          vets={vets} services={services} stock={stock} allPets={pets}
+          vets={vets} services={services} stock={stock} shopStock={shopStock} allPets={pets}
           onBack={() => {setPage('dashboard');setCaseCtx(null);}}
           onFinish={finishCase} onAddVet={addVet} onDeleteVet={deleteVet}
           onAddAppointment={addAppointment}

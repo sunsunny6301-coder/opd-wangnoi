@@ -253,7 +253,7 @@ function ServiceManagerModal({ services, stock, onAdd, onSaveService, onDeleteSe
   );
 }
 
-function ChargePicker({ services, stock, onAdd }) {
+function ChargePicker({ services, stock, shopStock = [], onAdd }) {
   const [q, setQ] = useState('');
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
@@ -266,8 +266,9 @@ function ChargePicker({ services, stock, onAdd }) {
     const s = q.trim().toLowerCase();
     const svc = services.filter((x) => !s || x.name.toLowerCase().includes(s)).map((x) => ({ ...x, kind: 'svc' }));
     const stk = stock.filter((x) => !s || x.name.toLowerCase().includes(s)).map((x) => ({ ...x, kind: 'stock' }));
-    return [...svc, ...stk].slice(0, 9);
-  }, [q, services, stock]);
+    const shop = (shopStock || []).filter((x) => !s || x.name.toLowerCase().includes(s)).map((x) => ({ ...x, kind: 'shop' }));
+    return [...svc, ...stk, ...shop].slice(0, 12);
+  }, [q, services, stock, shopStock]);
   return (
     <div className="search-wrap" style={{ maxWidth: 'none' }} ref={ref}>
       <Icon name="search" size={16} />
@@ -277,7 +278,13 @@ function ChargePicker({ services, stock, onAdd }) {
           {results.length === 0 ? <div style={{ padding: 10, fontSize: 13, color: 'var(--ink-faint)', textAlign: 'center' }}>ไม่พบ</div> : results.map((x) => (
             <button key={x.id} className="search-result" onClick={() => { onAdd(x); setQ(''); setOpen(false); }} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', borderBottom: '1px solid var(--line)', width: '100%', textAlign: 'left', background: 'none', border: 'none', cursor: 'pointer', fontSize: 13 }}>
               <span style={{ fontSize: 18 }}>{x.emoji || (x.kind === 'svc' ? '💼' : '📦')}</span>
-              <div style={{ flex: 1 }}><div style={{ fontWeight: 600 }}>{x.name}</div><div style={{ fontSize: 11, color: 'var(--ink-faint)' }}>{x.cat}</div></div>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontWeight: 600 }}>
+                  {x.name}
+                  {x.kind === 'shop' ? <span className="chip chip-mint" style={{ fontSize: 10, marginLeft: 6, verticalAlign: 'middle' }}>เพ็ทช้อป · ไม่คิด VAT</span> : null}
+                </div>
+                <div style={{ fontSize: 11, color: 'var(--ink-faint)' }}>{x.cat}{(x.kind === 'shop' || x.kind === 'stock') && x.qty != null ? ` · คงเหลือ ${x.qty}` : ''}</div>
+              </div>
               <div style={{ fontWeight: 700, color: 'var(--mint-deep)', textAlign: 'right' }}>{fmtB(x.price)}</div>
             </button>
           ))}
@@ -287,7 +294,7 @@ function ChargePicker({ services, stock, onAdd }) {
   );
 }
 
-function CaseView({ pet, queueItem, vets, services, stock, allPets, onBack, onFinish, onAddVet, onDeleteVet, onAddAdmitted, onUpdateAdmitted, onDischargeAdmitted, pushToast, onUpdatePet, onAddService, onDeleteService, onUpdateService, onSaveDraft, previewReceiptNo }) {
+function CaseView({ pet, queueItem, vets, services, stock, shopStock = [], allPets, onBack, onFinish, onAddVet, onDeleteVet, onAddAdmitted, onUpdateAdmitted, onDischargeAdmitted, pushToast, onUpdatePet, onAddService, onDeleteService, onUpdateService, onSaveDraft, previewReceiptNo }) {
   const latestWeight = pet.visits.length ? pet.visits[0].weight : pet.weight;
   const draft = queueItem?.draft;
   const [rec, setRec] = useState({
@@ -303,11 +310,11 @@ function CaseView({ pet, queueItem, vets, services, stock, allPets, onBack, onFi
   const [media, setMedia] = useState(draft?.media || []);
   const [showOwnerPets, setShowOwnerPets] = useState(false);
   const ownerPets = useMemo(() => (allPets || []).filter((p) => p.owner.phone === pet.owner.phone), [allPets, pet.owner.phone]);
-  // charge = [ชื่อ, จำนวน, ราคา/หน่วย, stockId?] — stockId ไว้ตัดสต็อก + ปริ้นฉลากยา
+  // charge = [ชื่อ, จำนวน, ราคา/หน่วย, stockId?, origin?] — stockId ไว้ตัดสต็อก/ปริ้นฉลาก, origin='shop' = สินค้าเพ็ทช้อป (ตัดสต็อกเพ็ทช้อป + ไม่คิด VAT)
   const [charges, setCharges] = useState(
     (draft?.charges || (queueItem && queueItem.charges) || []).map((c) =>
-      Array.isArray(c) ? [c[0] || '', Number(c[1]) || 1, Number(c[2]) || 0, c[3] || null]
-        : [String(c.name || ''), Number(c.qty) || 1, Number(c.price) || 0, c.stockId || null]
+      Array.isArray(c) ? [c[0] || '', Number(c[1]) || 1, Number(c[2]) || 0, c[3] || null, c[4] || null]
+        : [String(c.name || ''), Number(c.qty) || 1, Number(c.price) || 0, c.stockId || null, c.origin || null]
     )
   );
   const [labelFor, setLabelFor] = useState(null);
@@ -325,7 +332,7 @@ function CaseView({ pet, queueItem, vets, services, stock, allPets, onBack, onFi
   const saveAdmittedRecord = () => {
     if (!onUpdateAdmitted) return;
     const today = new Date().toISOString().slice(0, 10);
-    const dailyRec = { date: today, vet: rec.vet, weight: rec.weight, cc: rec.cc, pe: rec.pe, dx: rec.dx, plan: rec.plan, media: media.filter((m) => !m.session), charges: charges.map((c) => [c[0], c[1], c[2], c[3] || null]) };
+    const dailyRec = { date: today, vet: rec.vet, weight: rec.weight, cc: rec.cc, pe: rec.pe, dx: rec.dx, plan: rec.plan, media: media.filter((m) => !m.session), charges: charges.map((c) => [c[0], c[1], c[2], c[3] || null, c[4] || null]) };
     onUpdateAdmitted(queueItem.id, { ...queueItem, dailyRecords: [...(queueItem.dailyRecords || []), dailyRec] });
     pushToast && pushToast(`บันทึกการรักษา ${pet.name} (${today}) เรียบร้อย`);
     onBack();
@@ -333,12 +340,12 @@ function CaseView({ pet, queueItem, vets, services, stock, allPets, onBack, onFi
   // ใบเสร็จตอนจำหน่าย = รายการสะสมทุกวัน + รายการที่คีย์ค้างอยู่วันนี้ (ยังไม่กดบันทึก)
   const pendingCharges = charges.filter((c) => String(c[0] || '').trim());
   const admittedItems = isAdmittedMode ? [
-    ...((queueItem.dailyRecords || []).flatMap((r) => (r.charges || []).map((c) => ({ name: `${c[0]} (${r.date})`, qty: Number(c[1]) || 1, price: Number(c[2]) || 0 })))),
-    ...pendingCharges.map((c) => ({ name: c[0], qty: Number(c[1]) || 1, price: Number(c[2]) || 0 })),
+    ...((queueItem.dailyRecords || []).flatMap((r) => (r.charges || []).map((c) => ({ name: `${c[0]} (${r.date})`, qty: Number(c[1]) || 1, price: Number(c[2]) || 0, noVat: c[4] === 'shop' })))),
+    ...pendingCharges.map((c) => ({ name: c[0], qty: Number(c[1]) || 1, price: Number(c[2]) || 0, noVat: c[4] === 'shop' })),
   ] : null;
   const dischargeAdmitted = (method, paidTotal) => {
     const extraRec = pendingCharges.length > 0
-      ? { date: todayISO(), vet: rec.vet, weight: rec.weight, cc: rec.cc, pe: rec.pe, dx: rec.dx, plan: rec.plan, media: media.filter((m) => !m.session), charges: pendingCharges.map((c) => [c[0], c[1], c[2], c[3] || null]) }
+      ? { date: todayISO(), vet: rec.vet, weight: rec.weight, cc: rec.cc, pe: rec.pe, dx: rec.dx, plan: rec.plan, media: media.filter((m) => !m.session), charges: pendingCharges.map((c) => [c[0], c[1], c[2], c[3] || null, c[4] || null]) }
       : null;
     onDischargeAdmitted && onDischargeAdmitted(queueItem.id, method, extraRec, paidTotal);
     setShowReceipt(false);
@@ -346,7 +353,7 @@ function CaseView({ pet, queueItem, vets, services, stock, allPets, onBack, onFi
   };
   const patchCharge = (i, k, v) => setCharges((prev) => prev.map((x, ix) => {
     if (ix !== i) return x;
-    const a = [x[0], x[1], x[2], x[3]]; a[k] = v; return a;
+    const a = [x[0], x[1], x[2], x[3], x[4]]; a[k] = v; return a;
   }));
   const total = charges.reduce((s, c) => s + c[1] * c[2], 0);
   // สถานะทำหมัน: "ทำหมันแล้ว" ถ้าตั้งค่าไว้ หรือเคยมีรายการ "ทำหมัน" ในประวัติที่บันทึกแล้ว
@@ -476,7 +483,7 @@ function CaseView({ pet, queueItem, vets, services, stock, allPets, onBack, onFi
               <span className="chip chip-blush" style={{ fontWeight: 700 }}>{charges.length} รายการ</span>
             </div>
             <div className="card-pad" style={{ display: 'flex', flexDirection: 'column', gap: 13 }}>
-              <ChargePicker services={services} stock={stock} onAdd={(item) => setCharges((prev) => [...prev, [item.name, 1, item.price, item.kind === 'stock' || item.kind === 'stk' ? item.id : null]])} />
+              <ChargePicker services={services} stock={stock} shopStock={shopStock} onAdd={(item) => setCharges((prev) => [...prev, [item.name, 1, item.price, (item.kind === 'stock' || item.kind === 'stk' || item.kind === 'shop') ? item.id : null, item.kind === 'shop' ? 'shop' : null]])} />
               {/* charges table */}
               {charges.length > 0 && (
                 <div style={{ overflow: 'auto' }}>
@@ -765,7 +772,7 @@ function CaseView({ pet, queueItem, vets, services, stock, allPets, onBack, onFi
       {showReceipt && typeof ReceiptModal !== 'undefined' ? (
         <ReceiptModal
           defaultVatMode="included"
-          items={isAdmittedMode ? admittedItems : charges.filter((c) => c[0]).map((c) => ({ name: String(c[0] || ''), qty: Number(c[1]) || 1, price: Number(c[2]) || 0 }))}
+          items={isAdmittedMode ? admittedItems : charges.filter((c) => c[0]).map((c) => ({ name: String(c[0] || ''), qty: Number(c[1]) || 1, price: Number(c[2]) || 0, noVat: c[4] === 'shop' }))}
           petName={pet.name} ownerName={pet.owner.name} ownerPhone={pet.owner.phone}
           receiptNo={previewReceiptNo}
           onClose={() => setShowReceipt(false)}
@@ -776,7 +783,7 @@ function CaseView({ pet, queueItem, vets, services, stock, allPets, onBack, onFi
       {showServiceMgr ? (
         <ServiceManagerModal
           services={services} stock={stock}
-          onAdd={(item) => { setCharges((prev) => [...prev, [item.name, 1, item.price, item.kind === 'stk' || item.kind === 'stock' ? item.id : null]]); }}
+          onAdd={(item) => { setCharges((prev) => [...prev, [item.name, 1, item.price, (item.kind === 'stk' || item.kind === 'stock' || item.kind === 'shop') ? item.id : null, item.kind === 'shop' ? 'shop' : null]]); }}
           onSaveService={onAddService}
           onDeleteService={onDeleteService}
           onUpdateService={onUpdateService}

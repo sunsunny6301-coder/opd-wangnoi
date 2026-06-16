@@ -1186,13 +1186,31 @@ function calcVat(subtotal, vatMode) {
   return { beforeVat: null, vatAmt: 0, grandTotal: subtotal };
 }
 
+// คิด VAT โดยแยกรายการที่ "ไม่คิด VAT" ออก (เช่น สินค้าเพ็ทช้อป it.noVat===true) — VAT คิดเฉพาะส่วนที่ต้องเสียภาษี
+function calcVatItems(items, vatMode) {
+  const r2 = (n) => Math.round(n * 100) / 100;
+  const vatable = (items || []).filter((it) => !it.noVat).reduce((s, it) => s + it.qty * it.price, 0);
+  const nonVat = (items || []).filter((it) => it.noVat).reduce((s, it) => s + it.qty * it.price, 0);
+  if (vatMode === 'included') {
+    const beforeVatV = r2(vatable / 1.07);
+    return { beforeVat: r2(beforeVatV + nonVat), vatAmt: r2(vatable - beforeVatV), grandTotal: r2(vatable + nonVat) };
+  }
+  if (vatMode === 'added') {
+    const vatAmt = r2(vatable * 0.07);
+    return { beforeVat: r2(vatable + nonVat), vatAmt, grandTotal: r2(vatable + vatAmt + nonVat) };
+  }
+  return { beforeVat: null, vatAmt: 0, grandTotal: r2(vatable + nonVat) };
+}
+
 function fmtNum(n) {
   return Number(n || 0).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
 function TaxInvoice({ items, petName, ownerName, ownerPhone, ownerAddr, ownerTaxId, method, vatMode, no, date }) {
   const subtotal = items.reduce((s, it) => s + it.qty * it.price, 0);
-  const { beforeVat, vatAmt, grandTotal } = calcVat(subtotal, vatMode);
+  // VAT คิดเฉพาะรายการที่ต้องเสียภาษี (รายการ it.noVat เช่นสินค้าเพ็ทช้อป ไม่ถูกคิด VAT)
+  const { beforeVat, vatAmt, grandTotal } = calcVatItems(items, vatMode);
+  const hasNoVatItems = items.some((it) => it.noVat);
   const totalQty = items.reduce((s, it) => s + it.qty, 0);
   // ถ้าส่งวันที่ใบเสร็จมา (เช่น พิมพ์ย้อนหลังรายเดือน) ใช้วันที่นั้น ไม่งั้นใช้วันนี้ (พิมพ์สดตอนชำระ)
   const dateObj = date ? new Date(date + 'T00:00:00') : new Date();
@@ -1320,6 +1338,9 @@ function TaxInvoice({ items, petName, ownerName, ownerPhone, ownerAddr, ownerTax
               <span>ภาษีมูลค่าเพิ่ม (VAT 7%){vatMode === 'included' ? ' (รวมแล้ว)' : ''}</span>
               <span>{fmtNum(vatAmt)} บาท</span>
             </div>
+            {hasNoVatItems ? <div style={{ ...S.summaryRow, fontSize: 11.5, color: '#888' }}>
+              <span>* รายการสินค้าเพ็ทช้อปไม่คิด VAT</span><span></span>
+            </div> : null}
           </> : null}
           <div style={S.summaryTotal}>
             <span>จำนวนเงินรวมทั้งสิ้น</span>
@@ -1350,8 +1371,9 @@ function TaxInvoice({ items, petName, ownerName, ownerPhone, ownerAddr, ownerTax
 function ReceiptModal({ title, items, petName, ownerName, ownerPhone, receiptNo, onClose, onConfirm, confirmLabel, paidAlready, noVat, defaultVatMode }) {
   const [method, setMethod] = useState('เงินสด');
   const [vatMode, setVatMode] = useState(noVat ? 'none' : (defaultVatMode || 'none'));
-  const subtotal = items.reduce((s, it) => s + it.qty * it.price, 0);
-  const { grandTotal } = calcVat(subtotal, noVat ? 'none' : vatMode);
+  // VAT คิดเฉพาะรายการที่ต้องเสียภาษี — รายการ noVat (สินค้าเพ็ทช้อป) ไม่ถูกคิด VAT
+  const hasNoVatItems = (items || []).some((it) => it.noVat);
+  const { grandTotal } = calcVatItems(items, noVat ? 'none' : vatMode);
 
   // ── edit buyer / bill fields ──
   const [showEditBuyer, setShowEditBuyer] = useState(false);
@@ -2585,7 +2607,7 @@ function ServiceManagerModal({ services, stock, onAdd, onSaveService, onDeleteSe
   );
 }
 
-function ChargePicker({ services, stock, onAdd }) {
+function ChargePicker({ services, stock, shopStock = [], onAdd }) {
   const [q, setQ] = useState('');
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
@@ -2598,8 +2620,9 @@ function ChargePicker({ services, stock, onAdd }) {
     const s = q.trim().toLowerCase();
     const svc = services.filter((x) => !s || x.name.toLowerCase().includes(s)).map((x) => ({ ...x, kind: 'svc' }));
     const stk = stock.filter((x) => !s || x.name.toLowerCase().includes(s)).map((x) => ({ ...x, kind: 'stock' }));
-    return [...svc, ...stk].slice(0, 9);
-  }, [q, services, stock]);
+    const shop = (shopStock || []).filter((x) => !s || x.name.toLowerCase().includes(s)).map((x) => ({ ...x, kind: 'shop' }));
+    return [...svc, ...stk, ...shop].slice(0, 12);
+  }, [q, services, stock, shopStock]);
   return (
     <div className="search-wrap" style={{ maxWidth: 'none' }} ref={ref}>
       <Icon name="search" size={16} />
@@ -2609,7 +2632,13 @@ function ChargePicker({ services, stock, onAdd }) {
           {results.length === 0 ? <div style={{ padding: 10, fontSize: 13, color: 'var(--ink-faint)', textAlign: 'center' }}>ไม่พบ</div> : results.map((x) => (
             <button key={x.id} className="search-result" onClick={() => { onAdd(x); setQ(''); setOpen(false); }} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', borderBottom: '1px solid var(--line)', width: '100%', textAlign: 'left', background: 'none', border: 'none', cursor: 'pointer', fontSize: 13 }}>
               <span style={{ fontSize: 18 }}>{x.emoji || (x.kind === 'svc' ? '💼' : '📦')}</span>
-              <div style={{ flex: 1 }}><div style={{ fontWeight: 600 }}>{x.name}</div><div style={{ fontSize: 11, color: 'var(--ink-faint)' }}>{x.cat}</div></div>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontWeight: 600 }}>
+                  {x.name}
+                  {x.kind === 'shop' ? <span className="chip chip-mint" style={{ fontSize: 10, marginLeft: 6, verticalAlign: 'middle' }}>เพ็ทช้อป · ไม่คิด VAT</span> : null}
+                </div>
+                <div style={{ fontSize: 11, color: 'var(--ink-faint)' }}>{x.cat}{(x.kind === 'shop' || x.kind === 'stock') && x.qty != null ? ` · คงเหลือ ${x.qty}` : ''}</div>
+              </div>
               <div style={{ fontWeight: 700, color: 'var(--mint-deep)', textAlign: 'right' }}>{fmtB(x.price)}</div>
             </button>
           ))}
@@ -2619,7 +2648,7 @@ function ChargePicker({ services, stock, onAdd }) {
   );
 }
 
-function CaseView({ pet, queueItem, vets, services, stock, allPets, onBack, onFinish, onAddVet, onDeleteVet, onAddAdmitted, onUpdateAdmitted, onDischargeAdmitted, pushToast, onUpdatePet, onAddService, onDeleteService, onUpdateService, onSaveDraft, previewReceiptNo }) {
+function CaseView({ pet, queueItem, vets, services, stock, shopStock = [], allPets, onBack, onFinish, onAddVet, onDeleteVet, onAddAdmitted, onUpdateAdmitted, onDischargeAdmitted, pushToast, onUpdatePet, onAddService, onDeleteService, onUpdateService, onSaveDraft, previewReceiptNo }) {
   const latestWeight = pet.visits.length ? pet.visits[0].weight : pet.weight;
   const draft = queueItem?.draft;
   const [rec, setRec] = useState({
@@ -2635,11 +2664,11 @@ function CaseView({ pet, queueItem, vets, services, stock, allPets, onBack, onFi
   const [media, setMedia] = useState(draft?.media || []);
   const [showOwnerPets, setShowOwnerPets] = useState(false);
   const ownerPets = useMemo(() => (allPets || []).filter((p) => p.owner.phone === pet.owner.phone), [allPets, pet.owner.phone]);
-  // charge = [ชื่อ, จำนวน, ราคา/หน่วย, stockId?] — stockId ไว้ตัดสต็อก + ปริ้นฉลากยา
+  // charge = [ชื่อ, จำนวน, ราคา/หน่วย, stockId?, origin?] — stockId ไว้ตัดสต็อก/ปริ้นฉลาก, origin='shop' = สินค้าเพ็ทช้อป (ตัดสต็อกเพ็ทช้อป + ไม่คิด VAT)
   const [charges, setCharges] = useState(
     (draft?.charges || (queueItem && queueItem.charges) || []).map((c) =>
-      Array.isArray(c) ? [c[0] || '', Number(c[1]) || 1, Number(c[2]) || 0, c[3] || null]
-        : [String(c.name || ''), Number(c.qty) || 1, Number(c.price) || 0, c.stockId || null]
+      Array.isArray(c) ? [c[0] || '', Number(c[1]) || 1, Number(c[2]) || 0, c[3] || null, c[4] || null]
+        : [String(c.name || ''), Number(c.qty) || 1, Number(c.price) || 0, c.stockId || null, c.origin || null]
     )
   );
   const [labelFor, setLabelFor] = useState(null);
@@ -2657,7 +2686,7 @@ function CaseView({ pet, queueItem, vets, services, stock, allPets, onBack, onFi
   const saveAdmittedRecord = () => {
     if (!onUpdateAdmitted) return;
     const today = new Date().toISOString().slice(0, 10);
-    const dailyRec = { date: today, vet: rec.vet, weight: rec.weight, cc: rec.cc, pe: rec.pe, dx: rec.dx, plan: rec.plan, media: media.filter((m) => !m.session), charges: charges.map((c) => [c[0], c[1], c[2], c[3] || null]) };
+    const dailyRec = { date: today, vet: rec.vet, weight: rec.weight, cc: rec.cc, pe: rec.pe, dx: rec.dx, plan: rec.plan, media: media.filter((m) => !m.session), charges: charges.map((c) => [c[0], c[1], c[2], c[3] || null, c[4] || null]) };
     onUpdateAdmitted(queueItem.id, { ...queueItem, dailyRecords: [...(queueItem.dailyRecords || []), dailyRec] });
     pushToast && pushToast(`บันทึกการรักษา ${pet.name} (${today}) เรียบร้อย`);
     onBack();
@@ -2665,12 +2694,12 @@ function CaseView({ pet, queueItem, vets, services, stock, allPets, onBack, onFi
   // ใบเสร็จตอนจำหน่าย = รายการสะสมทุกวัน + รายการที่คีย์ค้างอยู่วันนี้ (ยังไม่กดบันทึก)
   const pendingCharges = charges.filter((c) => String(c[0] || '').trim());
   const admittedItems = isAdmittedMode ? [
-    ...((queueItem.dailyRecords || []).flatMap((r) => (r.charges || []).map((c) => ({ name: `${c[0]} (${r.date})`, qty: Number(c[1]) || 1, price: Number(c[2]) || 0 })))),
-    ...pendingCharges.map((c) => ({ name: c[0], qty: Number(c[1]) || 1, price: Number(c[2]) || 0 })),
+    ...((queueItem.dailyRecords || []).flatMap((r) => (r.charges || []).map((c) => ({ name: `${c[0]} (${r.date})`, qty: Number(c[1]) || 1, price: Number(c[2]) || 0, noVat: c[4] === 'shop' })))),
+    ...pendingCharges.map((c) => ({ name: c[0], qty: Number(c[1]) || 1, price: Number(c[2]) || 0, noVat: c[4] === 'shop' })),
   ] : null;
   const dischargeAdmitted = (method, paidTotal) => {
     const extraRec = pendingCharges.length > 0
-      ? { date: todayISO(), vet: rec.vet, weight: rec.weight, cc: rec.cc, pe: rec.pe, dx: rec.dx, plan: rec.plan, media: media.filter((m) => !m.session), charges: pendingCharges.map((c) => [c[0], c[1], c[2], c[3] || null]) }
+      ? { date: todayISO(), vet: rec.vet, weight: rec.weight, cc: rec.cc, pe: rec.pe, dx: rec.dx, plan: rec.plan, media: media.filter((m) => !m.session), charges: pendingCharges.map((c) => [c[0], c[1], c[2], c[3] || null, c[4] || null]) }
       : null;
     onDischargeAdmitted && onDischargeAdmitted(queueItem.id, method, extraRec, paidTotal);
     setShowReceipt(false);
@@ -2678,7 +2707,7 @@ function CaseView({ pet, queueItem, vets, services, stock, allPets, onBack, onFi
   };
   const patchCharge = (i, k, v) => setCharges((prev) => prev.map((x, ix) => {
     if (ix !== i) return x;
-    const a = [x[0], x[1], x[2], x[3]]; a[k] = v; return a;
+    const a = [x[0], x[1], x[2], x[3], x[4]]; a[k] = v; return a;
   }));
   const total = charges.reduce((s, c) => s + c[1] * c[2], 0);
   // สถานะทำหมัน: "ทำหมันแล้ว" ถ้าตั้งค่าไว้ หรือเคยมีรายการ "ทำหมัน" ในประวัติที่บันทึกแล้ว
@@ -2808,7 +2837,7 @@ function CaseView({ pet, queueItem, vets, services, stock, allPets, onBack, onFi
               <span className="chip chip-blush" style={{ fontWeight: 700 }}>{charges.length} รายการ</span>
             </div>
             <div className="card-pad" style={{ display: 'flex', flexDirection: 'column', gap: 13 }}>
-              <ChargePicker services={services} stock={stock} onAdd={(item) => setCharges((prev) => [...prev, [item.name, 1, item.price, item.kind === 'stock' || item.kind === 'stk' ? item.id : null]])} />
+              <ChargePicker services={services} stock={stock} shopStock={shopStock} onAdd={(item) => setCharges((prev) => [...prev, [item.name, 1, item.price, (item.kind === 'stock' || item.kind === 'stk' || item.kind === 'shop') ? item.id : null, item.kind === 'shop' ? 'shop' : null]])} />
               {/* charges table */}
               {charges.length > 0 && (
                 <div style={{ overflow: 'auto' }}>
@@ -3097,7 +3126,7 @@ function CaseView({ pet, queueItem, vets, services, stock, allPets, onBack, onFi
       {showReceipt && typeof ReceiptModal !== 'undefined' ? (
         <ReceiptModal
           defaultVatMode="included"
-          items={isAdmittedMode ? admittedItems : charges.filter((c) => c[0]).map((c) => ({ name: String(c[0] || ''), qty: Number(c[1]) || 1, price: Number(c[2]) || 0 }))}
+          items={isAdmittedMode ? admittedItems : charges.filter((c) => c[0]).map((c) => ({ name: String(c[0] || ''), qty: Number(c[1]) || 1, price: Number(c[2]) || 0, noVat: c[4] === 'shop' }))}
           petName={pet.name} ownerName={pet.owner.name} ownerPhone={pet.owner.phone}
           receiptNo={previewReceiptNo}
           onClose={() => setShowReceipt(false)}
@@ -3108,7 +3137,7 @@ function CaseView({ pet, queueItem, vets, services, stock, allPets, onBack, onFi
       {showServiceMgr ? (
         <ServiceManagerModal
           services={services} stock={stock}
-          onAdd={(item) => { setCharges((prev) => [...prev, [item.name, 1, item.price, item.kind === 'stk' || item.kind === 'stock' ? item.id : null]]); }}
+          onAdd={(item) => { setCharges((prev) => [...prev, [item.name, 1, item.price, (item.kind === 'stk' || item.kind === 'stock' || item.kind === 'shop') ? item.id : null, item.kind === 'shop' ? 'shop' : null]]); }}
           onSaveService={onAddService}
           onDeleteService={onDeleteService}
           onUpdateService={onUpdateService}
@@ -4985,7 +5014,12 @@ function buildSalesTx(pets, receipts) {
   const txs = [];
   (receipts||[]).filter(r=>(r.type||'opd')==='opd').forEach(r=>{
     const total = n2(r.total||0); if (total <= 0) return;
-    txs.push({ id:'opd_'+r.no, invNo:r.no, date:r.date, buyerName:r.ownerName||'-', buyerTaxId:'-', vatScope:'ทั้งหมด', total, beforeVat:n2(total/1.07), vat:n2(total-total/1.07), hasVat:true });
+    const noVat = n2(r.noVat||0);            // ส่วนสินค้าเพ็ทช้อปในบิล OPD — ไม่คิด VAT
+    const vatable = n2(total - noVat);       // ส่วนค่ารักษา — คิด VAT (ราคารวม VAT แล้ว)
+    if (vatable > 0)
+      txs.push({ id:'opd_'+r.no, invNo:r.no, date:r.date, buyerName:r.ownerName||'-', buyerTaxId:'-', vatScope:'ทั้งหมด', total:vatable, beforeVat:n2(vatable/1.07), vat:n2(vatable-vatable/1.07), hasVat:true });
+    if (noVat > 0)
+      txs.push({ id:'opd_'+r.no+'_nv', invNo:r.no+(vatable>0?' (สินค้า)':''), date:r.date, buyerName:r.ownerName||'-', buyerTaxId:'-', vatScope:'-', total:noVat, beforeVat:noVat, vat:0, hasVat:false });
   });
   (receipts||[]).filter(r=>r.type==='shop').forEach(r=>{
     txs.push({ id:'shop_'+r.no, invNo:r.no, date:r.date, buyerName:r.ownerName&&r.ownerName!=='-'?r.ownerName:'-', buyerTaxId:'-', vatScope:'-', total:n2(r.total||0), beforeVat:n2(r.total||0), vat:0, hasVat:false });
@@ -5844,11 +5878,12 @@ function App() {
     const newVisits = records.map((r) => ({
       date: r.date, vet: r.vet || vets[0], cc: r.cc || r.note || `แอดมิด (${adm.type})`,
       pe: r.pe, dx: r.dx, plan: r.plan, weight: parseFloat(r.weight) || undefined,
-      media: r.media || [], items: (r.charges || []).map((c) => [c[0], Number(c[1]) || 1, Number(c[2]) || 0, c[3] || null]),
+      media: r.media || [], items: (r.charges || []).map((c) => [c[0], Number(c[1]) || 1, Number(c[2]) || 0, c[3] || null, c[4] || null]),
     })).reverse(); // ล่าสุดอยู่หน้าสุด
     const allItems = records.flatMap((r) => (r.charges || []).map((c) => [`${c[0]} (${r.date})`, Number(c[1]) || 1, Number(c[2]) || 0]));
     // ยอดจริงที่เก็บเงิน (รวม VAT แล้วถ้าเลือกบวก VAT) — ไม่ส่งมาก็ใช้ยอดรวมรายการตามเดิม
     const total = (paidTotal != null) ? paidTotal : allItems.reduce((s, c) => s + c[1] * c[2], 0);
+    const noVatAmt = records.flatMap((r) => (r.charges || [])).filter((c) => c[4] === 'shop').reduce((s, c) => s + (Number(c[1]) || 1) * (Number(c[2]) || 0), 0);
     const receipt = total > 0 ? nextReceiptNo() : null;
     setState((s) => {
       const con = consumeReceipt(receipt, s);
@@ -5857,7 +5892,7 @@ function App() {
         pets: s.pets.map((p) => p.hn === adm.hn ? { ...p, visits: [...newVisits, ...p.visits] } : p),
         admitted: (s.admitted || []).filter((a) => a.id !== admId),
         queue: adm.q ? (s.queue || []).map((x) => x.q === adm.q ? { ...x, status: 'done', paid: total, doneDate: todayISO() } : x) : (s.queue || []),
-        receipts: receipt ? [...(s.receipts || []), { no: receipt.no, date: todayISO(), type: 'opd', petName: adm.petName, ownerName: adm.owner?.name || '-', hn: adm.hn, q: adm.q || '', items: allItems, method: method || 'เงินสด', total }] : (s.receipts || []),
+        receipts: receipt ? [...(s.receipts || []), { no: receipt.no, date: todayISO(), type: 'opd', petName: adm.petName, ownerName: adm.owner?.name || '-', hn: adm.hn, q: adm.q || '', items: allItems, method: method || 'เงินสด', total, noVat: noVatAmt }] : (s.receipts || []),
         receiptSeq: con.receiptSeq,
         receiptVoids: con.receiptVoids,
       };
@@ -6103,12 +6138,14 @@ function App() {
       pushToast('เคสนี้ชำระและปิดแล้ว — หากต้องการแก้ไข กรุณายกเลิกใบเสร็จเดิมก่อน');
       return;
     }
-    // charge = [ชื่อ, จำนวน, ราคา, stockId?] — stockId ไว้ตัดสต็อกตอนรับชำระ
+    // charge = [ชื่อ, จำนวน, ราคา, stockId?, origin?] — stockId ตัดสต็อก, origin='shop' = สินค้าเพ็ทช้อป (ตัดคลังเพ็ทช้อป)
     const charges = (visit.items || []).map((c) =>
-      Array.isArray(c) ? [c[0] || '', Number(c[1]) || 1, Number(c[2]) || 0, c[3] || null]
-        : [String(c.name || ''), Number(c.qty) || 1, Number(c.price) || 0, c.stockId || null]
+      Array.isArray(c) ? [c[0] || '', Number(c[1]) || 1, Number(c[2]) || 0, c[3] || null, c[4] || null]
+        : [String(c.name || ''), Number(c.qty) || 1, Number(c.price) || 0, c.stockId || null, c.origin || null]
     );
     const receiptItems = charges.map((c) => [c[0], c[1], c[2]]);
+    // ยอดสินค้าเพ็ทช้อปในบิลนี้ (ไม่คิด VAT) — เก็บไว้ให้หน้าภาษีหักออกจากฐาน VAT
+    const noVatAmt = charges.filter((c) => c[4] === 'shop').reduce((s, c) => s + (Number(c[1]) || 1) * (Number(c[2]) || 0), 0);
     const computedTotal = charges.reduce((s, c) => s + (Number(c[1]) || 1) * (Number(c[2]) || 0), 0);
     // ยอดจริงที่เก็บเงิน (รวม VAT แล้วถ้าเลือกบวก VAT) — ถ้าไม่ได้ส่งมาใช้ยอดรวมรายการตามเดิม
     const total = (paidTotal != null) ? paidTotal : computedTotal;
@@ -6124,6 +6161,7 @@ function App() {
     let newSeq = receiptSeq;
     let newVoids = receiptVoids;
     let newStock = stock;
+    let newShopStock = shopStock;
     let deducted = 0;
 
     if (status === 'paid') {
@@ -6133,14 +6171,18 @@ function App() {
       } else {
         newSeq = { ...receiptSeq, [receipt.year]: receipt.seq };
       }
-      newReceipts = [...receipts, { no: receipt.no, date: todayISO(), type: 'opd', petName: updatedPet.name, ownerName: updatedPet.owner.name, hn: updatedPet.hn, q: queueItem?.q || '', items: receiptItems, method: payMethod || 'เงินสด', total }];
+      newReceipts = [...receipts, { no: receipt.no, date: todayISO(), type: 'opd', petName: updatedPet.name, ownerName: updatedPet.owner.name, hn: updatedPet.hn, q: queueItem?.q || '', items: receiptItems, method: payMethod || 'เงินสด', total, noVat: noVatAmt }];
       newQueue = queueItem?.q ? queue.map((x) => x.q === queueItem.q ? { ...x, status: 'done', paid: total, doneDate: todayISO() } : x) : queue;
-      [newStock, deducted] = deductStock(stock, charges.filter((c) => c[3]).map((c) => ({ stockId: c[3], qty: c[1] })));
+      // ตัดสต็อก: รายการเพ็ทช้อป (origin='shop') ตัดจากคลังเพ็ทช้อป, ที่เหลือตัดจากคลังคลินิก
+      let dC = 0, dS = 0;
+      [newStock, dC] = deductStock(stock, charges.filter((c) => c[3] && c[4] !== 'shop').map((c) => ({ stockId: c[3], qty: c[1] })));
+      [newShopStock, dS] = deductStock(shopStock, charges.filter((c) => c[3] && c[4] === 'shop').map((c) => ({ stockId: c[3], qty: c[1] })));
+      deducted = dC + dS;
     } else if (status === 'cashier') {
       newQueue = queueItem?.q ? queue.map((x) => x.q === queueItem.q ? { ...x, status: 'cashier', charges } : x) : queue;
     }
 
-    setState((s) => ({ ...s, pets: newPets, queue: newQueue, receipts: newReceipts, receiptSeq: newSeq, receiptVoids: newVoids, stock: newStock }));
+    setState((s) => ({ ...s, pets: newPets, queue: newQueue, receipts: newReceipts, receiptSeq: newSeq, receiptVoids: newVoids, stock: newStock, shopStock: newShopStock }));
     setPage('dashboard');
     setCaseCtx(null);
     pushToast(status === 'paid'
@@ -6153,22 +6195,26 @@ function App() {
     const { no } = receipt;
     const petObj = pets.find((p) => p.hn === payFor.hn) || { owner: {} };
     const charges = (payFor.charges || []).map((c) =>
-      Array.isArray(c) ? [c[0] || '', Number(c[1]) || 1, Number(c[2]) || 0, c[3] || null]
-        : [String(c.name || ''), Number(c.qty) || 1, Number(c.price) || 0, c.stockId || null]
+      Array.isArray(c) ? [c[0] || '', Number(c[1]) || 1, Number(c[2]) || 0, c[3] || null, c[4] || null]
+        : [String(c.name || ''), Number(c.qty) || 1, Number(c.price) || 0, c.stockId || null, c.origin || null]
     );
-    const [newStock, deducted] = deductStock(stock, charges.filter((c) => c[3]).map((c) => ({ stockId: c[3], qty: c[1] })));
+    const [newStock, dC] = deductStock(stock, charges.filter((c) => c[3] && c[4] !== 'shop').map((c) => ({ stockId: c[3], qty: c[1] })));
+    const [newShopStock, dS] = deductStock(shopStock, charges.filter((c) => c[3] && c[4] === 'shop').map((c) => ({ stockId: c[3], qty: c[1] })));
+    const deducted = dC + dS;
     setState((s) => {
       const con = consumeReceipt(receipt, s);
       return {
         ...s,
         stock: newStock,
+        shopStock: newShopStock,
         queue: s.queue.map((x) => x.q === payFor.q ? { ...x, status: 'done', paid: total, doneDate: todayISO() } : x),
         receipts: [...(s.receipts || []), {
           no, date: todayISO(), type: 'opd',
           petName: payFor.petName, ownerName: petObj.owner?.name || '-',
           hn: payFor.hn, q: payFor.q,
           items: charges.map((c) => [c[0], c[1], c[2]]),
-          method, total
+          method, total,
+          noVat: charges.filter((c) => c[4] === 'shop').reduce((s, c) => s + (Number(c[1]) || 1) * (Number(c[2]) || 0), 0)
         }],
         receiptSeq: con.receiptSeq,
         receiptVoids: con.receiptVoids,
@@ -6342,7 +6388,7 @@ function App() {
           null}
           {page === 'case' && casePet ?
           <CaseView pet={casePet} queueItem={caseQItem}
-          vets={vets} services={services} stock={stock} allPets={pets}
+          vets={vets} services={services} stock={stock} shopStock={shopStock} allPets={pets}
           onBack={() => {setPage('dashboard');setCaseCtx(null);}}
           onFinish={finishCase} onAddVet={addVet} onDeleteVet={deleteVet}
           onAddAppointment={addAppointment}

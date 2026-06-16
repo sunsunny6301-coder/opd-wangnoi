@@ -32,13 +32,31 @@ function calcVat(subtotal, vatMode) {
   return { beforeVat: null, vatAmt: 0, grandTotal: subtotal };
 }
 
+// คิด VAT โดยแยกรายการที่ "ไม่คิด VAT" ออก (เช่น สินค้าเพ็ทช้อป it.noVat===true) — VAT คิดเฉพาะส่วนที่ต้องเสียภาษี
+function calcVatItems(items, vatMode) {
+  const r2 = (n) => Math.round(n * 100) / 100;
+  const vatable = (items || []).filter((it) => !it.noVat).reduce((s, it) => s + it.qty * it.price, 0);
+  const nonVat = (items || []).filter((it) => it.noVat).reduce((s, it) => s + it.qty * it.price, 0);
+  if (vatMode === 'included') {
+    const beforeVatV = r2(vatable / 1.07);
+    return { beforeVat: r2(beforeVatV + nonVat), vatAmt: r2(vatable - beforeVatV), grandTotal: r2(vatable + nonVat) };
+  }
+  if (vatMode === 'added') {
+    const vatAmt = r2(vatable * 0.07);
+    return { beforeVat: r2(vatable + nonVat), vatAmt, grandTotal: r2(vatable + vatAmt + nonVat) };
+  }
+  return { beforeVat: null, vatAmt: 0, grandTotal: r2(vatable + nonVat) };
+}
+
 function fmtNum(n) {
   return Number(n || 0).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
 function TaxInvoice({ items, petName, ownerName, ownerPhone, ownerAddr, ownerTaxId, method, vatMode, no, date }) {
   const subtotal = items.reduce((s, it) => s + it.qty * it.price, 0);
-  const { beforeVat, vatAmt, grandTotal } = calcVat(subtotal, vatMode);
+  // VAT คิดเฉพาะรายการที่ต้องเสียภาษี (รายการ it.noVat เช่นสินค้าเพ็ทช้อป ไม่ถูกคิด VAT)
+  const { beforeVat, vatAmt, grandTotal } = calcVatItems(items, vatMode);
+  const hasNoVatItems = items.some((it) => it.noVat);
   const totalQty = items.reduce((s, it) => s + it.qty, 0);
   // ถ้าส่งวันที่ใบเสร็จมา (เช่น พิมพ์ย้อนหลังรายเดือน) ใช้วันที่นั้น ไม่งั้นใช้วันนี้ (พิมพ์สดตอนชำระ)
   const dateObj = date ? new Date(date + 'T00:00:00') : new Date();
@@ -166,6 +184,9 @@ function TaxInvoice({ items, petName, ownerName, ownerPhone, ownerAddr, ownerTax
               <span>ภาษีมูลค่าเพิ่ม (VAT 7%){vatMode === 'included' ? ' (รวมแล้ว)' : ''}</span>
               <span>{fmtNum(vatAmt)} บาท</span>
             </div>
+            {hasNoVatItems ? <div style={{ ...S.summaryRow, fontSize: 11.5, color: '#888' }}>
+              <span>* รายการสินค้าเพ็ทช้อปไม่คิด VAT</span><span></span>
+            </div> : null}
           </> : null}
           <div style={S.summaryTotal}>
             <span>จำนวนเงินรวมทั้งสิ้น</span>
@@ -196,8 +217,9 @@ function TaxInvoice({ items, petName, ownerName, ownerPhone, ownerAddr, ownerTax
 function ReceiptModal({ title, items, petName, ownerName, ownerPhone, receiptNo, onClose, onConfirm, confirmLabel, paidAlready, noVat, defaultVatMode }) {
   const [method, setMethod] = useState('เงินสด');
   const [vatMode, setVatMode] = useState(noVat ? 'none' : (defaultVatMode || 'none'));
-  const subtotal = items.reduce((s, it) => s + it.qty * it.price, 0);
-  const { grandTotal } = calcVat(subtotal, noVat ? 'none' : vatMode);
+  // VAT คิดเฉพาะรายการที่ต้องเสียภาษี — รายการ noVat (สินค้าเพ็ทช้อป) ไม่ถูกคิด VAT
+  const hasNoVatItems = (items || []).some((it) => it.noVat);
+  const { grandTotal } = calcVatItems(items, noVat ? 'none' : vatMode);
 
   // ── edit buyer / bill fields ──
   const [showEditBuyer, setShowEditBuyer] = useState(false);

@@ -62,7 +62,12 @@ function buildSalesTx(pets, receipts) {
   const txs = [];
   (receipts||[]).filter(r=>(r.type||'opd')==='opd').forEach(r=>{
     const total = n2(r.total||0); if (total <= 0) return;
-    txs.push({ id:'opd_'+r.no, invNo:r.no, date:r.date, buyerName:r.ownerName||'-', buyerTaxId:'-', vatScope:'ทั้งหมด', total, beforeVat:n2(total/1.07), vat:n2(total-total/1.07), hasVat:true });
+    const noVat = n2(r.noVat||0);            // ส่วนสินค้าเพ็ทช้อปในบิล OPD — ไม่คิด VAT
+    const vatable = n2(total - noVat);       // ส่วนค่ารักษา — คิด VAT (ราคารวม VAT แล้ว)
+    if (vatable > 0)
+      txs.push({ id:'opd_'+r.no, invNo:r.no, date:r.date, buyerName:r.ownerName||'-', buyerTaxId:'-', vatScope:'ทั้งหมด', total:vatable, beforeVat:n2(vatable/1.07), vat:n2(vatable-vatable/1.07), hasVat:true });
+    if (noVat > 0)
+      txs.push({ id:'opd_'+r.no+'_nv', invNo:r.no+(vatable>0?' (สินค้า)':''), date:r.date, buyerName:r.ownerName||'-', buyerTaxId:'-', vatScope:'-', total:noVat, beforeVat:noVat, vat:0, hasVat:false });
   });
   (receipts||[]).filter(r=>r.type==='shop').forEach(r=>{
     txs.push({ id:'shop_'+r.no, invNo:r.no, date:r.date, buyerName:r.ownerName&&r.ownerName!=='-'?r.ownerName:'-', buyerTaxId:'-', vatScope:'-', total:n2(r.total||0), beforeVat:n2(r.total||0), vat:0, hasVat:false });
