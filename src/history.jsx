@@ -34,7 +34,7 @@ function HistoryView({ pets, onOpenPet }) {
   const today = new Date();
   const [year, setYear] = useState(today.getFullYear());
   const [month, setMonth] = useState(today.getMonth());
-  const [selDate, setSelDate] = useState(today.toISOString().slice(0, 10));
+  const [selDate, setSelDate] = useState(todayISO());
 
   // Build date → visits map from all pets
   const visitsByDate = useMemo(() => {
@@ -105,7 +105,7 @@ function HistoryView({ pets, onOpenPet }) {
             if (!d) return <div key={i} />;
             const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
             const count = (visitsByDate[dateStr] || []).length;
-            const isToday = dateStr === today.toISOString().slice(0, 10);
+            const isToday = dateStr === todayISO();
             const isSel = dateStr === selDate;
             return (
               <button key={i} onClick={() => setSelDate(dateStr)}

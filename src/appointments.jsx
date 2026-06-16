@@ -33,7 +33,7 @@ function MiniCalendar({ appointments, selectedDay, onSelectDay }) {
   const month = viewDate.getMonth();
   const firstDow = new Date(year, month, 1).getDay();
   const daysInMonth = new Date(year, month + 1, 0).getDate();
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayISO();
 
   // Build appointment map for this month
   const apptMap = useMemo(() => {
@@ -128,7 +128,7 @@ function ApptFormModal({ pets, defaultDate, defaultPet, editAppt, onClose, onSav
     hn: initPet?.hn || '', petName: initPet?.name || '',
     species: initPet?.species || 'สุนัข',
     ownerName: initPet?.owner?.name || '', phone: initPet?.owner?.phone || '',
-    date: defaultDate || new Date().toISOString().slice(0, 10),
+    date: defaultDate || todayISO(),
     time: '09:00', type: 'ติดตามอาการ', note: '', status: 'scheduled',
   });
   const [petQ, setPetQ] = useState(initPet ? `${initPet.name} — ${initPet.owner.name}` : '');
@@ -237,8 +237,8 @@ function ApptFormModal({ pets, defaultDate, defaultPet, editAppt, onClose, onSav
 
 // ── Appointments Page ────────────────────────────────────────
 function AppointmentsView({ appointments, pets, onAdd, onUpdate }) {
-  const todayISO = new Date().toISOString().slice(0, 10);
-  const [selectedDay, setSelectedDay] = useState(todayISO);
+  const todayStr = todayISO();
+  const [selectedDay, setSelectedDay] = useState(todayStr);
   const [showForm, setShowForm] = useState(false);
   const [editAppt, setEditAppt] = useState(null);
 
@@ -248,10 +248,10 @@ function AppointmentsView({ appointments, pets, onAdd, onUpdate }) {
 
   const upcoming = useMemo(() =>
     appointments
-      .filter((a) => a.date >= todayISO && a.status !== 'cancelled')
+      .filter((a) => a.date >= todayStr && a.status !== 'cancelled')
       .sort((a, b) => a.date.localeCompare(b.date) || (a.time || '').localeCompare(b.time || ''))
       .slice(0, 20),
-    [appointments, todayISO]);
+    [appointments, todayStr]);
 
   const thisWeek = useMemo(() => {
     const end = new Date(); end.setDate(end.getDate() + 7);
@@ -269,7 +269,7 @@ function AppointmentsView({ appointments, pets, onAdd, onUpdate }) {
       <div style={{ display: 'flex', gap: 12, marginBottom: 18, flexWrap: 'wrap', alignItems: 'center' }}>
         <div style={{ display: 'flex', gap: 10 }}>
           <div className="stat-tile tint-powder" style={{ minWidth: 0, flex: 1 }}>
-            <div className="v">{appointments.filter((a) => a.date === todayISO && a.status !== 'cancelled').length}</div>
+            <div className="v">{appointments.filter((a) => a.date === todayStr && a.status !== 'cancelled').length}</div>
             <div className="l">นัดวันนี้</div>
           </div>
           <div className="stat-tile tint-butter" style={{ minWidth: 0, flex: 1 }}>
@@ -335,7 +335,7 @@ function AppointmentsView({ appointments, pets, onAdd, onUpdate }) {
                 <div className="hist-date">
                   <span className="chip chip-powder" style={{ fontSize: 11.5 }}>{dateTHShort(a.date)}</span>
                   {a.time ? <span style={{ color: 'var(--ink-faint)', fontWeight: 600, fontSize: 12 }}>{a.time}</span> : null}
-                  {a.date === todayISO ? <span className="chip chip-blush" style={{ fontSize: 11 }}>วันนี้!</span> : null}
+                  {a.date === todayStr ? <span className="chip chip-blush" style={{ fontSize: 11 }}>วันนี้!</span> : null}
                 </div>
                 <div style={{ fontWeight: 700, fontSize: 14.5 }}>{SPECIES_EMOJI[a.species] || '🐾'} {a.petName}</div>
                 <div style={{ display: 'flex', gap: 6, marginTop: 3, flexWrap: 'wrap' }}>

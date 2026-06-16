@@ -49,7 +49,8 @@ const SPECIES_EMOJI = { 'สุนัข': '🐶', 'แมว': '🐱', 'กร�
 const TYPE_CHIP = { 'ตรวจรักษา': 'chip-navy', 'วัคซีน': 'chip-mint', 'อาบน้ำตัดขน': 'chip-powder', 'ผ่าตัด': 'chip-blush', 'ซื้อสินค้า': 'chip-butter' };
 
 const fmtB = (n) => '฿' + Number(n || 0).toLocaleString('th-TH', { maximumFractionDigits: 0 });
-const todayISO = () => new Date().toISOString().slice(0, 10);
+// วันที่วันนี้แบบ local (ห้ามใช้ toISOString — UTC+7 ทำให้ช่วง 00:00–07:00 ได้วันก่อนหน้า)
+const todayISO = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
 // ย่อรูปเป็น data URL เพื่อเก็บลง localStorage ได้ (รูปต้นฉบับใหญ่เกินโควต้า)
 function imageToDataURL(file, maxPx, quality) {
   return new Promise((resolve, reject) => {

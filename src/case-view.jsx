@@ -331,7 +331,7 @@ function CaseView({ pet, queueItem, vets, services, stock, shopStock = [], allPe
   const isAdmittedMode = queueItem?.status === 'admitted';
   const saveAdmittedRecord = () => {
     if (!onUpdateAdmitted) return;
-    const today = new Date().toISOString().slice(0, 10);
+    const today = todayISO();
     const dailyRec = { date: today, vet: rec.vet, weight: rec.weight, cc: rec.cc, pe: rec.pe, dx: rec.dx, plan: rec.plan, media: media.filter((m) => !m.session), charges: charges.map((c) => [c[0], c[1], c[2], c[3] || null, c[4] || null]) };
     onUpdateAdmitted(queueItem.id, { ...queueItem, dailyRecords: [...(queueItem.dailyRecords || []), dailyRec] });
     pushToast && pushToast(`บันทึกการรักษา ${pet.name} (${today}) เรียบร้อย`);

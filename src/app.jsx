@@ -61,7 +61,7 @@ function App() {
     const p = pets.find((x) => x.hn === petHn);
     setState((s) => ({
       ...s,
-      admitted: [...(s.admitted || []), { id: 'adm' + Date.now(), hn: petHn, q: qNo || null, petName: p?.name, species: p?.species, owner: p?.owner, admittedDate: new Date().toISOString().slice(0, 10), type, note, dailyRecords: [] }],
+      admitted: [...(s.admitted || []), { id: 'adm' + Date.now(), hn: petHn, q: qNo || null, petName: p?.name, species: p?.species, owner: p?.owner, admittedDate: todayISO(), type, note, dailyRecords: [] }],
       queue: qNo ? (s.queue || []).map((x) => x.q === qNo ? { ...x, status: 'admitted' } : x) : (s.queue || []),
     }));
     pushToast(`แอดมิด ${p?.name} — ${type}`);
@@ -89,15 +89,25 @@ function App() {
       pe: r.pe, dx: r.dx, plan: r.plan, weight: parseFloat(r.weight) || undefined,
       media: r.media || [], items: (r.charges || []).map((c) => [c[0], Number(c[1]) || 1, Number(c[2]) || 0, c[3] || null, c[4] || null]),
     })).reverse(); // ล่าสุดอยู่หน้าสุด
-    const allItems = records.flatMap((r) => (r.charges || []).map((c) => [`${c[0]} (${r.date})`, Number(c[1]) || 1, Number(c[2]) || 0]));
+    // เก็บ stockId/origin ในรายการใบเสร็จด้วย (5-tuple) เพื่อให้แก้ใบเสร็จภายหลังตัด/คืนสต็อกได้
+    const allItems = records.flatMap((r) => (r.charges || []).map((c) => [`${c[0]} (${r.date})`, Number(c[1]) || 1, Number(c[2]) || 0, c[3] || null, c[4] || null]));
     // ยอดจริงที่เก็บเงิน (รวม VAT แล้วถ้าเลือกบวก VAT) — ไม่ส่งมาก็ใช้ยอดรวมรายการตามเดิม
     const total = (paidTotal != null) ? paidTotal : allItems.reduce((s, c) => s + c[1] * c[2], 0);
     const noVatAmt = records.flatMap((r) => (r.charges || [])).filter((c) => c[4] === 'shop').reduce((s, c) => s + (Number(c[1]) || 1) * (Number(c[2]) || 0), 0);
     const receipt = total > 0 ? nextReceiptNo() : null;
+    // ตัดสต็อกจากรายการแอดมิดทุกวัน (เดิมไม่ตัดเลย) — เพ็ทช้อปตัดคลังเพ็ทช้อป, ที่เหลือตัดคลังคลินิก
+    const allCharges = records.flatMap((r) => (r.charges || []));
+    const clinicCharges = allCharges.filter((c) => c[3] && c[4] !== 'shop').map((c) => ({ stockId: c[3], qty: Number(c[1]) || 1 }));
+    const shopCharges = allCharges.filter((c) => c[3] && c[4] === 'shop').map((c) => ({ stockId: c[3], qty: Number(c[1]) || 1 }));
+    const deducted = allCharges.filter((c) => c[3]).length;
     setState((s) => {
       const con = consumeReceipt(receipt, s);
+      const [newStock] = deductStock(s.stock || [], clinicCharges);
+      const [newShopStock] = deductStock(s.shopStock || s.stock || [], shopCharges);
       return {
         ...s,
+        stock: newStock,
+        shopStock: newShopStock,
         pets: s.pets.map((p) => p.hn === adm.hn ? { ...p, visits: [...newVisits, ...p.visits] } : p),
         admitted: (s.admitted || []).filter((a) => a.id !== admId),
         queue: adm.q ? (s.queue || []).map((x) => x.q === adm.q ? { ...x, status: 'done', paid: total, doneDate: todayISO() } : x) : (s.queue || []),
@@ -106,7 +116,7 @@ function App() {
         receiptVoids: con.receiptVoids,
       };
     });
-    pushToast(total > 0 ? `จำหน่าย ${adm.petName} — รับชำระ ${fmtB(total)}` : `จำหน่าย ${adm.petName} แล้ว`);
+    pushToast((total > 0 ? `จำหน่าย ${adm.petName} — รับชำระ ${fmtB(total)}` : `จำหน่าย ${adm.petName} แล้ว`) + (deducted > 0 ? ` · ตัดสต็อก ${deducted} รายการ` : ''));
   };
   const updatePet = (updated) => {
     setState((s) => ({ ...s, pets: s.pets.map((p) => p.hn === updated.hn ? updated : p) }));
@@ -277,7 +287,12 @@ function App() {
   // แก้ไขประวัติ visit (รวมถึงรายการค่าใช้จ่าย) + ซิงก์กลับใบเสร็จ OPD ที่ผูกกัน (hn|q|วันที่เดิม)
   // sync = { hn, q, oldDate, newDate, items:[ชื่อ,จำนวน,ราคา,stockId,origin] } — ไม่ตัดสต็อกซ้ำ
   const updateVisit = (updatedPet, sync) => {
+    // นับจำนวนสต็อกที่จะปรับ — คำนวณก่อน setState (updater รันตอน render จึงอ่านค่าหลัง setState ไม่ได้)
     let deducted = 0;
+    if (sync && Array.isArray(sync.items)) {
+      const oT = tallyStock(sync.oldItems || []), nT = tallyStock(sync.items);
+      deducted = stockDeltaCharges(oT.clinic, nT.clinic).length + stockDeltaCharges(oT.shop, nT.shop).length;
+    }
     setState((s) => {
       const pets = (s.pets || []).map((p) => p.hn === updatedPet.hn ? updatedPet : p);
       let receipts = s.receipts || [];
@@ -285,7 +300,7 @@ function App() {
       if (sync && Array.isArray(sync.items)) {
         // ตัด/คืนสต็อกตามส่วนต่างรายการเดิม→ใหม่ (รายการเพ็ทช้อปตัดคลังเพ็ทช้อป)
         const d = applyItemDelta(s, sync.oldItems || [], sync.items);
-        stock = d.stock; shopStock = d.shopStock; deducted = d.changed;
+        stock = d.stock; shopStock = d.shopStock;
         // ซิงก์รายการ (พร้อม stockId/origin) ไปใบเสร็จ OPD ที่ผูกกัน
         receipts = receipts.map((r) => {
           if ((r.type || 'opd') !== 'opd' || r.hn !== sync.hn || (r.q || '') !== (sync.q || '') || r.date !== sync.oldDate) return r;
@@ -293,7 +308,8 @@ function App() {
             ? [it[0] || '', Number(it[1]) || 1, Number(it[2]) || 0, it[3] || null, it[4] || null]
             : [it.name || '', Number(it.qty) || 1, Number(it.price) || 0, it.stockId || null, it.origin || null]);
           const total = rItems.reduce((sum, c) => sum + c[1] * c[2], 0);
-          const noVat = Math.min(Number(r.noVat) || 0, total);
+          // noVat = ยอดรายการเพ็ทช้อป (origin='shop') คำนวณใหม่จากรายการจริง
+          const noVat = rItems.filter((c) => c[4] === 'shop').reduce((sum, c) => sum + c[1] * c[2], 0);
           return { ...r, items: rItems, total, noVat, date: sync.newDate };
         });
       }
@@ -301,34 +317,48 @@ function App() {
     });
     pushToast('บันทึกประวัติแล้ว' + (deducted > 0 ? ` · ปรับสต็อก ${deducted} รายการ` : ''));
   };
+  // normalize รายการ → 5-tuple [ชื่อ,จำนวน,ราคา,stockId,origin]
+  const norm5 = (arr) => (arr || []).map((it) => Array.isArray(it)
+    ? [it[0] || '', Number(it[1]) || 1, Number(it[2]) || 0, it[3] || null, it[4] || null]
+    : [it.name || '', Number(it.qty) || 1, Number(it.price) || 0, it.stockId || null, it.origin || null]);
   const updateReceipt = (no, patch) => {
+    // นับจำนวนสต็อกที่จะปรับ — คำนวณก่อน setState (updater รันตอน render)
     let deducted = 0;
+    if (Array.isArray(patch.items)) {
+      const origC = (receipts || []).find((r) => r.no === no);
+      if (origC) {
+        const oT = tallyStock(origC.items || []), nT = tallyStock(norm5(patch.items));
+        deducted = stockDeltaCharges(oT.clinic, nT.clinic).length + stockDeltaCharges(oT.shop, nT.shop).length;
+      }
+    }
     setState((s) => {
       const orig = (s.receipts || []).find((r) => r.no === no);
-      // normalize รายการใหม่เป็น 5-tuple [ชื่อ,จำนวน,ราคา,stockId,origin]
-      const normNew = Array.isArray(patch.items) ? patch.items.map((it) => Array.isArray(it)
-        ? [it[0] || '', Number(it[1]) || 1, Number(it[2]) || 0, it[3] || null, it[4] || null]
-        : [it.name || '', Number(it.qty) || 1, Number(it.price) || 0, it.stockId || null, it.origin || null]) : null;
-      const nextPatch = normNew ? { ...patch, items: normNew } : patch;
+      const normNew = Array.isArray(patch.items) ? norm5(patch.items) : null;
+      // คำนวณ noVat ใหม่จากรายการเพ็ทช้อปจริง (origin='shop') — ไม่ใช่แค่ clamp ของเดิม
+      const recomputedNoVat = normNew ? normNew.filter((c) => c[4] === 'shop').reduce((sum, c) => sum + c[1] * c[2], 0) : null;
+      const nextPatch = normNew ? { ...patch, items: normNew, noVat: recomputedNoVat } : patch;
       const receipts = (s.receipts || []).map((r) => r.no === no ? { ...r, ...nextPatch } : r);
       let pets = s.pets || [];
       let stock = s.stock || [], shopStock = s.shopStock || s.stock || [];
-      // ซิงก์รายการกลับเข้าประวัติการรักษา + ตัด/คืนสต็อก (เฉพาะใบ OPD ที่มี HN และมีการแก้รายการมา)
-      if (orig && (orig.type || 'opd') === 'opd' && orig.hn && normNew) {
-        const newDate = patch.date || orig.date;
-        const q = orig.q || '';
+      if (orig && normNew) {
+        // ตัด/คืนสต็อกตามส่วนต่าง — ทำได้ทั้งใบ OPD และใบเพ็ทช้อป (shop)
         const d = applyItemDelta(s, orig.items || [], normNew);
-        stock = d.stock; shopStock = d.shopStock; deducted = d.changed;
-        pets = pets.map((p) => {
-          if (p.hn !== orig.hn) return p;
-          let matched = false;
-          const visits = (p.visits || []).map((v) => {
-            if (matched || (v.q || '') !== q || v.date !== orig.date) return v;
-            matched = true;
-            return { ...v, items: normNew, date: newDate };
+        stock = d.stock; shopStock = d.shopStock;
+        // ซิงก์รายการกลับประวัติการรักษา เฉพาะใบ OPD ที่ผูกกับเคส (มี HN)
+        if ((orig.type || 'opd') === 'opd' && orig.hn) {
+          const newDate = patch.date || orig.date;
+          const q = orig.q || '';
+          pets = pets.map((p) => {
+            if (p.hn !== orig.hn) return p;
+            let matched = false;
+            const visits = (p.visits || []).map((v) => {
+              if (matched || (v.q || '') !== q || v.date !== orig.date) return v;
+              matched = true;
+              return { ...v, items: normNew, date: newDate };
+            });
+            return { ...p, visits };
           });
-          return { ...p, visits };
-        });
+        }
       }
       return { ...s, receipts, pets, stock, shopStock };
     });
@@ -391,8 +421,9 @@ function App() {
   const deductStock = (stockArr, charges) => {
     let n = 0;
     const next = stockArr.map((s) => {
-      const line = charges.find((c) => c.stockId === s.id);
-      if (line) {n++;return { ...s, qty: Math.max(0, s.qty - line.qty) };}
+      // รวมทุกบรรทัดที่ stockId เดียวกัน (กันกรณีรายการเดิมซ้ำหลายบรรทัด — เดิมตัดแค่บรรทัดแรก)
+      const lines = charges.filter((c) => c.stockId === s.id);
+      if (lines.length) { n++; const q = lines.reduce((a, c) => a + (Number(c.qty) || 0), 0); return { ...s, qty: Math.max(0, s.qty - q) }; }
       return s;
     });
     return [next, n];
@@ -498,11 +529,15 @@ function App() {
       Array.isArray(c) ? [c[0] || '', Number(c[1]) || 1, Number(c[2]) || 0, c[3] || null, c[4] || null]
         : [String(c.name || ''), Number(c.qty) || 1, Number(c.price) || 0, c.stockId || null, c.origin || null]
     );
-    const [newStock, dC] = deductStock(stock, charges.filter((c) => c[3] && c[4] !== 'shop').map((c) => ({ stockId: c[3], qty: c[1] })));
-    const [newShopStock, dS] = deductStock(shopStock, charges.filter((c) => c[3] && c[4] === 'shop').map((c) => ({ stockId: c[3], qty: c[1] })));
-    const deducted = dC + dS;
+    const clinicCharges = charges.filter((c) => c[3] && c[4] !== 'shop').map((c) => ({ stockId: c[3], qty: c[1] }));
+    const shopCharges = charges.filter((c) => c[3] && c[4] === 'shop').map((c) => ({ stockId: c[3], qty: c[1] }));
+    // นับจำนวนรายการที่ตัดสต็อก — ใช้แสดง toast เท่านั้น (คำนวณก่อน setState เพราะ updater รันตอน render)
+    const deducted = charges.filter((c) => c[3]).length;
     setState((s) => {
       const con = consumeReceipt(receipt, s);
+      // ตัดสต็อกจาก state ล่าสุด (s) ไม่ใช่ closure — กันข้อมูลอีกเครื่องที่ sync เข้ามาหาย
+      const [newStock] = deductStock(s.stock || [], clinicCharges);
+      const [newShopStock] = deductStock(s.shopStock || s.stock || [], shopCharges);
       return {
         ...s,
         stock: newStock,
@@ -534,7 +569,7 @@ function App() {
       return {
         ...s, shopStock: newShopStock,
         receipts: [...(s.receipts || []), {
-          no, date: new Date().toISOString().slice(0, 10), type: 'shop',
+          no, date: todayISO(), type: 'shop',
           petName: '-', ownerName: '-', items: cart.map((c) => [c.name, c.qty, c.price, c.id || null, 'shop']),
           method, total
         }],
@@ -657,7 +692,7 @@ function App() {
             <Icon name={n.icon} size={19} />
             <span className="nav-label">{n.label}</span>
             {n.id === 'stock' && lowCount > 0 ? <span className="chip chip-butter nav-label" style={{ marginLeft: 'auto', fontSize: 11 }}>{lowCount}</span> : null}
-            {n.id === 'appointments' ? (() => {const cnt = appointments.filter((a) => a.date === new Date().toISOString().slice(0, 10) && a.status === 'scheduled').length;return cnt > 0 ? <span className="chip chip-blush nav-label" style={{ marginLeft: 'auto', fontSize: 11 }}>{cnt}</span> : null;})() : null}
+            {n.id === 'appointments' ? (() => {const cnt = appointments.filter((a) => a.date === todayISO() && a.status === 'scheduled').length;return cnt > 0 ? <span className="chip chip-blush nav-label" style={{ marginLeft: 'auto', fontSize: 11 }}>{cnt}</span> : null;})() : null}
           </button>
         )}
         <div className="nav-spacer"></div>

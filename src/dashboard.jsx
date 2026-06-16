@@ -347,7 +347,7 @@ function AdmittedPanel({ admitted, onUpdateAdmitted, onDischargeAdmitted, onOpen
   const [newRec, setNewRec] = useState({ note: '', charges: [{ name: '', qty: 1, price: '' }] });
   const [discharging, setDischarging] = useState(null);
   const [payMethod, setPayMethod] = useState('เงินสด');
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayISO();
 
   const totalFor = (adm) => (adm.dailyRecords || []).reduce((s, r) =>
     s + (r.charges || []).reduce((ss, c) => ss + (parseFloat(c[2]) || 0) * (parseInt(c[1]) || 1), 0), 0);
@@ -645,7 +645,7 @@ function Dashboard({ pets, queue, appointments, admitted, receipts = [], onOpenC
     setShowWalkIn(true);
   };
   const byStatus = (st) => {
-    const today = new Date().toISOString().slice(0, 10);
+    const today = todayISO();
     return queue.filter((x) => {
       if (x.status !== st) return false;
       // เสร็จแล้ว: แสดงเฉพาะวันนี้ เมื่อวานหายออก
@@ -653,9 +653,9 @@ function Dashboard({ pets, queue, appointments, admitted, receipts = [], onOpenC
       return true;
     });
   };
-  const todayISO = new Date().toISOString().slice(0, 10);
+  const todayStr = todayISO();
   // รายรับวันนี้คิดจากใบเสร็จ OPD ของวันนี้ที่ยังไม่ถูกยกเลิก (ยกเลิกใบเสร็จแล้วยอดจะหายตามจริง)
-  const revenue = (receipts || []).filter((r) => (r.type || 'opd') === 'opd' && r.date === todayISO).reduce((s, r) => s + (r.total || 0), 0);
+  const revenue = (receipts || []).filter((r) => (r.type || 'opd') === 'opd' && r.date === todayStr).reduce((s, r) => s + (r.total || 0), 0);
   // นัดของวันที่เลือกในแผง (default = วันนี้)
   const dayAppts = (appointments || []).
   filter((a) => a.date === apptDay && a.status !== 'cancelled').
@@ -690,7 +690,7 @@ function Dashboard({ pets, queue, appointments, admitted, receipts = [], onOpenC
               <span style={{ background: '#3A3F8F', color: '#fff', borderRadius: 8, width: 28, height: 28, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                 <Icon name="clock" size={15} />
               </span>
-              {apptDay === todayISO ? 'นัดวันนี้' : 'นัด'}
+              {apptDay === todayStr ? 'นัดวันนี้' : 'นัด'}
             </span>
             <span style={{ minWidth: 22, height: 22, borderRadius: 99, background: '#3A3F8F', color: '#fff', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 800 }}>
               {dayAppts.length}
@@ -699,14 +699,14 @@ function Dashboard({ pets, queue, appointments, admitted, receipts = [], onOpenC
           {/* day navigator */}
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 4, padding: '7px 10px', borderBottom: '1px solid var(--line)' }}>
             <button className="btn btn-sm" style={{ padding: '2px 9px', fontSize: 15, lineHeight: 1 }} title="วันก่อนหน้า" onClick={() => shiftApptDay(-1)}>‹</button>
-            <button onClick={() => setApptDay(todayISO)} title="กลับมาวันนี้" style={{ flex: 1, textAlign: 'center', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 700, fontSize: 12.5, color: apptDay === todayISO ? '#3A3F8F' : 'var(--ink-soft)' }}>
-              {typeof dateTHShort !== 'undefined' ? dateTHShort(apptDay) : apptDay}{apptDay === todayISO ? ' · วันนี้' : ''}
+            <button onClick={() => setApptDay(todayStr)} title="กลับมาวันนี้" style={{ flex: 1, textAlign: 'center', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 700, fontSize: 12.5, color: apptDay === todayStr ? '#3A3F8F' : 'var(--ink-soft)' }}>
+              {typeof dateTHShort !== 'undefined' ? dateTHShort(apptDay) : apptDay}{apptDay === todayStr ? ' · วันนี้' : ''}
             </button>
             <button className="btn btn-sm" style={{ padding: '2px 9px', fontSize: 15, lineHeight: 1 }} title="วันถัดไป" onClick={() => shiftApptDay(1)}>›</button>
           </div>
           <div style={{ padding: '10px 8px', display: 'flex', flexDirection: 'column', gap: 7, maxHeight: 540, overflowY: 'auto' }}>
             {dayAppts.length === 0 ?
-            <div className="queue-empty" style={{ background: 'transparent', border: '1.5px dashed #B0B8E0', fontSize: 12.5 }}>{apptDay === todayISO ? 'ไม่มีนัดวันนี้' : `ไม่มีนัดวันที่ ${typeof dateTHShort !== 'undefined' ? dateTHShort(apptDay) : apptDay}`}</div> :
+            <div className="queue-empty" style={{ background: 'transparent', border: '1.5px dashed #B0B8E0', fontSize: 12.5 }}>{apptDay === todayStr ? 'ไม่มีนัดวันนี้' : `ไม่มีนัดวันที่ ${typeof dateTHShort !== 'undefined' ? dateTHShort(apptDay) : apptDay}`}</div> :
             dayAppts.map((a) => {
               const arrived = a.status === 'arrived';
               const alreadyQueued = queue.some((q) => q.hn === a.hn && ['wait', 'exam', 'cashier'].includes(q.status));

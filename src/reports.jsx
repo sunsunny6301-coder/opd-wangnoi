@@ -398,7 +398,8 @@ function ReceiptEditModal({ receipt, onClose, onSave, onOpenPet, services = [], 
     const cleanItems = items.filter((it) => String(it.name).trim())
       .map((it) => [String(it.name).trim(), Number(it.qty) || 1, Number(it.price) || 0, it.stockId || null, it.origin || null]);
     const newTotal = cleanItems.reduce((s, c) => s + c[1] * c[2], 0);
-    const newNoVat = Math.min(Number(receipt.noVat) || 0, newTotal); // กัน noVat เกินยอดรวมหลังแก้
+    // noVat = ยอดรายการเพ็ทช้อป (origin='shop') คำนวณใหม่จากรายการจริง (app.jsx จะ recompute ซ้ำอีกชั้น)
+    const newNoVat = cleanItems.filter((c) => c[4] === 'shop').reduce((s, c) => s + c[1] * c[2], 0);
     onSave({ petName: petName.trim() || '-', ownerName: ownerName.trim() || '-', method, date, items: cleanItems, total: newTotal, noVat: newNoVat });
   };
   const [showPreview, setShowPreview] = useState(false);
