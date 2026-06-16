@@ -30,7 +30,7 @@ function heatText(count) {
   return '#fff';
 }
 
-function HistoryView({ pets }) {
+function HistoryView({ pets, onOpenPet }) {
   const today = new Date();
   const [year, setYear] = useState(today.getFullYear());
   const [month, setMonth] = useState(today.getMonth());
@@ -180,7 +180,10 @@ function HistoryView({ pets }) {
                 const cat = Object.entries(cats).find(([, v]) => v > 0)?.[0] || 'OPD';
                 const catColors = { วัคซีน: '#3A8F6A', ผ่าตัด: '#8C3028', แล็บ: '#3A3F8F', OPD: '#5E8A93' };
                 return (
-                  <div key={i} style={{ padding: '12px 16px', borderBottom: i < selVisits.length - 1 ? '1px solid var(--line)' : 'none', display: 'flex', gap: 14, alignItems: 'flex-start' }}>
+                  <button key={i} onClick={() => onOpenPet && onOpenPet(pet.hn)}
+                    style={{ padding: '12px 16px', borderBottom: i < selVisits.length - 1 ? '1px solid var(--line)' : 'none', display: 'flex', gap: 14, alignItems: 'flex-start', width: '100%', background: 'none', border: 'none', textAlign: 'left', cursor: onOpenPet ? 'pointer' : 'default', transition: 'background .12s' }}
+                    onMouseEnter={e => { if (onOpenPet) e.currentTarget.style.background = 'var(--paper)'; }}
+                    onMouseLeave={e => { e.currentTarget.style.background = 'none'; }}>
                     <div style={{ fontSize: 32, lineHeight: 1, flexShrink: 0 }}>{SPECIES_EMOJI[pet.species] || '🐾'}</div>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ display: 'flex', gap: 8, alignItems: 'baseline', flexWrap: 'wrap' }}>
@@ -203,8 +206,9 @@ function HistoryView({ pets }) {
                     <div style={{ textAlign: 'right', flexShrink: 0 }}>
                       {visit.vet && <div style={{ fontSize: 12, color: 'var(--ink-faint)' }}>{visit.vet}</div>}
                       {total > 0 && <div style={{ fontWeight: 700, fontSize: 14, color: 'var(--navy)', marginTop: 3 }}>{fmtB(total)}</div>}
+                      {onOpenPet && <div style={{ fontSize: 11, color: 'var(--mint-deep)', marginTop: 4 }}>ดูรายละเอียด ›</div>}
                     </div>
-                  </div>
+                  </button>
                 );
               })}
             </div>
