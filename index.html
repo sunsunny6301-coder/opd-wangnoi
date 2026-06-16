@@ -4219,39 +4219,48 @@ function DonutChart({ data, size = 160 }) {
 // ── Excel Export ──
 // 1 แถว = 1 ใบเสร็จ/เคส แยกราคารักษา (รวม VAT แล้ว) กับราคาอาหารสัตว์ (ไม่คิด VAT) ออกจากกัน
 // เคส OPD = แยกอาหาร/รักษาตามหมวดสินค้า · ใบเสร็จเพ็ทช้อป = ลงช่องอาหารทั้งใบ (ไม่มีค่ารักษา)
-function exportToExcel(visits, receipts, rangeLabel, stock = [], dateRange = null) {
+function exportToExcel(visits, receipts, rangeLabel, stock = [], dateRange = null, shopStock = []) {
   const stockById = {};
   (stock || []).forEach((st) => { if (st && st.id != null) stockById[st.id] = st; });
-  // หมวดที่ถือเป็น "อาหารสัตว์" — จับทุกหมวดที่มีคำว่า "อาหาร" (อาหารสัตว์ / อาหารรักษาโรค / อาหารเสริมและบำรุง ฯลฯ)
+  // หมวดที่ถือเป็น "อาหารสัตว์" — จับทุกหมวดที่มีคำว่า "อาหาร" · ดูทั้งคลังคลินิกและคลังเพ็ทช้อป (ใบเสร็จเก็บแค่ชื่อ ไม่มี stockId)
+  const allStock = [...(stock || []), ...(shopStock || [])];
   const isFood = (name, stockId) => {
-    const st = (stockId != null && stockById[stockId]) || (stock || []).find((x) => x && x.name === name);
+    const st = (stockId != null && stockById[stockId]) || allStock.find((x) => x && x.name === name);
     return !!(st && /อาหาร/.test(st.cat || ''));
   };
   const cell = (n) => (n ? n : '');  // ช่องว่างเมื่อเป็น 0 ให้อ่านง่าย
   const header = ['วันที่', 'HN', 'ชื่อสัตว์', 'ชนิด', 'เจ้าของ', 'เบอร์โทร', 'CC', 'Dx', 'รายการ', 'จำนวน', 'ราคารักษา', 'ราคาอาหารสัตว์', 'รวม'];
   let sumTreat = 0, sumFood = 0;
-  // เอาเฉพาะเคสที่ยังมีใบเสร็จ OPD อยู่จริง (ใบเสร็จที่ยกเลิกไปแล้วจะไม่ถูกนับ — จับคู่ด้วย HN+คิว+วันที่)
-  const activeOpdKeys = activeOpdReceiptKeys(receipts);
-  // แถวจากเคสตรวจรักษา (OPD)
-  const visitRows = visits.filter((v) => activeOpdKeys.has(visitReceiptKey(v.petHn, v))).map((v) => {
-    const items = (v.items || []).map((it) => Array.isArray(it) ? it : [it.name, it.qty, it.price, it.stockId]);
-    let treat = 0, food = 0, qtyTotal = 0;
-    const names = [];
-    items.forEach(([name, qty, price, stockId]) => {
-      const q = Number(qty) || 1, line = q * (Number(price) || 0);
-      qtyTotal += q;
-      if (name) names.push(name);
-      if (isFood(name, stockId)) food += line; else treat += line;
-    });
-    sumTreat += treat; sumFood += food;
-    return [
-      v.date, v.petHn, v.petName, v.petSpecies,
-      v.owner?.name || '', v.owner?.phone || '', v.cc || '', v.dx || '',
-      names.join(', '), qtyTotal, cell(treat), cell(food), treat + food,
-    ];
-  });
-  // แถวจากใบเสร็จเพ็ทช้อป (ขายอาหาร/สินค้า) — ลงช่องราคาอาหารสัตว์ทั้งใบ ไม่คิด VAT
   const [rs, re] = dateRange || ['', '￿'];
+  // ข้อมูลคลินิก (CC/Dx/ชนิด/เบอร์) จาก visits ไว้เติมให้แถว — จับคู่ด้วย HN|คิว|วันที่ และ fallback ด้วย HN
+  const visitByKey = {}, petInfoByHn = {};
+  (visits || []).forEach((v) => {
+    visitByKey[visitReceiptKey(v.petHn, v)] = v;
+    if (!petInfoByHn[v.petHn]) petInfoByHn[v.petHn] = v;
+  });
+  // ── แถว OPD: อ้างอิงจาก "ใบเสร็จจริง" (type opd) เพื่อให้ตรงกับ PDF + สะท้อนการแก้ไขใบเสร็จเสมอ ──
+  const opdRows = (receipts || [])
+    .filter((r) => (r.type || 'opd') === 'opd' && r.date >= rs && r.date <= re)
+    .map((r) => {
+      const v = visitByKey[`${r.hn}|${r.q || ''}|${r.date}`] || petInfoByHn[r.hn] || {};
+      const items = (r.items || []).map((it) => Array.isArray(it) ? it : [it.name, it.qty, it.price]);
+      let treat = 0, food = 0, qtyTotal = 0;
+      const names = [];
+      items.forEach(([name, qty, price]) => {
+        const q = Number(qty) || 1, line = q * (Number(price) || 0);
+        qtyTotal += q;
+        if (name) names.push(name);
+        if (isFood(name)) food += line; else treat += line;
+      });
+      sumTreat += treat; sumFood += food;
+      return [
+        r.date, r.hn || '', (r.petName && r.petName !== '-' ? r.petName : (v.petName || '')), v.petSpecies || '',
+        (r.ownerName && r.ownerName !== '-' ? r.ownerName : (v.owner?.name || '')), v.owner?.phone || '', v.cc || '', v.dx || '',
+        names.join(', '), qtyTotal, cell(treat), cell(food), treat + food,
+      ];
+    });
+  const visitRows = opdRows;
+  // แถวจากใบเสร็จเพ็ทช้อป (ขายอาหาร/สินค้า) — ลงช่องราคาอาหารสัตว์ทั้งใบ ไม่คิด VAT
   const shopRows = (receipts || [])
     .filter((r) => r.type === 'shop' && r.date >= rs && r.date <= re)
     .map((r) => {
@@ -4312,11 +4321,15 @@ function ReceiptEditModal({ receipt, onClose, onSave, onOpenPet }) {
     const newNoVat = Math.min(Number(receipt.noVat) || 0, newTotal); // กัน noVat เกินยอดรวมหลังแก้
     onSave({ petName: petName.trim() || '-', ownerName: ownerName.trim() || '-', method, date, items: cleanItems, total: newTotal, noVat: newNoVat });
   };
+  const [showPreview, setShowPreview] = useState(false);
+  const previewItems = items.map((it) => ({ name: String(it.name || ''), qty: Number(it.qty) || 0, price: Number(it.price) || 0 }));
   const cellInput = { padding: '5px 8px', fontSize: 13 };
   return (
     <Modal title={`✏️ แก้ไขใบเสร็จ ${receipt.no}`} onClose={onClose} wide footer={<>
-      <button className="btn" onClick={onClose}>ยกเลิก (ไม่บันทึก)</button>
-      <button className="btn btn-primary" onClick={save}><Icon name="check" size={16} /> บันทึกลงระบบ — {fmtB(total)}</button>
+      <button className="btn no-print" onClick={onClose}>ยกเลิก (ไม่บันทึก)</button>
+      <button className="btn no-print" onClick={() => setShowPreview((p) => !p)}><Icon name="printer" size={15} /> {showPreview ? 'ซ่อนใบเสร็จ' : 'ดูใบเสร็จ'}</button>
+      {showPreview ? <button className="btn no-print" onClick={() => window.print()}>🖨 พิมพ์</button> : null}
+      <button className="btn btn-primary no-print" onClick={save}><Icon name="check" size={16} /> บันทึกลงระบบ — {fmtB(total)}</button>
     </>}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
         {receipt.hn && onOpenPet ? (
@@ -4352,14 +4365,25 @@ function ReceiptEditModal({ receipt, onClose, onSave, onOpenPet }) {
             </tbody>
             <tfoot><tr style={{ background: 'var(--paper)' }}><td colSpan={3} style={{ fontWeight: 700, textAlign: 'right', padding: '8px 12px' }}>ยอดรวมทั้งสิ้น</td><td className="num" style={{ fontWeight: 800 }}>{fmtB(total)}</td><td></td></tr></tfoot>
           </table>
-          <button className="btn btn-sm" style={{ marginTop: 8 }} onClick={addItem}><Icon name="plus" size={13} /> เพิ่มรายการ</button>
+          <button className="btn btn-sm no-print" style={{ marginTop: 8 }} onClick={addItem}><Icon name="plus" size={13} /> เพิ่มรายการ</button>
         </div>
+        {/* ตัวอย่างใบเสร็จจริง (สะท้อนรายการที่กำลังแก้) — กด "พิมพ์" เพื่อสั่งพิมพ์ใบนี้ */}
+        {showPreview ? (
+          <div style={{ background: '#fff', border: '1px solid var(--line)', borderRadius: 'var(--radius)', padding: '20px 24px', maxHeight: '60vh', overflowY: 'auto' }}>
+            <TaxInvoice
+              items={previewItems}
+              petName={petName !== '-' ? petName : ''}
+              ownerName={ownerName !== '-' ? ownerName : ''}
+              method={method} vatMode="none" no={receipt.no} date={date}
+            />
+          </div>
+        ) : null}
       </div>
     </Modal>
   );
 }
 
-function ReportsView({ pets, queue, stock, receipts = [], onCancelReceipt, onUpdateReceipt, onOpenPet }) {
+function ReportsView({ pets, queue, stock, shopStock = [], receipts = [], onCancelReceipt, onUpdateReceipt, onOpenPet }) {
   const [range, setRange] = useState('week');
   const [showExport, setShowExport] = useState(false);
   const [editReceipt, setEditReceipt] = useState(null);
@@ -4426,7 +4450,7 @@ function ReportsView({ pets, queue, stock, receipts = [], onCancelReceipt, onUpd
           <Icon name="printer" size={16} /> Export ใบเสร็จ PDF
           {receipts.length > 0 ? <span className="chip chip-navy" style={{ marginLeft: 6, fontSize: 11 }}>{receipts.length}</span> : null}
         </button>
-        <button className="btn btn-soft" onClick={() => exportToExcel(visits, receipts, rangeLabel, stock, dateRange)} style={{ color: 'var(--mint-deep)', borderColor: 'var(--mint-deep)' }}>
+        <button className="btn btn-soft" onClick={() => exportToExcel(visits, receipts, rangeLabel, stock, dateRange, shopStock)} style={{ color: 'var(--mint-deep)', borderColor: 'var(--mint-deep)' }}>
           📅 Export Excel (.csv)
         </button>
       </div>
@@ -6623,7 +6647,7 @@ function App() {
           {page === 'appointments' ? <AppointmentsView appointments={appointments} pets={pets} onAdd={addAppointment} onUpdate={updateAppointment} /> : null}
           {page === 'shop' ? <PetShop stock={shopStock} onCheckout={shopCheckout} previewReceiptNo={nextReceiptNo().no} onDeleteItem={deleteShopItem} onAddItem={addShopItem} onImportStock={importShopItems} onUpdateItem={updateShopItem} /> : null}
           {page === 'stock' ? <StockView stock={stock} onAdjust={adjustStock} onAddItem={addStockItem} onImportStock={importStockItems} onDeleteItem={deleteStockItem} onClearAll={clearStock} onUpdateItem={updateStockItem} /> : null}
-          {page === 'reports' ? <ReportsView pets={pets} queue={queue} stock={stock} receipts={receipts} onCancelReceipt={cancelReceipt} onUpdateReceipt={updateReceipt} onOpenPet={openPet} /> : null}
+          {page === 'reports' ? <ReportsView pets={pets} queue={queue} stock={stock} shopStock={shopStock} receipts={receipts} onCancelReceipt={cancelReceipt} onUpdateReceipt={updateReceipt} onOpenPet={openPet} /> : null}
           {page === 'history' ? <HistoryView pets={pets} onOpenPet={openPet} /> : null}
           {page === 'tax' ? <TaxView pets={pets} receipts={receipts} /> : null}
         </main>
