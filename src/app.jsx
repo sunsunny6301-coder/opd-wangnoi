@@ -273,8 +273,39 @@ function App() {
     pushToast(`ยกเลิกใบเสร็จ ${no} แล้ว — เลขนี้จะถูกนำกลับมาใช้ครั้งถัดไป`);
   };
   // แก้ไขใบเสร็จถาวร (ชื่อ/รายการ/ยอด ฯลฯ) — สะท้อนใน export PDF/Excel และยอดทันที
+  // และถ้าเป็นใบเสร็จ OPD ที่ผูกกับเคส → อัปเดต "รายการในประวัติการรักษา" ให้ตรงกับใบเสร็จที่แก้ด้วย
   const updateReceipt = (no, patch) => {
-    setState((s) => ({ ...s, receipts: (s.receipts || []).map((r) => r.no === no ? { ...r, ...patch } : r) }));
+    setState((s) => {
+      const orig = (s.receipts || []).find((r) => r.no === no);
+      const receipts = (s.receipts || []).map((r) => r.no === no ? { ...r, ...patch } : r);
+      let pets = s.pets || [];
+      // ซิงก์รายการกลับเข้าประวัติการรักษา (เฉพาะใบ OPD ที่มี HN และมีการแก้รายการมา)
+      if (orig && (orig.type || 'opd') === 'opd' && orig.hn && Array.isArray(patch.items)) {
+        const newDate = patch.date || orig.date;
+        const q = orig.q || '';
+        pets = pets.map((p) => {
+          if (p.hn !== orig.hn) return p;
+          let matched = false;
+          const visits = (p.visits || []).map((v) => {
+            if (matched || (v.q || '') !== q || v.date !== orig.date) return v;
+            matched = true;
+            // สืบ stockId/origin จากรายการเดิมที่ชื่อตรงกัน (ไม่ตัดสต็อกซ้ำ — ถ้าจะตัดสต็อกให้เข้าเคส)
+            const oldItems = (v.items || []).map((it) => Array.isArray(it)
+              ? it : [it.name, it.qty, it.price, it.stockId, it.origin]);
+            const newItems = patch.items.map((it) => {
+              const name = Array.isArray(it) ? (it[0] || '') : (it.name || '');
+              const qty = Number(Array.isArray(it) ? it[1] : it.qty) || 1;
+              const price = Number(Array.isArray(it) ? it[2] : it.price) || 0;
+              const prev = oldItems.find((o) => o[0] === name);
+              return [name, qty, price, prev ? (prev[3] || null) : null, prev ? (prev[4] || null) : null];
+            });
+            return { ...v, items: newItems, date: newDate };
+          });
+          return { ...p, visits };
+        });
+      }
+      return { ...s, receipts, pets };
+    });
     pushToast(`บันทึกการแก้ไขใบเสร็จ ${no} แล้ว`);
   };
 
@@ -610,7 +641,7 @@ function App() {
           {page === 'appointments' ? <AppointmentsView appointments={appointments} pets={pets} onAdd={addAppointment} onUpdate={updateAppointment} /> : null}
           {page === 'shop' ? <PetShop stock={shopStock} onCheckout={shopCheckout} previewReceiptNo={nextReceiptNo().no} onDeleteItem={deleteShopItem} onAddItem={addShopItem} onImportStock={importShopItems} onUpdateItem={updateShopItem} /> : null}
           {page === 'stock' ? <StockView stock={stock} onAdjust={adjustStock} onAddItem={addStockItem} onImportStock={importStockItems} onDeleteItem={deleteStockItem} onClearAll={clearStock} onUpdateItem={updateStockItem} /> : null}
-          {page === 'reports' ? <ReportsView pets={pets} queue={queue} stock={stock} shopStock={shopStock} receipts={receipts} onCancelReceipt={cancelReceipt} onUpdateReceipt={updateReceipt} onOpenPet={openPet} /> : null}
+          {page === 'reports' ? <ReportsView pets={pets} queue={queue} stock={stock} shopStock={shopStock} services={services} receipts={receipts} onCancelReceipt={cancelReceipt} onUpdateReceipt={updateReceipt} onOpenPet={openPet} /> : null}
           {page === 'history' ? <HistoryView pets={pets} onOpenPet={openPet} /> : null}
           {page === 'tax' ? <TaxView pets={pets} receipts={receipts} /> : null}
         </main>

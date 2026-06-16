@@ -4300,7 +4300,7 @@ function SimpleBar({ label, value, max, color }) {
 }
 
 // ── แก้ไขใบเสร็จถาวร (ชื่อ/รายการ/ยอด/วันที่) — บันทึกแล้วสะท้อนใน export ทันที ──
-function ReceiptEditModal({ receipt, onClose, onSave, onOpenPet }) {
+function ReceiptEditModal({ receipt, onClose, onSave, onOpenPet, services = [], stock = [], shopStock = [] }) {
   const [petName, setPetName] = useState(receipt.petName || '');
   const [ownerName, setOwnerName] = useState(receipt.ownerName || '');
   const [method, setMethod] = useState(receipt.method || 'เงินสด');
@@ -4314,6 +4314,8 @@ function ReceiptEditModal({ receipt, onClose, onSave, onOpenPet }) {
   const setItem = (i, k, v) => setItems((prev) => prev.map((x, ix) => ix === i ? { ...x, [k]: v } : x));
   const addItem = () => setItems((prev) => [...prev, { name: '', qty: 1, price: 0 }]);
   const delItem = (i) => setItems((prev) => prev.filter((_, ix) => ix !== i));
+  // เพิ่มรายการจากการค้นหาในคลัง/บริการ — เติมชื่อ+ราคาให้อัตโนมัติ (จำนวนเริ่มที่ 1)
+  const addFromCatalog = (x) => setItems((prev) => [...prev, { name: x.name, qty: 1, price: Number(x.price) || 0 }]);
   const save = () => {
     const cleanItems = items.filter((it) => String(it.name).trim())
       .map((it) => [String(it.name).trim(), Number(it.qty) || 1, Number(it.price) || 0]);
@@ -4350,6 +4352,10 @@ function ReceiptEditModal({ receipt, onClose, onSave, onOpenPet }) {
         </div>
         <div>
           <div style={{ fontWeight: 700, fontSize: 13, color: 'var(--ink-soft)', marginBottom: 8 }}>รายการในใบเสร็จ</div>
+          {/* ค้นหายา/บริการ/สินค้า เพื่อเพิ่มรายการเข้าใบเสร็จได้เลย (เหมือนหน้าบันทึกการตรวจ) */}
+          <div className="no-print" style={{ marginBottom: 10 }}>
+            <ChargePicker services={services || []} stock={stock || []} shopStock={shopStock || []} onAdd={addFromCatalog} />
+          </div>
           <table className="tbl">
             <thead><tr><th>รายการ</th><th className="num" style={{ width: 90 }}>จำนวน</th><th className="num" style={{ width: 110 }}>ราคา/หน่วย</th><th className="num" style={{ width: 110 }}>รวม</th><th style={{ width: 40 }}></th></tr></thead>
             <tbody>
@@ -4383,7 +4389,7 @@ function ReceiptEditModal({ receipt, onClose, onSave, onOpenPet }) {
   );
 }
 
-function ReportsView({ pets, queue, stock, shopStock = [], receipts = [], onCancelReceipt, onUpdateReceipt, onOpenPet }) {
+function ReportsView({ pets, queue, stock, shopStock = [], services = [], receipts = [], onCancelReceipt, onUpdateReceipt, onOpenPet }) {
   const [range, setRange] = useState('week');
   const [showExport, setShowExport] = useState(false);
   const [editReceipt, setEditReceipt] = useState(null);
@@ -4583,6 +4589,7 @@ function ReportsView({ pets, queue, stock, shopStock = [], receipts = [], onCanc
       {editReceipt ? (
         <ReceiptEditModal
           receipt={editReceipt}
+          services={services} stock={stock} shopStock={shopStock}
           onClose={() => setEditReceipt(null)}
           onOpenPet={onOpenPet}
           onSave={(patch) => { onUpdateReceipt && onUpdateReceipt(editReceipt.no, patch); setEditReceipt(null); }}
@@ -6310,8 +6317,39 @@ function App() {
     pushToast(`ยกเลิกใบเสร็จ ${no} แล้ว — เลขนี้จะถูกนำกลับมาใช้ครั้งถัดไป`);
   };
   // แก้ไขใบเสร็จถาวร (ชื่อ/รายการ/ยอด ฯลฯ) — สะท้อนใน export PDF/Excel และยอดทันที
+  // และถ้าเป็นใบเสร็จ OPD ที่ผูกกับเคส → อัปเดต "รายการในประวัติการรักษา" ให้ตรงกับใบเสร็จที่แก้ด้วย
   const updateReceipt = (no, patch) => {
-    setState((s) => ({ ...s, receipts: (s.receipts || []).map((r) => r.no === no ? { ...r, ...patch } : r) }));
+    setState((s) => {
+      const orig = (s.receipts || []).find((r) => r.no === no);
+      const receipts = (s.receipts || []).map((r) => r.no === no ? { ...r, ...patch } : r);
+      let pets = s.pets || [];
+      // ซิงก์รายการกลับเข้าประวัติการรักษา (เฉพาะใบ OPD ที่มี HN และมีการแก้รายการมา)
+      if (orig && (orig.type || 'opd') === 'opd' && orig.hn && Array.isArray(patch.items)) {
+        const newDate = patch.date || orig.date;
+        const q = orig.q || '';
+        pets = pets.map((p) => {
+          if (p.hn !== orig.hn) return p;
+          let matched = false;
+          const visits = (p.visits || []).map((v) => {
+            if (matched || (v.q || '') !== q || v.date !== orig.date) return v;
+            matched = true;
+            // สืบ stockId/origin จากรายการเดิมที่ชื่อตรงกัน (ไม่ตัดสต็อกซ้ำ — ถ้าจะตัดสต็อกให้เข้าเคส)
+            const oldItems = (v.items || []).map((it) => Array.isArray(it)
+              ? it : [it.name, it.qty, it.price, it.stockId, it.origin]);
+            const newItems = patch.items.map((it) => {
+              const name = Array.isArray(it) ? (it[0] || '') : (it.name || '');
+              const qty = Number(Array.isArray(it) ? it[1] : it.qty) || 1;
+              const price = Number(Array.isArray(it) ? it[2] : it.price) || 0;
+              const prev = oldItems.find((o) => o[0] === name);
+              return [name, qty, price, prev ? (prev[3] || null) : null, prev ? (prev[4] || null) : null];
+            });
+            return { ...v, items: newItems, date: newDate };
+          });
+          return { ...p, visits };
+        });
+      }
+      return { ...s, receipts, pets };
+    });
     pushToast(`บันทึกการแก้ไขใบเสร็จ ${no} แล้ว`);
   };
 
@@ -6647,7 +6685,7 @@ function App() {
           {page === 'appointments' ? <AppointmentsView appointments={appointments} pets={pets} onAdd={addAppointment} onUpdate={updateAppointment} /> : null}
           {page === 'shop' ? <PetShop stock={shopStock} onCheckout={shopCheckout} previewReceiptNo={nextReceiptNo().no} onDeleteItem={deleteShopItem} onAddItem={addShopItem} onImportStock={importShopItems} onUpdateItem={updateShopItem} /> : null}
           {page === 'stock' ? <StockView stock={stock} onAdjust={adjustStock} onAddItem={addStockItem} onImportStock={importStockItems} onDeleteItem={deleteStockItem} onClearAll={clearStock} onUpdateItem={updateStockItem} /> : null}
-          {page === 'reports' ? <ReportsView pets={pets} queue={queue} stock={stock} shopStock={shopStock} receipts={receipts} onCancelReceipt={cancelReceipt} onUpdateReceipt={updateReceipt} onOpenPet={openPet} /> : null}
+          {page === 'reports' ? <ReportsView pets={pets} queue={queue} stock={stock} shopStock={shopStock} services={services} receipts={receipts} onCancelReceipt={cancelReceipt} onUpdateReceipt={updateReceipt} onOpenPet={openPet} /> : null}
           {page === 'history' ? <HistoryView pets={pets} onOpenPet={openPet} /> : null}
           {page === 'tax' ? <TaxView pets={pets} receipts={receipts} /> : null}
         </main>

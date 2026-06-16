@@ -378,7 +378,7 @@ function SimpleBar({ label, value, max, color }) {
 }
 
 // ── แก้ไขใบเสร็จถาวร (ชื่อ/รายการ/ยอด/วันที่) — บันทึกแล้วสะท้อนใน export ทันที ──
-function ReceiptEditModal({ receipt, onClose, onSave, onOpenPet }) {
+function ReceiptEditModal({ receipt, onClose, onSave, onOpenPet, services = [], stock = [], shopStock = [] }) {
   const [petName, setPetName] = useState(receipt.petName || '');
   const [ownerName, setOwnerName] = useState(receipt.ownerName || '');
   const [method, setMethod] = useState(receipt.method || 'เงินสด');
@@ -392,6 +392,8 @@ function ReceiptEditModal({ receipt, onClose, onSave, onOpenPet }) {
   const setItem = (i, k, v) => setItems((prev) => prev.map((x, ix) => ix === i ? { ...x, [k]: v } : x));
   const addItem = () => setItems((prev) => [...prev, { name: '', qty: 1, price: 0 }]);
   const delItem = (i) => setItems((prev) => prev.filter((_, ix) => ix !== i));
+  // เพิ่มรายการจากการค้นหาในคลัง/บริการ — เติมชื่อ+ราคาให้อัตโนมัติ (จำนวนเริ่มที่ 1)
+  const addFromCatalog = (x) => setItems((prev) => [...prev, { name: x.name, qty: 1, price: Number(x.price) || 0 }]);
   const save = () => {
     const cleanItems = items.filter((it) => String(it.name).trim())
       .map((it) => [String(it.name).trim(), Number(it.qty) || 1, Number(it.price) || 0]);
@@ -428,6 +430,10 @@ function ReceiptEditModal({ receipt, onClose, onSave, onOpenPet }) {
         </div>
         <div>
           <div style={{ fontWeight: 700, fontSize: 13, color: 'var(--ink-soft)', marginBottom: 8 }}>รายการในใบเสร็จ</div>
+          {/* ค้นหายา/บริการ/สินค้า เพื่อเพิ่มรายการเข้าใบเสร็จได้เลย (เหมือนหน้าบันทึกการตรวจ) */}
+          <div className="no-print" style={{ marginBottom: 10 }}>
+            <ChargePicker services={services || []} stock={stock || []} shopStock={shopStock || []} onAdd={addFromCatalog} />
+          </div>
           <table className="tbl">
             <thead><tr><th>รายการ</th><th className="num" style={{ width: 90 }}>จำนวน</th><th className="num" style={{ width: 110 }}>ราคา/หน่วย</th><th className="num" style={{ width: 110 }}>รวม</th><th style={{ width: 40 }}></th></tr></thead>
             <tbody>
@@ -461,7 +467,7 @@ function ReceiptEditModal({ receipt, onClose, onSave, onOpenPet }) {
   );
 }
 
-function ReportsView({ pets, queue, stock, shopStock = [], receipts = [], onCancelReceipt, onUpdateReceipt, onOpenPet }) {
+function ReportsView({ pets, queue, stock, shopStock = [], services = [], receipts = [], onCancelReceipt, onUpdateReceipt, onOpenPet }) {
   const [range, setRange] = useState('week');
   const [showExport, setShowExport] = useState(false);
   const [editReceipt, setEditReceipt] = useState(null);
@@ -661,6 +667,7 @@ function ReportsView({ pets, queue, stock, shopStock = [], receipts = [], onCanc
       {editReceipt ? (
         <ReceiptEditModal
           receipt={editReceipt}
+          services={services} stock={stock} shopStock={shopStock}
           onClose={() => setEditReceipt(null)}
           onOpenPet={onOpenPet}
           onSave={(patch) => { onUpdateReceipt && onUpdateReceipt(editReceipt.no, patch); setEditReceipt(null); }}
