@@ -294,7 +294,7 @@ function ChargePicker({ services, stock, shopStock = [], onAdd }) {
   );
 }
 
-function CaseView({ pet, queueItem, vets, services, stock, shopStock = [], allPets, onBack, onFinish, onAddVet, onDeleteVet, onAddAdmitted, onUpdateAdmitted, onDischargeAdmitted, pushToast, onUpdatePet, onAddService, onDeleteService, onUpdateService, onSaveDraft, previewReceiptNo }) {
+function CaseView({ pet, queueItem, vets, services, stock, shopStock = [], allPets, appointments = [], onBack, onFinish, onAddVet, onDeleteVet, onAddAdmitted, onUpdateAdmitted, onDischargeAdmitted, onAddAppointment, pushToast, onUpdatePet, onAddService, onDeleteService, onUpdateService, onSaveDraft, previewReceiptNo }) {
   const latestWeight = pet.visits.length ? pet.visits[0].weight : pet.weight;
   const draft = queueItem?.draft;
   const [rec, setRec] = useState({
@@ -361,6 +361,10 @@ function CaseView({ pet, queueItem, vets, services, stock, shopStock = [], allPe
     (pet.visits || []).some((v) => (v.items || []).some((it) => String(Array.isArray(it) ? it[0] : (it && it.name) || '').includes('ทำหมัน')));
   const neuterLabel = (neuteredByHistory || pet.sterilized === true) ? 'ทำหมันแล้ว'
     : pet.sterilized === false ? 'ยังไม่ทำหมัน' : 'ไม่ระบุ';
+  // ประวัติการนัดของสัตว์ตัวนี้ (เรียงตามวัน) — นัดที่ผ่านมาแล้วจะขีดฆ่าแดงจางๆ
+  const petAppts = (appointments || [])
+    .filter((a) => a.hn === pet.hn && a.status !== 'cancelled')
+    .sort((a, b) => (a.date + (a.time || '')).localeCompare(b.date + (b.time || '')));
   // ประวัติเรียงล่าสุดบนสุด → บันทึกใหม่ใส่หน้าสุดของ visits
   const buildVisit = () => ({
     date: todayISO(), vet: rec.vet, cc: rec.cc, pe: rec.pe, dx: rec.dx, plan: rec.plan,
@@ -443,6 +447,38 @@ function CaseView({ pet, queueItem, vets, services, stock, shopStock = [], allPe
               <button className="btn btn-sm" onClick={() => setEditPetInfo({ kind: 'owner', ownerName: pet.owner.name, phone: pet.owner.phone || '' })}><Icon name="edit" size={14} /> แก้ไข</button>
               <button className="btn btn-sm" style={{ color: 'var(--blush-deep)', fontSize: 12 }} onClick={() => setShowVaccineHistory(!showVaccineHistory)}><Icon name="syringe" size={14} /> ประวัติวัคซีน</button>
             </div>
+          </div>
+
+          {/* ── ประวัติการนัดของสัตว์ตัวนี้ ── */}
+          <div className="card card-pad">
+            <div style={{ fontWeight: 700, fontSize: 13.5, color: 'var(--ink-soft)', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
+              <Icon name="clock" size={14} /> ประวัติการนัด
+              <span className="chip chip-powder" style={{ fontSize: 11, marginLeft: 'auto' }}>{petAppts.length}</span>
+            </div>
+            {petAppts.length === 0 ? (
+              <div style={{ fontSize: 12.5, color: 'var(--ink-faint)' }}>ยังไม่มีนัด — กด “นัดครั้งถัดไป” ด้านล่างเพื่อสร้างนัด</div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {petAppts.map((a) => {
+                  const past = a.date < todayISO();
+                  const isToday = a.date === todayISO();
+                  return (
+                    <div key={a.id} style={{ fontSize: 12.5, lineHeight: 1.45, display: 'flex', gap: 6, alignItems: 'baseline',
+                      opacity: past ? 0.6 : 1,
+                      textDecoration: past ? 'line-through' : 'none',
+                      textDecorationColor: 'var(--blush-deep)',
+                      color: past ? 'var(--ink-faint)' : 'var(--ink)' }}>
+                      <span style={{ width: 7, height: 7, borderRadius: '50%', background: APPT_COLORS[a.type] || 'var(--line)', flexShrink: 0, marginTop: 5, textDecoration: 'none' }} />
+                      <span>
+                        <b>{dateTHShort(a.date)}</b>{a.time ? ` ${a.time}` : ''}
+                        {isToday ? <span className="chip chip-blush" style={{ fontSize: 10, marginLeft: 5, textDecoration: 'none' }}>วันนี้</span> : null}
+                        {' · '}{a.type}{a.note ? ` — ${a.note}` : ''}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         </div>
 

@@ -618,6 +618,13 @@ function FgCats() {
 function Dashboard({ pets, queue, appointments, admitted, receipts = [], onOpenCase, onOpenPet, onMove, onPay, onWalkIn, onUpdateAppointment, onDischargeAdmitted, onUpdateAdmitted, onOpenAdmittedCase, onCancelQueue, onCancelAdmit }) {
   const [showWalkIn, setShowWalkIn] = useState(false);
   const [walkInPrefillHn, setWalkInPrefillHn] = useState(null);
+  // วันที่ของแผงนัด (เลื่อนดูวันก่อน/ถัดไปได้ด้วยลูกศร) — เริ่มที่วันนี้
+  const [apptDay, setApptDay] = useState(() => new Date().toISOString().slice(0, 10));
+  const shiftApptDay = (delta) => {
+    const [y, m, dd] = apptDay.split('-').map(Number);
+    const d = new Date(y, m - 1, dd + delta); // คำนวณแบบ local ไม่ใช้ toISOString (กันวันเพี้ยนเพราะ timezone)
+    setApptDay(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`);
+  };
   const openWalkIn = (opts) => {
     if (opts && opts.prefill && opts.existingHn) {
       setWalkInPrefillHn(opts.existingHn);
@@ -638,8 +645,9 @@ function Dashboard({ pets, queue, appointments, admitted, receipts = [], onOpenC
   const todayISO = new Date().toISOString().slice(0, 10);
   // รายรับวันนี้คิดจากใบเสร็จ OPD ของวันนี้ที่ยังไม่ถูกยกเลิก (ยกเลิกใบเสร็จแล้วยอดจะหายตามจริง)
   const revenue = (receipts || []).filter((r) => (r.type || 'opd') === 'opd' && r.date === todayISO).reduce((s, r) => s + (r.total || 0), 0);
-  const todayAppts = (appointments || []).
-  filter((a) => a.date === todayISO && a.status !== 'cancelled').
+  // นัดของวันที่เลือกในแผง (default = วันนี้)
+  const dayAppts = (appointments || []).
+  filter((a) => a.date === apptDay && a.status !== 'cancelled').
   sort((a, b) => (a.time || '').localeCompare(b.time || ''));
 
   const stats = [
@@ -671,16 +679,24 @@ function Dashboard({ pets, queue, appointments, admitted, receipts = [], onOpenC
               <span style={{ background: '#3A3F8F', color: '#fff', borderRadius: 8, width: 28, height: 28, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                 <Icon name="clock" size={15} />
               </span>
-              นัดวันนี้
+              {apptDay === todayISO ? 'นัดวันนี้' : 'นัด'}
             </span>
             <span style={{ minWidth: 22, height: 22, borderRadius: 99, background: '#3A3F8F', color: '#fff', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 800 }}>
-              {todayAppts.length}
+              {dayAppts.length}
             </span>
           </div>
+          {/* day navigator */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 4, padding: '7px 10px', borderBottom: '1px solid var(--line)' }}>
+            <button className="btn btn-sm" style={{ padding: '2px 9px', fontSize: 15, lineHeight: 1 }} title="วันก่อนหน้า" onClick={() => shiftApptDay(-1)}>‹</button>
+            <button onClick={() => setApptDay(todayISO)} title="กลับมาวันนี้" style={{ flex: 1, textAlign: 'center', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 700, fontSize: 12.5, color: apptDay === todayISO ? '#3A3F8F' : 'var(--ink-soft)' }}>
+              {typeof dateTHShort !== 'undefined' ? dateTHShort(apptDay) : apptDay}{apptDay === todayISO ? ' · วันนี้' : ''}
+            </button>
+            <button className="btn btn-sm" style={{ padding: '2px 9px', fontSize: 15, lineHeight: 1 }} title="วันถัดไป" onClick={() => shiftApptDay(1)}>›</button>
+          </div>
           <div style={{ padding: '10px 8px', display: 'flex', flexDirection: 'column', gap: 7, maxHeight: 540, overflowY: 'auto' }}>
-            {todayAppts.length === 0 ?
-            <div className="queue-empty" style={{ background: 'transparent', border: '1.5px dashed #B0B8E0', fontSize: 12.5 }}>ไม่มีนัดวันนี้</div> :
-            todayAppts.map((a) => {
+            {dayAppts.length === 0 ?
+            <div className="queue-empty" style={{ background: 'transparent', border: '1.5px dashed #B0B8E0', fontSize: 12.5 }}>{apptDay === todayISO ? 'ไม่มีนัดวันนี้' : 'ไม่มีนัดในวันนี้'.replace('วันนี้', typeof dateTHShort !== 'undefined' ? dateTHShort(apptDay) : apptDay)}</div> :
+            dayAppts.map((a) => {
               const arrived = a.status === 'arrived';
               const alreadyQueued = queue.some((q) => q.hn === a.hn && ['wait', 'exam', 'cashier'].includes(q.status));
               return (

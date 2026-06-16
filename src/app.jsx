@@ -597,7 +597,7 @@ function App() {
           null}
           {page === 'case' && casePet ?
           <CaseView pet={casePet} queueItem={caseQItem}
-          vets={vets} services={services} stock={stock} shopStock={shopStock} allPets={pets}
+          vets={vets} services={services} stock={stock} shopStock={shopStock} allPets={pets} appointments={appointments}
           onBack={() => {setPage('dashboard');setCaseCtx(null);}}
           onFinish={finishCase} onAddVet={addVet} onDeleteVet={deleteVet}
           onAddAppointment={addAppointment}
