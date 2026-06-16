@@ -731,7 +731,10 @@ function CaseView({ pet, queueItem, vets, services, stock, shopStock = [], allPe
             const visits = pet.visits.map((x) => x === _orig ? { ..._orig, ...nextPatch, weight: parseFloat(nextPatch.weight) || _orig.weight } : x);
             const updatedPet = { ...pet, visits };
             // ซิงก์กลับใบเสร็จที่ผูกกัน (hn|q|วันที่เดิม) ผ่าน onUpdateVisit ถ้ามี ไม่งั้น fallback เป็น onUpdatePet
-            if (onUpdateVisit) onUpdateVisit(updatedPet, { hn: pet.hn, q: _orig.q || '', oldDate: _orig.date, newDate: nextPatch.date || _orig.date, items: cleanItems });
+            const oldItems = (_orig.items || []).map((it) => Array.isArray(it)
+              ? [it[0] || '', Number(it[1]) || 1, Number(it[2]) || 0, it[3] || null, it[4] || null]
+              : [it.name || '', Number(it.qty) || 1, Number(it.price) || 0, it.stockId || null, it.origin || null]);
+            if (onUpdateVisit) onUpdateVisit(updatedPet, { hn: pet.hn, q: _orig.q || '', oldDate: _orig.date, newDate: nextPatch.date || _orig.date, items: cleanItems, oldItems });
             else onUpdatePet && onUpdatePet(updatedPet);
             setEditVisit(null);
           }}>บันทึก</button>

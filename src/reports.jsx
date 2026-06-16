@@ -324,11 +324,11 @@ function exportToExcel(visits, receipts, rangeLabel, stock = [], dateRange = nul
       const items = (r.items || []).map((it) => Array.isArray(it) ? it : [it.name, it.qty, it.price]);
       let treat = 0, food = 0, qtyTotal = 0;
       const names = [];
-      items.forEach(([name, qty, price]) => {
+      items.forEach(([name, qty, price, stockId]) => {
         const q = Number(qty) || 1, line = q * (Number(price) || 0);
         qtyTotal += q;
         if (name) names.push(name);
-        if (isFood(name)) food += line; else treat += line;
+        if (isFood(name, stockId)) food += line; else treat += line;
       });
       sumTreat += treat; sumFood += food;
       return [
@@ -385,18 +385,18 @@ function ReceiptEditModal({ receipt, onClose, onSave, onOpenPet, services = [], 
   const [date, setDate] = useState(receipt.date || '');
   const [items, setItems] = useState(
     (receipt.items || []).map((it) => Array.isArray(it)
-      ? { name: it[0] || '', qty: Number(it[1]) || 1, price: Number(it[2]) || 0 }
-      : { name: it.name || '', qty: Number(it.qty) || 1, price: Number(it.price) || 0 })
+      ? { name: it[0] || '', qty: Number(it[1]) || 1, price: Number(it[2]) || 0, stockId: it[3] || null, origin: it[4] || null }
+      : { name: it.name || '', qty: Number(it.qty) || 1, price: Number(it.price) || 0, stockId: it.stockId || null, origin: it.origin || null })
   );
   const total = items.reduce((s, it) => s + (Number(it.qty) || 0) * (Number(it.price) || 0), 0);
   const setItem = (i, k, v) => setItems((prev) => prev.map((x, ix) => ix === i ? { ...x, [k]: v } : x));
-  const addItem = () => setItems((prev) => [...prev, { name: '', qty: 1, price: 0 }]);
+  const addItem = () => setItems((prev) => [...prev, { name: '', qty: 1, price: 0, stockId: null, origin: null }]);
   const delItem = (i) => setItems((prev) => prev.filter((_, ix) => ix !== i));
-  // เพิ่มรายการจากการค้นหาในคลัง/บริการ — เติมชื่อ+ราคาให้อัตโนมัติ (จำนวนเริ่มที่ 1)
-  const addFromCatalog = (x) => setItems((prev) => [...prev, { name: x.name, qty: 1, price: Number(x.price) || 0 }]);
+  // เพิ่มรายการจากการค้นหาในคลัง/บริการ — เติมชื่อ+ราคา+stockId/origin (ให้ตัดสต็อกตอนบันทึก)
+  const addFromCatalog = (x) => setItems((prev) => [...prev, { name: x.name, qty: 1, price: Number(x.price) || 0, stockId: x.kind === 'svc' ? null : (x.id || null), origin: x.kind === 'shop' ? 'shop' : null }]);
   const save = () => {
     const cleanItems = items.filter((it) => String(it.name).trim())
-      .map((it) => [String(it.name).trim(), Number(it.qty) || 1, Number(it.price) || 0]);
+      .map((it) => [String(it.name).trim(), Number(it.qty) || 1, Number(it.price) || 0, it.stockId || null, it.origin || null]);
     const newTotal = cleanItems.reduce((s, c) => s + c[1] * c[2], 0);
     const newNoVat = Math.min(Number(receipt.noVat) || 0, newTotal); // กัน noVat เกินยอดรวมหลังแก้
     onSave({ petName: petName.trim() || '-', ownerName: ownerName.trim() || '-', method, date, items: cleanItems, total: newTotal, noVat: newNoVat });
