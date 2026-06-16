@@ -2992,9 +2992,7 @@ function CaseView({ pet, queueItem, vets, services, stock, shopStock = [], allPe
                 {onAddAdmitted ? (
                   <button className="btn btn-lg" style={{ color: '#7A3D35', borderColor: '#C0685C', background: '#FCF0E8' }} onClick={() => onAddAdmitted(pet.hn, 'กำลังรักษา', rec.dx || rec.cc, queueItem?.q)}><Icon name="heart" size={17} /> เข้าแอดมิด</button>
                 ) : null}
-                {!isEditMode ? (
-                  <button className="btn btn-soft btn-lg" style={{ color: 'var(--powder-deep)', borderColor: 'var(--powder-deep)' }} onClick={() => setShowApptForm(true)}><Icon name="clock" size={17} /> นัดครั้งถัดไป</button>
-                ) : null}
+                <button className="btn btn-soft btn-lg" style={{ color: 'var(--powder-deep)', borderColor: 'var(--powder-deep)' }} onClick={() => setShowApptForm(true)}><Icon name="clock" size={17} /> นัดครั้งถัดไป</button>
                 {!isEditMode ? (
                   <button className="btn btn-soft btn-lg" onClick={() => save('cashier')}><Icon name="cash" size={17} /> บันทึก + ส่งแคชเชียร์</button>
                 ) : null}
