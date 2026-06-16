@@ -274,6 +274,27 @@ function App() {
   };
   // แก้ไขใบเสร็จถาวร (ชื่อ/รายการ/ยอด ฯลฯ) — สะท้อนใน export PDF/Excel และยอดทันที
   // และถ้าเป็นใบเสร็จ OPD ที่ผูกกับเคส → อัปเดต "รายการในประวัติการรักษา" ให้ตรงกับใบเสร็จที่แก้ด้วย
+  // แก้ไขประวัติ visit (รวมถึงรายการค่าใช้จ่าย) + ซิงก์กลับใบเสร็จ OPD ที่ผูกกัน (hn|q|วันที่เดิม)
+  // sync = { hn, q, oldDate, newDate, items:[ชื่อ,จำนวน,ราคา,stockId,origin] } — ไม่ตัดสต็อกซ้ำ
+  const updateVisit = (updatedPet, sync) => {
+    setState((s) => {
+      const pets = (s.pets || []).map((p) => p.hn === updatedPet.hn ? updatedPet : p);
+      let receipts = s.receipts || [];
+      if (sync && Array.isArray(sync.items)) {
+        receipts = receipts.map((r) => {
+          if ((r.type || 'opd') !== 'opd' || r.hn !== sync.hn || (r.q || '') !== (sync.q || '') || r.date !== sync.oldDate) return r;
+          const rItems = sync.items.map((it) => Array.isArray(it)
+            ? [it[0] || '', Number(it[1]) || 1, Number(it[2]) || 0]
+            : [it.name || '', Number(it.qty) || 1, Number(it.price) || 0]);
+          const total = rItems.reduce((sum, c) => sum + c[1] * c[2], 0);
+          const noVat = Math.min(Number(r.noVat) || 0, total);
+          return { ...r, items: rItems, total, noVat, date: sync.newDate };
+        });
+      }
+      return { ...s, pets, receipts };
+    });
+    pushToast('บันทึกประวัติแล้ว');
+  };
   const updateReceipt = (no, patch) => {
     setState((s) => {
       const orig = (s.receipts || []).find((r) => r.no === no);
@@ -636,7 +657,7 @@ function App() {
           onAddAppointment={addAppointment}
           onUpdateAdmitted={updateAdmitted} onDischargeAdmitted={dischargeAdmitted}
           onAddAdmitted={addAdmitted} pushToast={pushToast}
-          onUpdatePet={updatePet} onAddService={addService} onDeleteService={deleteService} onUpdateService={updateService} onSaveDraft={saveDraft} previewReceiptNo={nextReceiptNo().no} /> :
+          onUpdatePet={updatePet} onUpdateVisit={updateVisit} onAddService={addService} onDeleteService={deleteService} onUpdateService={updateService} onSaveDraft={saveDraft} previewReceiptNo={nextReceiptNo().no} /> :
           null}
           {page === 'appointments' ? <AppointmentsView appointments={appointments} pets={pets} onAdd={addAppointment} onUpdate={updateAppointment} /> : null}
           {page === 'shop' ? <PetShop stock={shopStock} onCheckout={shopCheckout} previewReceiptNo={nextReceiptNo().no} onDeleteItem={deleteShopItem} onAddItem={addShopItem} onImportStock={importShopItems} onUpdateItem={updateShopItem} /> : null}
