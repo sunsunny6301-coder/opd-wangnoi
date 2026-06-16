@@ -367,6 +367,15 @@ button, input, select, textarea { font-family: inherit; font-size: inherit; colo
   .print-sheet { position: absolute; left: 0; top: 0; box-shadow: none !important; border: none !important; }
   .modal-veil { position: static; padding: 0; background: none; backdrop-filter: none; }
   .no-print { display: none !important; }
+
+  /* ── พิมพ์ใบเสร็จหลายใบ (export รายเดือน) — ใบละหน้า ไล่ตามเลข ── */
+  /* ครอบด้วย .print-batch: ตัวมันยึดมุมซ้ายบนเต็มหน้า ส่วนใบเสร็จข้างในไหลปกติทีละใบ */
+  .print-batch, .print-batch * { visibility: visible; }
+  .print-batch { position: absolute; left: 0; top: 0; width: 100%; }
+  /* override กฎ single-sheet ด้านบน: ใบเสร็จใน batch ไม่ absolute ไม่ทับกัน */
+  .print-batch .print-sheet { position: static !important; left: auto !important; top: auto !important; width: 100% !important; }
+  .print-batch .print-receipt { page-break-after: always; margin-bottom: 0 !important; }
+  .print-batch .print-receipt:last-child { page-break-after: auto; }
 }
 
 /* receipt look */

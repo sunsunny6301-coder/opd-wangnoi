@@ -377,6 +377,15 @@ button, input, select, textarea { font-family: inherit; font-size: inherit; colo
   .print-sheet { position: absolute; left: 0; top: 0; box-shadow: none !important; border: none !important; }
   .modal-veil { position: static; padding: 0; background: none; backdrop-filter: none; }
   .no-print { display: none !important; }
+
+  /* ── พิมพ์ใบเสร็จหลายใบ (export รายเดือน) — ใบละหน้า ไล่ตามเลข ── */
+  /* ครอบด้วย .print-batch: ตัวมันยึดมุมซ้ายบนเต็มหน้า ส่วนใบเสร็จข้างในไหลปกติทีละใบ */
+  .print-batch, .print-batch * { visibility: visible; }
+  .print-batch { position: absolute; left: 0; top: 0; width: 100%; }
+  /* override กฎ single-sheet ด้านบน: ใบเสร็จใน batch ไม่ absolute ไม่ทับกัน */
+  .print-batch .print-sheet { position: static !important; left: auto !important; top: auto !important; width: 100% !important; }
+  .print-batch .print-receipt { page-break-after: always; margin-bottom: 0 !important; }
+  .print-batch .print-receipt:last-child { page-break-after: auto; }
 }
 
 /* receipt look */
@@ -4070,17 +4079,19 @@ function ReceiptExportModal({ receipts, onClose }) {
             </table>
           </div>
 
-          {/* printable invoices */}
-          {filtered.map((r, i) => (
-            <div key={i} className="print-sheet" style={{ pageBreakAfter: i < filtered.length - 1 ? 'always' : 'auto', marginBottom: 32 }}>
-              <TaxInvoice
-                items={(r.items || []).map((it) => Array.isArray(it) ? { name: it[0], qty: it[1], price: it[2] } : it)}
-                petName={r.petName !== '-' ? r.petName : ''}
-                ownerName={r.ownerName !== '-' ? r.ownerName : ''}
-                method={r.method} vatMode="none" no={r.no} date={r.date}
-              />
-            </div>
-          ))}
+          {/* printable invoices — ครอบด้วย .print-batch เพื่อพิมพ์หลายใบ ใบละหน้า (ดู @media print ใน styles.css) */}
+          <div className="print-batch">
+            {filtered.map((r, i) => (
+              <div key={i} className="print-receipt" style={{ marginBottom: 32 }}>
+                <TaxInvoice
+                  items={(r.items || []).map((it) => Array.isArray(it) ? { name: it[0], qty: it[1], price: it[2] } : it)}
+                  petName={r.petName !== '-' ? r.petName : ''}
+                  ownerName={r.ownerName !== '-' ? r.ownerName : ''}
+                  method={r.method} vatMode="none" no={r.no} date={r.date}
+                />
+              </div>
+            ))}
+          </div>
         </div>
       )}
     </Modal>

@@ -181,17 +181,19 @@ function ReceiptExportModal({ receipts, onClose }) {
             </table>
           </div>
 
-          {/* printable invoices */}
-          {filtered.map((r, i) => (
-            <div key={i} className="print-sheet" style={{ pageBreakAfter: i < filtered.length - 1 ? 'always' : 'auto', marginBottom: 32 }}>
-              <TaxInvoice
-                items={(r.items || []).map((it) => Array.isArray(it) ? { name: it[0], qty: it[1], price: it[2] } : it)}
-                petName={r.petName !== '-' ? r.petName : ''}
-                ownerName={r.ownerName !== '-' ? r.ownerName : ''}
-                method={r.method} vatMode="none" no={r.no} date={r.date}
-              />
-            </div>
-          ))}
+          {/* printable invoices — ครอบด้วย .print-batch เพื่อพิมพ์หลายใบ ใบละหน้า (ดู @media print ใน styles.css) */}
+          <div className="print-batch">
+            {filtered.map((r, i) => (
+              <div key={i} className="print-receipt" style={{ marginBottom: 32 }}>
+                <TaxInvoice
+                  items={(r.items || []).map((it) => Array.isArray(it) ? { name: it[0], qty: it[1], price: it[2] } : it)}
+                  petName={r.petName !== '-' ? r.petName : ''}
+                  ownerName={r.ownerName !== '-' ? r.ownerName : ''}
+                  method={r.method} vatMode="none" no={r.no} date={r.date}
+                />
+              </div>
+            ))}
+          </div>
         </div>
       )}
     </Modal>
