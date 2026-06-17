@@ -815,19 +815,23 @@ function CaseView({ pet, queueItem, vets, services, stock, shopStock = [], allPe
           {(() => {
             const upcoming = petAppts.filter((a) => a.date >= todayISO());
             const past = petAppts.filter((a) => a.date < todayISO()).reverse(); // ล่าสุดก่อน
-            const row = (a) => {
+            const row = (a, isPast) => {
               const isToday = a.date === todayISO();
               return (
-                <div key={a.id} style={{ display: 'flex', gap: 10, alignItems: 'flex-start', padding: '10px 12px', border: '1px solid var(--line)', borderRadius: 'var(--radius-sm)', background: '#fff' }}>
-                  <span style={{ width: 9, height: 9, borderRadius: '50%', background: APPT_COLORS[a.type] || 'var(--line)', flexShrink: 0, marginTop: 5 }} />
+                <div key={a.id} style={{ display: 'flex', gap: 10, alignItems: 'flex-start', padding: '10px 12px', border: '1px solid var(--line)', borderRadius: 'var(--radius-sm)', background: '#fff',
+                  // นัดที่ผ่านมาแล้ว: ตัวอักษรจาง + ขีดกลางเส้นแดง
+                  color: isPast ? 'var(--ink-faint)' : 'var(--ink)',
+                  textDecoration: isPast ? 'line-through' : 'none',
+                  textDecorationColor: isPast ? 'var(--blush-deep)' : undefined }}>
+                  <span style={{ width: 9, height: 9, borderRadius: '50%', background: APPT_COLORS[a.type] || 'var(--line)', flexShrink: 0, marginTop: 5, textDecoration: 'none' }} />
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontWeight: 700, fontSize: 14 }}>
-                      {dateTH(a.date)}{a.time ? <span style={{ color: 'var(--ink-soft)', fontWeight: 600 }}> · {a.time}</span> : null}
-                      {isToday ? <span className="chip chip-blush" style={{ fontSize: 10.5, marginLeft: 6 }}>วันนี้</span> : null}
+                      {dateTH(a.date)}{a.time ? <span style={{ color: isPast ? 'var(--ink-faint)' : 'var(--ink-soft)', fontWeight: 600 }}> · {a.time}</span> : null}
+                      {isToday ? <span className="chip chip-blush" style={{ fontSize: 10.5, marginLeft: 6, textDecoration: 'none' }}>วันนี้</span> : null}
                     </div>
                     <div style={{ display: 'flex', gap: 6, marginTop: 4, flexWrap: 'wrap', alignItems: 'center' }}>
-                      <span className="chip" style={{ fontSize: 11.5, background: (APPT_COLORS[a.type] || 'var(--line)') + '22' }}>{a.type}</span>
-                      {a.note ? <span style={{ fontSize: 13, color: 'var(--ink-soft)' }}>{a.note}</span> : null}
+                      <span className="chip" style={{ fontSize: 11.5, background: (APPT_COLORS[a.type] || 'var(--line)') + '22', textDecoration: 'none' }}>{a.type}</span>
+                      {a.note ? <span style={{ fontSize: 13, color: isPast ? 'var(--ink-faint)' : 'var(--ink-soft)' }}>{a.note}</span> : null}
                     </div>
                   </div>
                 </div>
@@ -838,12 +842,12 @@ function CaseView({ pet, queueItem, vets, services, stock, shopStock = [], allPe
                 <div>
                   <div style={{ fontWeight: 800, fontSize: 13, color: 'var(--mint-deep)', marginBottom: 8 }}>● นัดที่กำลังจะถึง ({upcoming.length})</div>
                   {upcoming.length === 0 ? <div style={{ fontSize: 12.5, color: 'var(--ink-faint)' }}>— ไม่มีนัดที่กำลังจะถึง —</div>
-                    : <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>{upcoming.map(row)}</div>}
+                    : <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>{upcoming.map((a) => row(a, false))}</div>}
                 </div>
                 <div>
                   <div style={{ fontWeight: 800, fontSize: 13, color: 'var(--ink-faint)', marginBottom: 8 }}>● นัดย้อนหลัง ({past.length})</div>
                   {past.length === 0 ? <div style={{ fontSize: 12.5, color: 'var(--ink-faint)' }}>— ยังไม่มีนัดย้อนหลัง —</div>
-                    : <div style={{ display: 'flex', flexDirection: 'column', gap: 8, opacity: 0.75 }}>{past.map(row)}</div>}
+                    : <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>{past.map((a) => row(a, true))}</div>}
                 </div>
               </div>
             );
