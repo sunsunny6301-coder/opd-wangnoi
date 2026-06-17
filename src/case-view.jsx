@@ -327,6 +327,7 @@ function CaseView({ pet, queueItem, vets, services, stock, shopStock = [], allPe
   const [lightbox, setLightbox] = useState(null);
   const [expandedVisits, setExpandedVisits] = useState({ 0: true });
   const [showAllHistory, setShowAllHistory] = useState(false);
+  const [showApptHistory, setShowApptHistory] = useState(false);
   const setR = (k) => (e) => setRec({ ...rec, [k]: e.target.value });
   // เปิด modal แก้ไขประวัติ visit (normalize รายการเป็น object พร้อม stockId/origin)
   const openEditVisit = (v) => setEditVisit({
@@ -458,11 +459,13 @@ function CaseView({ pet, queueItem, vets, services, stock, shopStock = [], allPe
             </div>
           </div>
 
-          {/* ── ประวัติการนัดของสัตว์ตัวนี้ ── */}
-          <div className="card card-pad">
-            <div style={{ fontWeight: 700, fontSize: 13.5, color: 'var(--ink-soft)', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
-              <Icon name="clock" size={14} /> ประวัติการนัด
-              <span className="chip chip-powder" style={{ fontSize: 11, marginLeft: 'auto' }}>{petAppts.length}</span>
+          {/* ── ประวัติการนัดของสัตว์ตัวนี้ (กล่องสีเหลืองอ่อน · กดเพื่อดูย้อนหลัง) ── */}
+          <button onClick={() => petAppts.length > 0 && setShowApptHistory(true)} title={petAppts.length > 0 ? 'กดเพื่อดูประวัติการนัดย้อนหลัง' : ''}
+            className="card card-pad" style={{ background: 'var(--butter-soft)', border: '1.5px solid #E5C97E', width: '100%', textAlign: 'left', display: 'block', cursor: petAppts.length > 0 ? 'pointer' : 'default' }}>
+            <div style={{ fontWeight: 800, fontSize: 14.5, color: '#7A5E00', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
+              <Icon name="clock" size={15} /> ประวัติการนัด
+              {petAppts.length > 0 ? <span style={{ fontSize: 11, fontWeight: 600, color: '#A87B2F', textDecoration: 'underline', textUnderlineOffset: 2 }}>ดูย้อนหลัง ›</span> : null}
+              <span className="chip chip-butter" style={{ fontSize: 11, marginLeft: 'auto' }}>{petAppts.length}</span>
             </div>
             {petAppts.length === 0 ? (
               <div style={{ fontSize: 12.5, color: 'var(--ink-faint)' }}>ยังไม่มีนัด — กด “นัดครั้งถัดไป” ด้านล่างเพื่อสร้างนัด</div>
@@ -488,7 +491,7 @@ function CaseView({ pet, queueItem, vets, services, stock, shopStock = [], allPe
                 })}
               </div>
             )}
-          </div>
+          </button>
         </div>
 
         {/* ── center: record + charges ── */}
@@ -802,6 +805,49 @@ function CaseView({ pet, queueItem, vets, services, stock, shopStock = [], allPe
               );
             })}
           </div>
+        </Modal>
+      ) : null}
+      {/* ── ป๊อปอัพประวัติการนัด — แยกนัดที่กำลังจะถึง / ย้อนหลัง ── */}
+      {showApptHistory ? (
+        <Modal title={`🗓️ ประวัติการนัด — ${pet.name}`} onClose={() => setShowApptHistory(false)} footer={
+          <button className="btn" onClick={() => setShowApptHistory(false)}>ปิด</button>
+        }>
+          {(() => {
+            const upcoming = petAppts.filter((a) => a.date >= todayISO());
+            const past = petAppts.filter((a) => a.date < todayISO()).reverse(); // ล่าสุดก่อน
+            const row = (a) => {
+              const isToday = a.date === todayISO();
+              return (
+                <div key={a.id} style={{ display: 'flex', gap: 10, alignItems: 'flex-start', padding: '10px 12px', border: '1px solid var(--line)', borderRadius: 'var(--radius-sm)', background: '#fff' }}>
+                  <span style={{ width: 9, height: 9, borderRadius: '50%', background: APPT_COLORS[a.type] || 'var(--line)', flexShrink: 0, marginTop: 5 }} />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontWeight: 700, fontSize: 14 }}>
+                      {dateTH(a.date)}{a.time ? <span style={{ color: 'var(--ink-soft)', fontWeight: 600 }}> · {a.time}</span> : null}
+                      {isToday ? <span className="chip chip-blush" style={{ fontSize: 10.5, marginLeft: 6 }}>วันนี้</span> : null}
+                    </div>
+                    <div style={{ display: 'flex', gap: 6, marginTop: 4, flexWrap: 'wrap', alignItems: 'center' }}>
+                      <span className="chip" style={{ fontSize: 11.5, background: (APPT_COLORS[a.type] || 'var(--line)') + '22' }}>{a.type}</span>
+                      {a.note ? <span style={{ fontSize: 13, color: 'var(--ink-soft)' }}>{a.note}</span> : null}
+                    </div>
+                  </div>
+                </div>
+              );
+            };
+            return (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                <div>
+                  <div style={{ fontWeight: 800, fontSize: 13, color: 'var(--mint-deep)', marginBottom: 8 }}>● นัดที่กำลังจะถึง ({upcoming.length})</div>
+                  {upcoming.length === 0 ? <div style={{ fontSize: 12.5, color: 'var(--ink-faint)' }}>— ไม่มีนัดที่กำลังจะถึง —</div>
+                    : <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>{upcoming.map(row)}</div>}
+                </div>
+                <div>
+                  <div style={{ fontWeight: 800, fontSize: 13, color: 'var(--ink-faint)', marginBottom: 8 }}>● นัดย้อนหลัง ({past.length})</div>
+                  {past.length === 0 ? <div style={{ fontSize: 12.5, color: 'var(--ink-faint)' }}>— ยังไม่มีนัดย้อนหลัง —</div>
+                    : <div style={{ display: 'flex', flexDirection: 'column', gap: 8, opacity: 0.75 }}>{past.map(row)}</div>}
+                </div>
+              </div>
+            );
+          })()}
         </Modal>
       ) : null}
       {editVisit ? (
