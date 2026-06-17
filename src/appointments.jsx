@@ -84,7 +84,7 @@ function MiniCalendar({ appointments, selectedDay, onSelectDay }) {
 }
 
 // ── Appointment Card ─────────────────────────────────────────
-function ApptCard({ appt, onUpdate, onEdit }) {
+function ApptCard({ appt, onUpdate, onEdit, onOpenPet }) {
   const statusCls = { scheduled: 'chip-butter', arrived: 'chip-mint', cancelled: '' };
   const statusLabel = { scheduled: 'นัด', arrived: 'มาแล้ว', cancelled: 'ยกเลิก' };
   return (
@@ -106,17 +106,21 @@ function ApptCard({ appt, onUpdate, onEdit }) {
         <span className={`chip ${APPT_CHIP[appt.type] || ''}`}>{appt.type}</span>
         {appt.note ? <span style={{ fontSize: 13, color: 'var(--ink-soft)' }}>{appt.note}</span> : null}
       </div>
-      {appt.status !== 'cancelled' ? (
-        <div style={{ display: 'flex', gap: 7, marginTop: 10 }}>
-          {appt.status === 'scheduled' ? (
-            <button className="btn btn-primary btn-sm" onClick={() => onUpdate({ ...appt, status: 'arrived' })}>
-              <Icon name="check" size={14} /> มาแล้ว
-            </button>
-          ) : null}
-          <button className="btn btn-sm" onClick={onEdit}><Icon name="edit" size={14} /> แก้ไข</button>
-          <button className="btn btn-sm" style={{ color: 'var(--blush-deep)' }} onClick={() => onUpdate({ ...appt, status: 'cancelled' })}>ยกเลิกนัด</button>
-        </div>
-      ) : null}
+      <div style={{ display: 'flex', gap: 7, marginTop: 10, flexWrap: 'wrap' }}>
+        {appt.status !== 'cancelled' && appt.status === 'scheduled' ? (
+          <button className="btn btn-primary btn-sm" onClick={() => onUpdate({ ...appt, status: 'arrived' })}>
+            <Icon name="check" size={14} /> มาแล้ว
+          </button>
+        ) : null}
+        {/* เข้าหน้า OPD ของสัตว์ตัวนี้เพื่ออ่าน/แก้ประวัติ (เฉพาะที่มี HN) */}
+        {appt.hn && onOpenPet ? (
+          <button className="btn btn-sm btn-soft" style={{ color: 'var(--mint-deep)', borderColor: 'var(--mint-deep)' }} onClick={() => onOpenPet(appt.hn)}>
+            <Icon name="doc" size={14} /> ดูประวัติ (OPD)
+          </button>
+        ) : null}
+        {appt.status !== 'cancelled' ? <button className="btn btn-sm" onClick={onEdit}><Icon name="edit" size={14} /> แก้ไข</button> : null}
+        {appt.status !== 'cancelled' ? <button className="btn btn-sm" style={{ color: 'var(--blush-deep)' }} onClick={() => onUpdate({ ...appt, status: 'cancelled' })}>ยกเลิกนัด</button> : null}
+      </div>
     </div>
   );
 }
@@ -236,7 +240,7 @@ function ApptFormModal({ pets, defaultDate, defaultPet, editAppt, onClose, onSav
 }
 
 // ── Appointments Page ────────────────────────────────────────
-function AppointmentsView({ appointments, pets, onAdd, onUpdate }) {
+function AppointmentsView({ appointments, pets, onAdd, onUpdate, onOpenPet }) {
   const todayStr = todayISO();
   const [selectedDay, setSelectedDay] = useState(todayStr);
   const [showForm, setShowForm] = useState(false);
@@ -315,7 +319,7 @@ function AppointmentsView({ appointments, pets, onAdd, onUpdate }) {
                   </div>
                 </div>
               ) : dayAppts.map((a) => (
-                <ApptCard key={a.id} appt={a} onUpdate={onUpdate} onEdit={() => openEdit(a)} />
+                <ApptCard key={a.id} appt={a} onUpdate={onUpdate} onEdit={() => openEdit(a)} onOpenPet={onOpenPet} />
               ))}
             </div>
           </div>
