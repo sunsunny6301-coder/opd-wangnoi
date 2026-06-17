@@ -326,7 +326,16 @@ function CaseView({ pet, queueItem, vets, services, stock, shopStock = [], allPe
   const [showServiceMgr, setShowServiceMgr] = useState(false);
   const [lightbox, setLightbox] = useState(null);
   const [expandedVisits, setExpandedVisits] = useState({ 0: true });
+  const [showAllHistory, setShowAllHistory] = useState(false);
   const setR = (k) => (e) => setRec({ ...rec, [k]: e.target.value });
+  // เปิด modal แก้ไขประวัติ visit (normalize รายการเป็น object พร้อม stockId/origin)
+  const openEditVisit = (v) => setEditVisit({
+    date: v.date, weight: v.weight, cc: v.cc, pe: v.pe, dx: v.dx, plan: v.plan, media: v.media || [],
+    items: (v.items || []).map((it) => Array.isArray(it)
+      ? { name: it[0] || '', qty: Number(it[1]) || 1, price: Number(it[2]) || 0, stockId: it[3] || null, origin: it[4] || null }
+      : { name: (it && it.name) || '', qty: Number(it && it.qty) || 1, price: Number(it && it.price) || 0, stockId: (it && it.stockId) || null, origin: (it && it.origin) || null }),
+    _orig: v,
+  });
   const isEditMode = queueItem && (queueItem.status === 'cashier' || queueItem.status === 'done');
   const isAdmittedMode = queueItem?.status === 'admitted';
   const saveAdmittedRecord = () => {
@@ -637,13 +646,15 @@ function CaseView({ pet, queueItem, vets, services, stock, shopStock = [], allPe
 
         {/* ── right: history ── */}
         <div className="card case-right">
-          <div className="card-head" style={{ background: 'var(--butter-soft)', borderBottom: '2px solid #E5C97E' }}>
+          <button onClick={() => pet.visits.length > 0 && setShowAllHistory(true)} title={pet.visits.length > 0 ? 'กดเพื่อดูประวัติแบบเต็ม' : ''}
+            className="card-head" style={{ background: 'var(--butter-soft)', width: '100%', border: 'none', borderBottom: '2px solid #E5C97E', cursor: pet.visits.length > 0 ? 'pointer' : 'default', textAlign: 'left' }}>
             <span style={{ fontWeight: 800, fontSize: 14.5, color: '#7A5E00', display: 'inline-flex', alignItems: 'center', gap: 8 }}>
               <span style={{ background: '#A87B2F', color: '#fff', borderRadius: 8, width: 30, height: 30, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><Icon name="doc" size={16} /></span>
               ประวัติการรักษา
+              {pet.visits.length > 0 ? <span style={{ fontSize: 11, fontWeight: 600, color: '#A87B2F', textDecoration: 'underline', textUnderlineOffset: 2 }}>ดูแบบเต็ม ›</span> : null}
             </span>
             <span className="chip chip-butter">{pet.visits.length} ครั้ง</span>
-          </div>
+          </button>
           <div className="card-pad" style={{ paddingTop: 8, maxHeight: 620, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 14 }}>
             {pet.visits.length === 0 ? <div className="queue-empty">ยังไม่มีประวัติ</div> :
               [...pet.visits].map((v, i) => {
@@ -702,7 +713,7 @@ function CaseView({ pet, queueItem, vets, services, stock, shopStock = [], allPe
                         <div style={{ fontSize: 12, color: 'var(--ink-faint)', display: 'flex', alignItems: 'center', gap: 5 }}>
                           <Icon name="user" size={13} /> {v.vet}
                         </div>
-                        <button className="btn btn-sm" onClick={() => setEditVisit({ date: v.date, weight: v.weight, cc: v.cc, pe: v.pe, dx: v.dx, plan: v.plan, media: v.media || [], items: (v.items || []).map((it) => Array.isArray(it) ? { name: it[0] || '', qty: Number(it[1]) || 1, price: Number(it[2]) || 0, stockId: it[3] || null, origin: it[4] || null } : { name: (it && it.name) || '', qty: Number(it && it.qty) || 1, price: Number(it && it.price) || 0, stockId: (it && it.stockId) || null, origin: (it && it.origin) || null }), _orig: v })} style={{ marginTop: 8 }}><Icon name="edit" size={13} /> แก้ไข</button>
+                        <button className="btn btn-sm" onClick={() => openEditVisit(v)} style={{ marginTop: 8 }}><Icon name="edit" size={13} /> แก้ไข</button>
                       </>
                     )}
                   </div>
@@ -719,6 +730,80 @@ function CaseView({ pet, queueItem, vets, services, stock, shopStock = [], allPe
       ) : null}
 
       {labelFor ? <LabelModal drug={labelFor} pet={{ ...pet, weight: rec.weight }} onClose={() => setLabelFor(null)} /> : null}
+      {/* ── ป๊อปอัพประวัติการรักษาแบบเต็ม — อ่านรายละเอียดชัด + กดแก้ไขแต่ละครั้งได้ ── */}
+      {showAllHistory ? (
+        <Modal title={`📋 ประวัติการรักษา — ${pet.name}`} onClose={() => setShowAllHistory(false)} wide footer={
+          <button className="btn" onClick={() => setShowAllHistory(false)}>ปิด</button>
+        }>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            {pet.visits.length === 0 ? <div className="queue-empty">ยังไม่มีประวัติ</div> : [...pet.visits].map((v, i) => {
+              const isFirst = i === pet.visits.length - 1;
+              const items = (v.items || []).map((it) => Array.isArray(it)
+                ? { name: it[0] || '', qty: Number(it[1]) || 1, price: Number(it[2]) || 0 }
+                : { name: (it && it.name) || '', qty: Number(it && it.qty) || 1, price: Number(it && it.price) || 0 });
+              const vTotal = items.reduce((s, it) => s + it.qty * it.price, 0);
+              const field = (label, val) => (
+                <div>
+                  <div style={{ fontSize: 10.5, fontWeight: 700, color: 'var(--ink-faint)', textTransform: 'uppercase', marginBottom: 2 }}>{label}</div>
+                  <div style={{ fontSize: 13.5, whiteSpace: 'pre-wrap', color: val ? 'var(--ink)' : 'var(--ink-faint)' }}>{val || '—'}</div>
+                </div>
+              );
+              return (
+                <div key={i} style={{ border: '1px solid var(--line)', borderRadius: 'var(--radius)', overflow: 'hidden' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, padding: '10px 14px', background: 'var(--butter-soft)', borderBottom: '1px solid #E5C97E', flexWrap: 'wrap' }}>
+                    <div style={{ fontWeight: 800, fontSize: 15.5, color: '#7A5E00', display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                      {dateTH(v.date)}
+                      {isFirst ? <span className="chip chip-butter" style={{ fontSize: 10.5 }}>ครั้งแรก</span> : null}
+                    </div>
+                    <button className="btn btn-sm btn-primary" onClick={() => openEditVisit(v)}><Icon name="edit" size={13} /> แก้ไขครั้งนี้</button>
+                  </div>
+                  <div style={{ padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                      {field('อาการสำคัญ (CC)', v.cc)}
+                      {field('ผลตรวจร่างกาย (PE)', v.pe)}
+                      {field('การวินิจฉัย (Dx)', v.dx)}
+                      {field('แผนการรักษา (Plan)', v.plan)}
+                      {field('น้ำหนัก (kg)', v.weight != null && v.weight !== '' ? String(v.weight) : '')}
+                      {field('สัตวแพทย์', v.vet)}
+                    </div>
+                    {items.length > 0 ? (
+                      <div>
+                        <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--ink-soft)', marginBottom: 6 }}>💊 ค่าใช้จ่ายที่คีย์ไว้</div>
+                        <table className="tbl">
+                          <thead><tr><th>รายการ</th><th className="num" style={{ width: 70 }}>จำนวน</th><th className="num" style={{ width: 90 }}>ราคา/หน่วย</th><th className="num" style={{ width: 90 }}>รวม</th></tr></thead>
+                          <tbody>
+                            {items.map((it, j) => (
+                              <tr key={j}>
+                                <td>{it.name}</td>
+                                <td className="num">{it.qty}</td>
+                                <td className="num">{fmtB(it.price)}</td>
+                                <td className="num" style={{ fontWeight: 700 }}>{fmtB(it.qty * it.price)}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                          <tfoot><tr style={{ background: 'var(--paper)' }}><td colSpan={3} style={{ textAlign: 'right', fontWeight: 700, padding: '7px 12px' }}>รวม</td><td className="num" style={{ fontWeight: 800 }}>{fmtB(vTotal)}</td></tr></tfoot>
+                        </table>
+                      </div>
+                    ) : <div style={{ fontSize: 12.5, color: 'var(--ink-faint)' }}>— ไม่มีรายการค่าใช้จ่าย —</div>}
+                    {v.media && v.media.length > 0 ? (
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 8 }}>
+                        {v.media.map((m, j) => (
+                          <div key={j} style={{ borderRadius: 'var(--radius-sm)', overflow: 'hidden', background: 'var(--paper)', aspectRatio: '1', border: '1px solid var(--line)', cursor: m.type !== 'video' ? 'zoom-in' : 'default' }}
+                            onClick={() => m.type !== 'video' && setLightbox({ url: m.url, name: m.name })}>
+                            {m.type === 'video'
+                              ? <video src={m.url} controls style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+                              : <img src={m.url} alt={m.name} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />}
+                          </div>
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </Modal>
+      ) : null}
       {editVisit ? (
         <Modal title="แก้ไขประวัติการรักษา" onClose={() => setEditVisit(null)} footer={<>
           <button className="btn" onClick={() => setEditVisit(null)}>ยกเลิก</button>
