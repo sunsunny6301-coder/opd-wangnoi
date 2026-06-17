@@ -27,7 +27,9 @@
       "Bash(node -e ' *)",
       "Bash(cp \"OPD วังน้อยสัตวแพทย์.html\" index.html)",
       "PowerShell(winget install OpenJS.NodeJS.LTS --accept-source-agreements --accept-package-agreements)",
-      "Bash(ls \"C:/Users/napat/AppData/Roaming/Claude/\" 2>/dev/null || echo \"not found\")"
+      "Bash(ls \"C:/Users/napat/AppData/Roaming/Claude/\" 2>/dev/null || echo \"not found\")",
+      "Skill(claude-api)",
+      "Skill(claude-api:*)"
     ]
   }
 }

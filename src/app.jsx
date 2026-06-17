@@ -754,6 +754,13 @@ function App() {
 
       null}
 
+      {/* ผู้ช่วย AI ในเว็บ (Claude + tool use) — ปุ่มลอยมุมขวาล่าง */}
+      <AgentChat
+        pets={pets} queue={queue} receipts={receipts} appointments={appointments}
+        stock={stock} shopStock={shopStock} services={services} vets={vets}
+        onWalkIn={walkIn} onAddAppointment={addAppointment} onCancelReceipt={cancelReceipt}
+        onOpenPet={openPet} pushToast={pushToast} />
+
       {toastRack}
     </div>);
 
