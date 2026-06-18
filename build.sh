@@ -50,7 +50,7 @@ printf 'window.LOGO_SRC = "data:image/jpeg;base64,%s";\n' "$LOGO_B64"
 cat src/data.js
 echo '</script>'
 
-for f in ui prints dashboard case-view pos-stock reports appointments history tax agent app; do
+for f in ui prints dashboard case-view pos-stock reports appointments history tax app; do
   printf '\n<!-- ── %s ── -->\n<script type="text/babel">\n' "$f"
   cat "src/$f.jsx"
   printf '\n</script>\n'
