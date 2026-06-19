@@ -1,0 +1,17 @@
+{
+  "name": "OPD วังน้อยสัตวแพทย์",
+  "short_name": "OPD วังน้อย",
+  "description": "ระบบ OPD คลินิกวังน้อยสัตวแพทย์ — คิว ตรวจรักษา ใบเสร็จ สต็อก นัดหมาย และสรุปรายรับ",
+  "lang": "th",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#F6F5F1",
+  "theme_color": "#2D4B72",
+  "icons": [
+    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/icon-512-maskable.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
