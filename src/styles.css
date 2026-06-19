@@ -543,8 +543,24 @@ button, input, select, textarea { font-family: inherit; font-size: inherit; colo
   0%, 100% { transform: translateY(0); }
   50%      { transform: translateY(-2px); }
 }
+/* ขาหน้าสุดยกขึ้นเขี่ยเล่นเป็นจังหวะ (หมุนรอบหัวไหล่) */
+.fg-cats .cat-paw {
+  transform-box: fill-box;
+  transform-origin: 50% 5%;
+  animation: pawSwipe 3.2s ease-in-out infinite;
+}
+.fg-cat-b .cat-paw { animation-duration: 3.6s; animation-delay: -1.2s; }
+.fg-cat-c .cat-paw { animation-duration: 3s;   animation-delay: -2s; }
+.fg-cat-d .cat-paw { animation-duration: 3.4s; animation-delay: -0.6s; }
+@keyframes pawSwipe {
+  0%, 52%, 100% { transform: rotate(0deg); }
+  60% { transform: rotate(-34deg); }   /* ยกเขี่ย */
+  68% { transform: rotate(-12deg); }
+  76% { transform: rotate(-30deg); }   /* เขี่ยซ้ำ */
+  86% { transform: rotate(0deg); }
+}
 @media (prefers-reduced-motion: reduce) {
-  .fg-cat, .fg-act, .fg-bob { animation: none; }
+  .fg-cat, .fg-act, .fg-bob, .fg-cats .cat-paw { animation: none; }
   .fg-cat-a { transform: translate(12vw, 18vh); }
   .fg-cat-b { transform: translate(60vw, 70vh); }
   .fg-cat-c { transform: translate(40vw, 45vh); }
