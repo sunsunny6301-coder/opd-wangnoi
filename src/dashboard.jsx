@@ -622,12 +622,43 @@ const CAT_TUXEDO = {
   ],
 };
 function FgCats() {
+  const ref = useRef(null);
+  useEffect(() => {
+    const root = ref.current;
+    if (!root) return;
+    const cats = Array.prototype.slice.call(root.querySelectorAll('.fg-cat'));
+    const timers = new Map();
+    const flee = (cat, px, py) => {
+      const fl = cat.querySelector('.fg-flee');
+      if (!fl) return;
+      const r = cat.getBoundingClientRect();
+      const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+      let dx = cx - px, dy = cy - py;
+      let len = Math.hypot(dx, dy);
+      if (len < 1) { const a = Math.random() * Math.PI * 2; dx = Math.cos(a); dy = Math.sin(a); len = 1; } // กดกลางเป๊ะ → สุ่มทิศหนี
+      const dist = 240; // วิ่งหนีไปทางตรงข้ามเมาส์
+      dx = (dx / len) * dist; dy = (dy / len) * dist;
+      fl.style.transition = 'transform .4s cubic-bezier(.2,.85,.3,1)';
+      fl.style.transform = `translate(${dx.toFixed(0)}px, ${dy.toFixed(0)}px)`;
+      clearTimeout(timers.get(cat));
+      timers.set(cat, setTimeout(() => {
+        fl.style.transition = 'transform 1.5s ease';   // ค่อยๆ กลับเข้าเส้นทางเดิม
+        fl.style.transform = 'translate(0,0)';
+      }, 700));
+    };
+    const onEnter = (e) => flee(e.currentTarget, e.clientX, e.clientY);
+    cats.forEach((c) => { c.addEventListener('pointerenter', onEnter); c.addEventListener('pointerdown', onEnter); });
+    return () => {
+      cats.forEach((c) => { c.removeEventListener('pointerenter', onEnter); c.removeEventListener('pointerdown', onEnter); });
+      timers.forEach((t) => clearTimeout(t));
+    };
+  }, []);
   return (
-    <div className="fg-cats" aria-hidden="true">
-      <span className="fg-cat fg-cat-a"><span className="fg-act"><span className="fg-bob"><CatColor {...CAT_GINGER} /></span></span></span>
-      <span className="fg-cat fg-cat-b"><span className="fg-act"><span className="fg-bob"><CatColor {...CAT_GRAY} /></span></span></span>
-      <span className="fg-cat fg-cat-c"><span className="fg-act"><span className="fg-bob"><CatColor {...CAT_CALICO} /></span></span></span>
-      <span className="fg-cat fg-cat-d"><span className="fg-act"><span className="fg-bob"><CatColor {...CAT_TUXEDO} /></span></span></span>
+    <div className="fg-cats" aria-hidden="true" ref={ref}>
+      <span className="fg-cat fg-cat-a"><span className="fg-flee"><span className="fg-act"><span className="fg-bob"><CatColor {...CAT_GINGER} /></span></span></span></span>
+      <span className="fg-cat fg-cat-b"><span className="fg-flee"><span className="fg-act"><span className="fg-bob"><CatColor {...CAT_GRAY} /></span></span></span></span>
+      <span className="fg-cat fg-cat-c"><span className="fg-flee"><span className="fg-act"><span className="fg-bob"><CatColor {...CAT_CALICO} /></span></span></span></span>
+      <span className="fg-cat fg-cat-d"><span className="fg-flee"><span className="fg-act"><span className="fg-bob"><CatColor {...CAT_TUXEDO} /></span></span></span></span>
     </div>
   );
 }

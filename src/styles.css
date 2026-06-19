@@ -456,8 +456,9 @@ button, input, select, textarea { font-family: inherit; font-size: inherit; colo
   position: fixed; inset: 0;       /* เต็มหน้าจอ — เดินไปได้ทุกที่ */
   pointer-events: none; z-index: 5; overflow: hidden;
 }
-.fg-cat { position: absolute; top: 0; left: 0; will-change: transform; }
+.fg-cat { position: absolute; top: 0; left: 0; will-change: transform; pointer-events: auto; cursor: pointer; }
 .fg-cat svg { display: block; }
+.fg-flee { display: inline-block; will-change: transform; }
 .fg-act { display: inline-block; will-change: transform; }
 .fg-bob { display: inline-block; }
 
