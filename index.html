@@ -4432,7 +4432,7 @@ function exportToExcel(visits, receipts, rangeLabel, stock = [], dateRange = nul
     return !!(st && /อาหาร/.test(st.cat || ''));
   };
   const cell = (n) => (n ? n : '');  // ช่องว่างเมื่อเป็น 0 ให้อ่านง่าย
-  const header = ['วันที่', 'HN', 'ชื่อสัตว์', 'ชนิด', 'เจ้าของ', 'เบอร์โทร', 'CC', 'Dx', 'รายการ', 'จำนวน', 'ราคารักษา', 'ราคาอาหารสัตว์', 'รวม'];
+  const header = ['วันที่', 'HN', 'ชื่อสัตว์', 'ชนิด', 'เจ้าของ', 'เบอร์โทร', 'CC', 'Dx', 'รายการ', 'เลขที่ใบเสร็จ', 'วิธีการชำระเงิน', 'จำนวน', 'ราคารักษา', 'ราคาอาหารสัตว์', 'รวม'];
   let sumTreat = 0, sumFood = 0;
   const [rs, re] = dateRange || ['', '￿'];
   // ข้อมูลคลินิก (CC/Dx/ชนิด/เบอร์) จาก visits ไว้เติมให้แถว — จับคู่ด้วย HN|คิว|วันที่ และ fallback ด้วย HN
@@ -4459,7 +4459,7 @@ function exportToExcel(visits, receipts, rangeLabel, stock = [], dateRange = nul
       return [
         r.date, r.hn || '', (r.petName && r.petName !== '-' ? r.petName : (v.petName || '')), v.petSpecies || '',
         (r.ownerName && r.ownerName !== '-' ? r.ownerName : (v.owner?.name || '')), v.owner?.phone || '', v.cc || '', v.dx || '',
-        names.join(', '), qtyTotal, cell(treat), cell(food), treat + food,
+        names.join(', '), r.no || '', r.method || '', qtyTotal, cell(treat), cell(food), treat + food,
       ];
     });
   const visitRows = opdRows;
@@ -4479,9 +4479,9 @@ function exportToExcel(visits, receipts, rangeLabel, stock = [], dateRange = nul
       food = food || Number(r.total) || 0;
       sumFood += food;
       const owner = r.ownerName && r.ownerName !== '-' ? r.ownerName : '';
-      return [r.date, '', '', '', owner, '', '', '', names.join(', '), qtyTotal, '', food, food];
+      return [r.date, '', '', '', owner, '', '', '', names.join(', '), r.no || '', r.method || '', qtyTotal, '', food, food];
     });
-  const rows = [header, ...visitRows, ...shopRows, [], ['สรุปรายรับทั้งสิ้น', '', '', '', '', '', '', '', '', '', sumTreat, sumFood, sumTreat + sumFood]];
+  const rows = [header, ...visitRows, ...shopRows, [], ['สรุปรายรับทั้งสิ้น', '', '', '', '', '', '', '', '', '', '', '', sumTreat, sumFood, sumTreat + sumFood]];
   const csv = '\ufeff' + rows.map((r) => r.map((c) => `"${String(c ?? '').replace(/"/g, '""')}"`).join(',')).join('\n');
   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
   const url = URL.createObjectURL(blob);
