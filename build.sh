@@ -77,4 +77,7 @@ cat <<'TAIL'
 TAIL
 } > "$OUT"
 
-ls -la "$OUT"
+# Vercel เสิร์ฟ index.html ที่ "/" — สำเนาผลลัพธ์ไปทับเสมอ จะได้ไม่ลืม copy เอง
+cp "$OUT" index.html
+
+ls -la "$OUT" index.html

@@ -32,7 +32,9 @@
       "Skill(claude-api:*)",
       "Read(//c/Users/napat/Downloads/**)",
       "Bash(python -c \"import zipfile; z=zipfile.ZipFile\\('OPD วังน้อย - Google Play package.zip'\\); [print\\(f.filename, f.file_size\\) for f in z.infolist\\(\\)]\")",
-      "Bash(powershell -command \"Expand-Archive -Path 'C:\\\\Users\\\\napat\\\\Downloads\\\\OPD วังน้อย - Google Play package.zip' -DestinationPath 'C:\\\\Users\\\\napat\\\\Downloads\\\\opd_pkg_check' -Force; Get-ChildItem -Recurse 'C:\\\\Users\\\\napat\\\\Downloads\\\\opd_pkg_check' | Select-Object FullName,Length\")"
+      "Bash(powershell -command \"Expand-Archive -Path 'C:\\\\Users\\\\napat\\\\Downloads\\\\OPD วังน้อย - Google Play package.zip' -DestinationPath 'C:\\\\Users\\\\napat\\\\Downloads\\\\opd_pkg_check' -Force; Get-ChildItem -Recurse 'C:\\\\Users\\\\napat\\\\Downloads\\\\opd_pkg_check' | Select-Object FullName,Length\")",
+      "Bash(curl -s \"https://opd-wangnoi.vercel.app/OPD%20%E0%B8%A7%E0%B8%B1%E0%B8%87%E0%B8%99%E0%B9%89%E0%B8%AD%E0%B8%A2%E0%B8%AA%E0%B8%B1%E0%B8%95%E0%B8%A7%E0%B9%81%E0%B8%9E%E0%B8%97%E0%B8%A2%E0%B9%8C.html\")",
+      "Bash(curl -s \"https://opd-wangnoi.vercel.app/\")"
     ]
   }
 }
