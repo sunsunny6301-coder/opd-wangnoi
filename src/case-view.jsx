@@ -329,6 +329,8 @@ function CaseView({ pet, queueItem, vets, services, stock, shopStock = [], allPe
   const [showAllHistory, setShowAllHistory] = useState(false);
   const [showApptHistory, setShowApptHistory] = useState(false);
   const setR = (k) => (e) => setRec({ ...rec, [k]: e.target.value });
+  // เปิดหน้าต่างแก้ไขข้อมูลสัตว์ (รวมข้อควรระวัง/แพ้ยา)
+  const openPetEdit = () => setEditPetInfo({ kind: 'pet', name: pet.name, breed: pet.breed || '', sex: pet.sex || 'ผู้', sterilized: pet.sterilized === true ? 'true' : pet.sterilized === false ? 'false' : '', color: pet.color || '', birth: pet.birth || '', caution: pet.caution || '', allergy: pet.allergy || '' });
   // เปิด modal แก้ไขประวัติ visit (normalize รายการเป็น object พร้อม stockId/origin)
   const openEditVisit = (v) => setEditVisit({
     date: v.date, weight: v.weight, cc: v.cc, pe: v.pe, dx: v.dx, plan: v.plan, media: v.media || [],
@@ -393,6 +395,32 @@ function CaseView({ pet, queueItem, vets, services, stock, shopStock = [], allPe
         <h1 style={{ fontSize: 20, margin: 0, flex: 1 }}>🐾 {pet.name} ({pet.species} {pet.breed})</h1>
       </div>
 
+      {/* ── แถบเตือน: ข้อควรระวัง (เหลืองเข้ม) + แพ้ยา (แดงเข้ม) — กดเพื่อแก้ไข ── */}
+      {(pet.caution || pet.allergy) ? (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 16 }}>
+          {pet.caution ? (
+            <div onClick={openPetEdit} title="กดเพื่อแก้ไข" style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '11px 15px', background: '#FFF3CC', border: '2px solid #D9A400', borderRadius: 'var(--radius)', cursor: 'pointer' }}>
+              <span style={{ fontSize: 21, lineHeight: 1 }}>⚠️</span>
+              <span style={{ fontWeight: 800, color: '#8A6500', fontSize: 13, whiteSpace: 'nowrap', textTransform: 'uppercase', letterSpacing: '.02em' }}>ข้อควรระวัง</span>
+              <span style={{ color: '#5C4400', fontSize: 14.5, fontWeight: 600, flex: 1, lineHeight: 1.4 }}>{pet.caution}</span>
+              <Icon name="edit" size={14} style={{ color: '#A87B2F', flexShrink: 0 }} />
+            </div>
+          ) : null}
+          {pet.allergy ? (
+            <div onClick={openPetEdit} title="กดเพื่อแก้ไข" style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '11px 15px', background: '#FBDED9', border: '2px solid #C0392B', borderRadius: 'var(--radius)', cursor: 'pointer' }}>
+              <span style={{ fontSize: 21, lineHeight: 1 }}>🚫</span>
+              <span style={{ fontWeight: 800, color: '#A01F12', fontSize: 13, whiteSpace: 'nowrap', textTransform: 'uppercase', letterSpacing: '.02em' }}>แพ้ยา</span>
+              <span style={{ color: '#7A1A10', fontSize: 14.5, fontWeight: 600, flex: 1, lineHeight: 1.4 }}>{pet.allergy}</span>
+              <Icon name="edit" size={14} style={{ color: '#C0392B', flexShrink: 0 }} />
+            </div>
+          ) : null}
+        </div>
+      ) : (
+        <button onClick={openPetEdit} className="btn btn-sm" style={{ marginBottom: 16, color: 'var(--ink-faint)', borderStyle: 'dashed' }}>
+          ⚠️ + เพิ่มข้อควรระวัง / แพ้ยา
+        </button>
+      )}
+
       <div className="case-grid">
         {/* ── left: pet info ── */}
         <div>
@@ -438,7 +466,7 @@ function CaseView({ pet, queueItem, vets, services, stock, shopStock = [], allPe
                 </div>
               </div>
               <input ref={avatarRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={async (e) => { const f = e.target.files[0]; if (f) { try { const url = await imageToDataURL(f, 260, 0.78); setPetAvatar(url); onUpdatePet && onUpdatePet({ ...pet, avatar: url }); } catch (err) { pushToast && pushToast('อ่านไฟล์รูปไม่สำเร็จ'); } } }} />
-              <button className="btn btn-sm" onClick={() => setEditPetInfo({ kind: 'pet', name: pet.name, breed: pet.breed || '', sex: pet.sex || 'ผู้', sterilized: pet.sterilized === true ? 'true' : pet.sterilized === false ? 'false' : '', color: pet.color || '', birth: pet.birth || '' })}><Icon name="edit" size={14} /> แก้ไข</button>
+              <button className="btn btn-sm" onClick={openPetEdit}><Icon name="edit" size={14} /> แก้ไข</button>
             </div>
           </div>
 
@@ -922,7 +950,7 @@ function CaseView({ pet, queueItem, vets, services, stock, shopStock = [], allPe
           <button className="btn" onClick={() => setEditPetInfo(null)}>ยกเลิก</button>
           <button className="btn btn-primary" onClick={() => {
             const f = editPetInfo;
-            if (f.kind === 'pet') onUpdatePet && onUpdatePet({ ...pet, name: f.name.trim() || pet.name, breed: f.breed, sex: f.sex, sterilized: f.sterilized === 'true' ? true : f.sterilized === 'false' ? false : null, color: f.color, birth: f.birth });
+            if (f.kind === 'pet') onUpdatePet && onUpdatePet({ ...pet, name: f.name.trim() || pet.name, breed: f.breed, sex: f.sex, sterilized: f.sterilized === 'true' ? true : f.sterilized === 'false' ? false : null, color: f.color, birth: f.birth, caution: (f.caution || '').trim(), allergy: (f.allergy || '').trim() });
             else onUpdatePet && onUpdatePet({ ...pet, owner: { ...pet.owner, name: f.ownerName.trim() || pet.owner.name, phone: f.phone } });
             setEditPetInfo(null); pushToast && pushToast('บันทึกข้อมูลแล้ว');
           }}>บันทึก</button>
@@ -935,6 +963,12 @@ function CaseView({ pet, queueItem, vets, services, stock, shopStock = [], allPe
               <Field label="ทำหมันแล้ว?"><select className="select" value={editPetInfo.sterilized} onChange={(e) => setEditPetInfo({ ...editPetInfo, sterilized: e.target.value })}><option value="">ไม่ระบุ</option><option value="false">ยังไม่ได้ทำหมัน</option><option value="true">ทำหมันแล้ว</option></select></Field>
               <Field label="สี/ตำหนิ"><input className="input" value={editPetInfo.color} onChange={(e) => setEditPetInfo({ ...editPetInfo, color: e.target.value })} placeholder="เช่น สีขาว มีจุดดำ" /></Field>
               <Field label="วันเกิด (ถ้ามี)"><input className="input" type="date" value={editPetInfo.birth || ''} onChange={(e) => setEditPetInfo({ ...editPetInfo, birth: e.target.value })} /></Field>
+              <div style={{ gridColumn: '1 / -1' }}>
+                <Field label="⚠️ ข้อควรระวัง (สีเหลือง)"><input className="input" value={editPetInfo.caution || ''} onChange={(e) => setEditPetInfo({ ...editPetInfo, caution: e.target.value })} placeholder="เช่น ป้อนยายาก, ดุ ต้องใส่ปลอกปาก" /></Field>
+              </div>
+              <div style={{ gridColumn: '1 / -1' }}>
+                <Field label="🚫 แพ้ยา (สีแดง)"><input className="input" value={editPetInfo.allergy || ''} onChange={(e) => setEditPetInfo({ ...editPetInfo, allergy: e.target.value })} placeholder="เช่น แพ้วัคซีนยี่ห้อ Nobivac" /></Field>
+              </div>
             </div>
           ) : (
             <div className="form-grid" style={{ gridTemplateColumns: '1fr 1fr', gap: 13 }}>

@@ -29,7 +29,10 @@
       "PowerShell(winget install OpenJS.NodeJS.LTS --accept-source-agreements --accept-package-agreements)",
       "Bash(ls \"C:/Users/napat/AppData/Roaming/Claude/\" 2>/dev/null || echo \"not found\")",
       "Skill(claude-api)",
-      "Skill(claude-api:*)"
+      "Skill(claude-api:*)",
+      "Read(//c/Users/napat/Downloads/**)",
+      "Bash(python -c \"import zipfile; z=zipfile.ZipFile\\('OPD วังน้อย - Google Play package.zip'\\); [print\\(f.filename, f.file_size\\) for f in z.infolist\\(\\)]\")",
+      "Bash(powershell -command \"Expand-Archive -Path 'C:\\\\Users\\\\napat\\\\Downloads\\\\OPD วังน้อย - Google Play package.zip' -DestinationPath 'C:\\\\Users\\\\napat\\\\Downloads\\\\opd_pkg_check' -Force; Get-ChildItem -Recurse 'C:\\\\Users\\\\napat\\\\Downloads\\\\opd_pkg_check' | Select-Object FullName,Length\")"
     ]
   }
 }
