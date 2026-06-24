@@ -4380,9 +4380,11 @@ function ReceiptExportModal({ receipts, onClose }) {
 }
 
 // ── SVG Bar Chart ──
+// แต่ละแท่งมี d.full = ป้ายเต็ม (เช่น "มิ.ย. 2568") สำหรับ tooltip เวลาเอาเมาส์ชี้/กด
 function BarChart({ data }) {
   const ref = useRef(null);
   const [w, setW] = useState(500);
+  const [tip, setTip] = useState(null); // { i, cx, label, value }
   useEffect(() => {
     if (ref.current) setW(ref.current.offsetWidth);
     const ro = new ResizeObserver((e) => setW(e[0].contentRect.width));
@@ -4392,10 +4394,14 @@ function BarChart({ data }) {
   const h = 180, pad = { l: 52, r: 16, t: 12, b: 36 };
   const chartW = w - pad.l - pad.r, chartH = h - pad.t - pad.b;
   const max = Math.max(...data.map((d) => d.v), 1);
-  const barW = Math.max(4, chartW / data.length - 4);
+  const slot = chartW / data.length;
+  const barW = Math.max(4, slot - 4);
   const gridLines = [0, 0.25, 0.5, 0.75, 1];
+  // ป้ายแกน X เยอะเกินจะทับกัน — โชว์เว้นช่วงเมื่อมีแท่งเยอะ (แต่แท่งสุดท้ายโชว์เสมอ)
+  const labelEvery = Math.max(1, Math.ceil(data.length / 16));
+  const tipLeft = tip ? Math.min(Math.max(tip.cx, 46), w - 46) : 0;
   return (
-    <div ref={ref} style={{ width: '100%' }}>
+    <div ref={ref} style={{ width: '100%', position: 'relative' }}>
       <svg width={w} height={h} style={{ overflow: 'visible', fontFamily: 'inherit' }}>
         {/* grid */}
         {gridLines.map((g, i) => {
@@ -4410,21 +4416,37 @@ function BarChart({ data }) {
         {/* bars */}
         {data.map((d, i) => {
           const bh = chartH * (d.v / max);
-          const x = pad.l + i * (chartW / data.length) + (chartW / data.length - barW) / 2;
+          const x = pad.l + i * slot + (slot - barW) / 2;
           const y = pad.t + chartH - bh;
+          const active = tip && tip.i === i;
+          const showLabel = i % labelEvery === 0 || i === data.length - 1;
+          const setT = () => setTip({ i, cx: pad.l + i * slot + slot / 2, label: d.full || d.label, value: d.v });
           return (
             <g key={i}>
               <rect x={x} y={y} width={barW} height={bh}
-                rx={3} fill={d.today ? 'var(--mint-deep)' : 'var(--navy)'} opacity={d.v === 0 ? .15 : 1} />
-              <text x={x + barW / 2} y={pad.t + chartH + 16} textAnchor="middle" fontSize={9.5} fill="var(--ink-faint)">{d.label}</text>
-              {d.v > 0 && bh > 18 && (
+                rx={3} fill={d.today ? 'var(--mint-deep)' : 'var(--navy)'} opacity={d.v === 0 ? .15 : active ? .8 : 1} />
+              {showLabel && (
+                <text x={x + barW / 2} y={pad.t + chartH + 16} textAnchor="middle" fontSize={9.5} fill="var(--ink-faint)">{d.label}</text>
+              )}
+              {d.v > 0 && bh > 18 && barW >= 22 && (
                 <text x={x + barW / 2} y={y + 13} textAnchor="middle" fontSize={9} fill="#fff" fontWeight={700}>{fmtB(d.v)}</text>
               )}
+              {/* พื้นที่รับการชี้/กด เต็มความสูงคอลัมน์ (แท่งบางก็ยังกดง่าย) */}
+              <rect x={pad.l + i * slot} y={pad.t} width={slot} height={chartH} fill="transparent"
+                style={{ cursor: 'pointer' }}
+                onMouseEnter={setT} onMouseMove={setT} onMouseLeave={() => setTip(null)}
+                onClick={() => setTip(active ? null : { i, cx: pad.l + i * slot + slot / 2, label: d.full || d.label, value: d.v })} />
             </g>
           );
         })}
         <line x1={pad.l} x2={pad.l + chartW} y1={pad.t + chartH} y2={pad.t + chartH} stroke="var(--line)" strokeWidth={1.5} />
       </svg>
+      {tip && (
+        <div style={{ position: 'absolute', left: tipLeft, top: 2, transform: 'translateX(-50%)', background: 'var(--ink)', color: '#fff', padding: '5px 10px', borderRadius: 7, fontSize: 12, fontWeight: 600, whiteSpace: 'nowrap', pointerEvents: 'none', boxShadow: '0 3px 10px rgba(0,0,0,.22)', zIndex: 5, textAlign: 'center', lineHeight: 1.4 }}>
+          <div style={{ opacity: .85, fontSize: 11 }}>{tip.label}</div>
+          <div style={{ fontWeight: 800, fontSize: 13.5 }}>{fmtB(tip.value)}</div>
+        </div>
+      )}
     </div>
   );
 }
@@ -4644,11 +4666,30 @@ function ReceiptEditModal({ receipt, onClose, onSave, onOpenPet, services = [], 
 }
 
 function ReportsView({ pets, queue, stock, shopStock = [], services = [], receipts = [], onCancelReceipt, onUpdateReceipt, onOpenPet }) {
+  const now = new Date();
   const [range, setRange] = useState('week');
+  const [pickYear, setPickYear] = useState(now.getFullYear());
+  const [pickMonth, setPickMonth] = useState(now.getMonth() + 1); // 1-12
+  const [customStart, setCustomStart] = useState(fmtLocalDate(new Date(now.getFullYear(), now.getMonth(), 1)));
+  const [customEnd, setCustomEnd] = useState(fmtLocalDate(now));
   const [showExport, setShowExport] = useState(false);
   const [editReceipt, setEditReceipt] = useState(null);
   const [rcSearch, setRcSearch] = useState('');
-  const dateRange = useMemo(() => getDateRange(range), [range]);
+  // ปีที่เลือกได้ = ปีที่มีใบเสร็จ + ปีนี้
+  const years = useMemo(() => {
+    const ys = new Set((receipts || []).map((r) => parseInt((r.date || '').slice(0, 4))).filter(Boolean));
+    ys.add(now.getFullYear());
+    return [...ys].sort((a, b) => b - a);
+  }, [receipts]);
+  const dateRange = useMemo(() => {
+    if (range === 'pickmonth') {
+      return [fmtLocalDate(new Date(pickYear, pickMonth - 1, 1)), fmtLocalDate(new Date(pickYear, pickMonth, 0))];
+    }
+    if (range === 'custom') {
+      return customStart <= customEnd ? [customStart, customEnd] : [customEnd, customStart];
+    }
+    return getDateRange(range);
+  }, [range, pickYear, pickMonth, customStart, customEnd]);
   // เฉพาะเคสที่ยังมีใบเสร็จจริง (ตัดเคสที่ใบเสร็จถูกยกเลิกออก ให้ยอด/กราฟตรงกับใบเสร็จและไฟล์ export)
   const visits = useMemo(() => {
     const keys = activeOpdReceiptKeys(receipts);
@@ -4672,38 +4713,78 @@ function ReportsView({ pets, queue, stock, shopStock = [], services = [], receip
   const topProds = m.topProducts.slice(0, 5);
   const maxProd = topProds[0]?.revenue || 1;
 
-  // bar chart — all days in range chronologically
+  // bar chart — รายวันถ้าช่วงสั้น, รวมเป็นรายเดือนถ้าช่วงยาว (>62 วัน เช่น 1 ปี)
   const barData = useMemo(() => {
     const [s, e] = dateRange;
     const [sy, sm, sd] = s.split('-').map(Number);
     const [ey, em, ed] = e.split('-').map(Number);
-    const cur = new Date(sy, sm - 1, sd);   // สร้างวันแบบ local — ไม่ผ่าน UTC
+    const start = new Date(sy, sm - 1, sd);   // สร้างวันแบบ local — ไม่ผ่าน UTC
     const end = new Date(ey, em - 1, ed);
     const today = fmtLocalDate(new Date());
+    const spanDays = Math.round((end - start) / 86400000) + 1;
+
+    // ── ช่วงยาว → รวมรายรับเป็นรายเดือน (แท่งละ 1 เดือน) ──
+    if (spanDays > 62) {
+      const monthly = {};
+      Object.entries(m.dailyRevenue).forEach(([d, v]) => {
+        const ym = d.slice(0, 7);
+        monthly[ym] = (monthly[ym] || 0) + v;
+      });
+      const curYM = today.slice(0, 7);
+      const months = [];
+      const cur = new Date(sy, sm - 1, 1);
+      const lastM = new Date(ey, em - 1, 1);
+      while (cur <= lastM) {
+        const ym = `${cur.getFullYear()}-${String(cur.getMonth() + 1).padStart(2, '0')}`;
+        months.push({
+          label: MONTHS_TH[cur.getMonth()],
+          full: getMonthLabel(ym),                 // เช่น "มิ.ย. 2568"
+          v: monthly[ym] || 0,
+          today: ym === curYM,
+        });
+        cur.setMonth(cur.getMonth() + 1);
+      }
+      return months;
+    }
+
+    // ── ช่วงสั้น → รายวัน ──
+    const cur = new Date(sy, sm - 1, sd);
     const days = [];
     while (cur <= end) {
       const d = fmtLocalDate(cur);
-      days.push({ label: d.slice(5), v: m.dailyRevenue[d] || 0, today: d === today });
+      days.push({ label: d.slice(5), full: dateTH(d), v: m.dailyRevenue[d] || 0, today: d === today });
       cur.setDate(cur.getDate() + 1);
     }
-    return days.slice(-30); // max 30 days
+    return days.slice(-62); // max 62 วัน (ถ้ายาวกว่านี้จะเป็นรายเดือนแล้ว)
   }, [dateRange, m.dailyRevenue]);
+
+  // กราฟเป็นรายเดือนไหม (ช่วง > 62 วัน)
+  const chartByMonth = useMemo(() => {
+    const [s, e] = dateRange;
+    const [sy, sm, sd] = s.split('-').map(Number);
+    const [ey, em, ed] = e.split('-').map(Number);
+    return Math.round((new Date(ey, em - 1, ed) - new Date(sy, sm - 1, sd)) / 86400000) + 1 > 62;
+  }, [dateRange]);
 
   // donut data
   const donutData = useMemo(() =>
     Object.entries(m.serviceBreakdown).map(([label, v]) => ({ label, v })).sort((a, b) => b.v - a.v)
   , [m.serviceBreakdown]);
 
-  const rangeLabel = TIME_RANGES.find((r) => r.id === range)?.label || range;
+  const rangeLabel = range === 'pickmonth' ? getMonthLabel(`${pickYear}-${String(pickMonth).padStart(2, '0')}`)
+    : range === 'custom' ? `${dateRange[0]} ถึง ${dateRange[1]}`
+    : (TIME_RANGES.find((r) => r.id === range)?.label || range);
 
   return (
     <div>
-      <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 18, flexWrap: 'wrap' }}>
+      <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 12, flexWrap: 'wrap' }}>
         <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--ink-soft)' }}>ข้อมูลตั้งแต่</span>
         <div className="seg">
           {TIME_RANGES.map((r) => (
             <button key={r.id} className={range === r.id ? 'on' : ''} onClick={() => setRange(r.id)}>{r.label}</button>
           ))}
+          <button className={range === 'pickmonth' ? 'on' : ''} onClick={() => setRange('pickmonth')}>เลือกเดือน</button>
+          <button className={range === 'custom' ? 'on' : ''} onClick={() => setRange('custom')}>ช่วงเวลา</button>
         </div>
         <div style={{ flex: 1 }}></div>
         <button className="btn" onClick={() => setShowExport(true)}>
@@ -4714,6 +4795,30 @@ function ReportsView({ pets, queue, stock, shopStock = [], services = [], receip
           📅 Export Excel (.csv)
         </button>
       </div>
+
+      {/* ── panel เลือกเดือน ── */}
+      {range === 'pickmonth' ? (
+        <div className="card card-pad" style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 18, flexWrap: 'wrap' }}>
+          <span style={{ fontWeight: 700, fontSize: 13.5, color: 'var(--ink-soft)' }}>เลือกเดือน:</span>
+          <select className="select" style={{ width: 'auto', minWidth: 130 }} value={pickMonth} onChange={(e) => setPickMonth(Number(e.target.value))}>
+            {MONTHS_TH.map((mo, i) => <option key={i} value={i + 1}>{mo}</option>)}
+          </select>
+          <select className="select" style={{ width: 'auto', minWidth: 110 }} value={pickYear} onChange={(e) => setPickYear(Number(e.target.value))}>
+            {years.map((y) => <option key={y} value={y}>พ.ศ. {y + 543}</option>)}
+          </select>
+          <span style={{ fontSize: 13, color: 'var(--mint-deep)', fontWeight: 700, marginLeft: 4 }}>{rangeLabel}</span>
+        </div>
+      ) : null}
+
+      {/* ── panel เลือกช่วงเวลา ── */}
+      {range === 'custom' ? (
+        <div className="card card-pad" style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 18, flexWrap: 'wrap' }}>
+          <span style={{ fontWeight: 700, fontSize: 13.5, color: 'var(--ink-soft)' }}>ตั้งแต่:</span>
+          <input className="input" type="date" style={{ width: 'auto' }} value={customStart} onChange={(e) => setCustomStart(e.target.value)} />
+          <span style={{ fontWeight: 700, fontSize: 13.5, color: 'var(--ink-soft)' }}>ถึง:</span>
+          <input className="input" type="date" style={{ width: 'auto' }} value={customEnd} onChange={(e) => setCustomEnd(e.target.value)} />
+        </div>
+      ) : null}
 
       {/* KPI grid */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12, marginBottom: 22 }}>
@@ -4731,7 +4836,7 @@ function ReportsView({ pets, queue, stock, shopStock = [], services = [], receip
         {/* Bar chart */}
         <div className="card">
           <div className="card-head">
-            <span style={{ fontWeight: 800 }}>รายรับรายวัน</span>
+            <span style={{ fontWeight: 800 }}>{chartByMonth ? 'รายรับรายเดือน' : 'รายรับรายวัน'}</span>
             <span className="chip">{rangeLabel}</span>
           </div>
           <div className="card-pad" style={{ paddingBottom: 10 }}>
