@@ -164,6 +164,7 @@ function WalkInModal({ pets, onClose, onSubmit, prefillHn }) {
               </select>
             </Field>
             <Field label="อายุ (ปี)"><input className="input" type="number" min="0" value={f.ageY} onChange={set('ageY')} placeholder="ปี" /></Field>
+            <Field label="(เดือน)"><input className="input" type="number" min="0" max="11" value={f.ageM} onChange={set('ageM')} placeholder="เดือน" /></Field>
             <Field label="น้ำหนัก (kg)"><input className="input" type="number" min="0" step="0.1" value={f.weight} onChange={set('weight')} placeholder="0.0" /></Field>
             <Field label="บริการ">
               <select className="select" value={f.type} onChange={set('type')}>
