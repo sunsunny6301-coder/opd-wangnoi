@@ -80,7 +80,7 @@ function App() {
     pushToast(`ยกเลิกแอดมิด ${adm.petName} — กลับเข้ารอตรวจ`);
   };
   // จำหน่าย: บันทึกทุกวันที่แอดมิดลงประวัติสัตว์ + ออกใบเสร็จรวม + ปิดคิว
-  const dischargeAdmitted = (admId, method, extraRec, paidTotal) => {
+  const dischargeAdmitted = (admId, method, extraRec, paidTotal, billEdits) => {
     const adm = admitted.find((a) => a.id === admId);
     if (!adm) return;
     const records = [...(adm.dailyRecords || []), ...(extraRec ? [extraRec] : [])];
@@ -111,7 +111,7 @@ function App() {
         pets: s.pets.map((p) => p.hn === adm.hn ? { ...p, visits: [...newVisits, ...p.visits] } : p),
         admitted: (s.admitted || []).filter((a) => a.id !== admId),
         queue: adm.q ? (s.queue || []).map((x) => x.q === adm.q ? { ...x, status: 'done', paid: total, doneDate: todayISO() } : x) : (s.queue || []),
-        receipts: receipt ? [...(s.receipts || []), { no: receipt.no, date: todayISO(), type: 'opd', petName: adm.petName, ownerName: adm.owner?.name || '-', hn: adm.hn, q: adm.q || '', items: allItems, method: method || 'เงินสด', total, noVat: noVatAmt }] : (s.receipts || []),
+        receipts: receipt ? [...(s.receipts || []), applyBillEdits({ no: receipt.no, date: todayISO(), type: 'opd', petName: adm.petName, ownerName: adm.owner?.name || '-', hn: adm.hn, q: adm.q || '', items: allItems, method: method || 'เงินสด', total, noVat: noVatAmt }, billEdits)] : (s.receipts || []),
         receiptSeq: con.receiptSeq,
         receiptVoids: con.receiptVoids,
       };
@@ -321,6 +321,16 @@ function App() {
   const norm5 = (arr) => (arr || []).map((it) => Array.isArray(it)
     ? [it[0] || '', Number(it[1]) || 1, Number(it[2]) || 0, it[3] || null, it[4] || null]
     : [it.name || '', Number(it.qty) || 1, Number(it.price) || 0, it.stockId || null, it.origin || null]);
+  // ผสานข้อมูลบิลที่แก้ (ชื่อ/เบอร์/ที่อยู่/เลขผู้เสียภาษี) ลงใบเสร็จ — เซ็ตเฉพาะช่องที่กรอกมา
+  const applyBillEdits = (rcpt, be) => {
+    if (!be) return rcpt;
+    const out = { ...rcpt };
+    if (be.ownerName) out.ownerName = be.ownerName;
+    if (be.ownerPhone) out.ownerPhone = be.ownerPhone;
+    if (be.ownerAddr) out.ownerAddr = be.ownerAddr;
+    if (be.ownerTaxId) out.ownerTaxId = be.ownerTaxId;
+    return out;
+  };
   const updateReceipt = (no, patch) => {
     // นับจำนวนสต็อกที่จะปรับ — คำนวณก่อน setState (updater รันตอน render)
     let deducted = 0;
@@ -460,7 +470,7 @@ function App() {
     return { stock, shopStock, changed: clinicDelta.length + shopDelta.length };
   };
 
-  const finishCase = (updatedPet, queueItem, status, payMethod, paidTotal) => {
+  const finishCase = (updatedPet, queueItem, status, payMethod, paidTotal, billEdits) => {
     // บันทึกใหม่ถูกใส่ไว้หน้าสุดของ visits (ล่าสุดบนสุด)
     const visit = updatedPet.visits[0];
     if (!visit) return;
@@ -504,7 +514,7 @@ function App() {
       let con = { receiptSeq: s.receiptSeq || {}, receiptVoids: s.receiptVoids || {} };
       if (status === 'paid') {
         con = consumeReceipt(receipt, s);
-        newReceipts = [...newReceipts, { no: receipt.no, date: todayISO(), type: 'opd', petName: updatedPet.name, ownerName: updatedPet.owner.name, hn: updatedPet.hn, q: queueItem?.q || '', items: receiptItems, method: payMethod || 'เงินสด', total, noVat: noVatAmt }];
+        newReceipts = [...newReceipts, applyBillEdits({ no: receipt.no, date: todayISO(), type: 'opd', petName: updatedPet.name, ownerName: updatedPet.owner.name, hn: updatedPet.hn, q: queueItem?.q || '', items: receiptItems, method: payMethod || 'เงินสด', total, noVat: noVatAmt }, billEdits)];
         newQueue = queueItem?.q ? newQueue.map((x) => x.q === queueItem.q ? { ...x, status: 'done', paid: total, doneDate: todayISO() } : x) : newQueue;
         // ตัดสต็อก: รายการเพ็ทช้อป (origin='shop') ตัดจากคลังเพ็ทช้อป, ที่เหลือตัดจากคลังคลินิก
         [newStock] = deductStock(newStock, charges.filter((c) => c[3] && c[4] !== 'shop').map((c) => ({ stockId: c[3], qty: c[1] })));
@@ -521,7 +531,7 @@ function App() {
       : `บันทึกเรียบร้อย`);
   };
 
-  const payFromBoard = (method, total) => {
+  const payFromBoard = (method, total, billEdits) => {
     const receipt = nextReceiptNo();
     const { no } = receipt;
     const petObj = pets.find((p) => p.hn === payFor.hn) || { owner: {} };
@@ -543,14 +553,14 @@ function App() {
         stock: newStock,
         shopStock: newShopStock,
         queue: s.queue.map((x) => x.q === payFor.q ? { ...x, status: 'done', paid: total, doneDate: todayISO() } : x),
-        receipts: [...(s.receipts || []), {
+        receipts: [...(s.receipts || []), applyBillEdits({
           no, date: todayISO(), type: 'opd',
           petName: payFor.petName, ownerName: petObj.owner?.name || '-',
           hn: payFor.hn, q: payFor.q,
           items: charges.map((c) => [c[0], c[1], c[2], c[3] || null, c[4] || null]),
           method, total,
           noVat: charges.filter((c) => c[4] === 'shop').reduce((s, c) => s + (Number(c[1]) || 1) * (Number(c[2]) || 0), 0)
-        }],
+        }, billEdits)],
         receiptSeq: con.receiptSeq,
         receiptVoids: con.receiptVoids,
       };
@@ -559,7 +569,7 @@ function App() {
     setPayFor(null);
   };
 
-  const shopCheckout = (cart, method, total) => {
+  const shopCheckout = (cart, method, total, billEdits) => {
     const charges = cart.map((c) => ({ stockId: c.id, qty: c.qty }));
     const [newShopStock, deducted] = deductStock(shopStock, charges);
     const receipt = nextReceiptNo();
@@ -568,11 +578,11 @@ function App() {
       const con = consumeReceipt(receipt, s);
       return {
         ...s, shopStock: newShopStock,
-        receipts: [...(s.receipts || []), {
+        receipts: [...(s.receipts || []), applyBillEdits({
           no, date: todayISO(), type: 'shop',
           petName: '-', ownerName: '-', items: cart.map((c) => [c.name, c.qty, c.price, c.id || null, 'shop']),
           method, total
-        }],
+        }, billEdits)],
         receiptSeq: con.receiptSeq,
         receiptVoids: con.receiptVoids,
       };

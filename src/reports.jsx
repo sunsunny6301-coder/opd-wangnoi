@@ -193,6 +193,7 @@ function ReceiptExportModal({ receipts, onClose }) {
                   items={(r.items || []).map((it) => Array.isArray(it) ? { name: it[0], qty: it[1], price: it[2] } : it)}
                   petName={r.petName !== '-' ? r.petName : ''}
                   ownerName={r.ownerName !== '-' ? r.ownerName : ''}
+                  ownerPhone={r.ownerPhone || ''} ownerAddr={r.ownerAddr || ''} ownerTaxId={r.ownerTaxId || ''}
                   method={r.method} vatMode="none" no={r.no} date={r.date}
                 />
               </div>

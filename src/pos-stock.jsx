@@ -323,7 +323,7 @@ function PetShop({ stock, onCheckout, previewReceiptNo, onDeleteItem, onAddItem,
           title="ชำระเงิน — เพ็ทช้อป" items={cart}
           noVat={true} receiptNo={previewReceiptNo}
           onClose={() => setShowPay(false)}
-          onConfirm={(method, t) => { setShowPay(false); setCart([]); onCheckout(cart, method, t); }}
+          onConfirm={(method, t, billEdits) => { setShowPay(false); setCart([]); onCheckout(cart, method, t, billEdits); }}
           confirmLabel="รับชำระเงิน"
         />
       ) : null}

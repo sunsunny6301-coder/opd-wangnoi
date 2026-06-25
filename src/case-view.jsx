@@ -355,11 +355,11 @@ function CaseView({ pet, queueItem, vets, services, stock, shopStock = [], allPe
     ...((queueItem.dailyRecords || []).flatMap((r) => (r.charges || []).map((c) => ({ name: `${c[0]} (${r.date})`, qty: Number(c[1]) || 1, price: Number(c[2]) || 0, noVat: c[4] === 'shop' })))),
     ...pendingCharges.map((c) => ({ name: c[0], qty: Number(c[1]) || 1, price: Number(c[2]) || 0, noVat: c[4] === 'shop' })),
   ] : null;
-  const dischargeAdmitted = (method, paidTotal) => {
+  const dischargeAdmitted = (method, paidTotal, billEdits) => {
     const extraRec = pendingCharges.length > 0
       ? { date: todayISO(), vet: rec.vet, weight: rec.weight, cc: rec.cc, pe: rec.pe, dx: rec.dx, plan: rec.plan, media: media.filter((m) => !m.session), charges: pendingCharges.map((c) => [c[0], c[1], c[2], c[3] || null, c[4] || null]) }
       : null;
-    onDischargeAdmitted && onDischargeAdmitted(queueItem.id, method, extraRec, paidTotal);
+    onDischargeAdmitted && onDischargeAdmitted(queueItem.id, method, extraRec, paidTotal, billEdits);
     setShowReceipt(false);
     onBack();
   };
@@ -384,8 +384,8 @@ function CaseView({ pet, queueItem, vets, services, stock, shopStock = [], allPe
     media: media.filter((m) => !m.session),
     q: queueItem?.q,  // ผูกกับเลขคิว เพื่อกันบันทึกประวัติซ้ำเมื่อบันทึกรอบเดิมซ้ำ
   });
-  const save = (status, method, paidTotal) => {
-    onFinish && onFinish({ ...pet, visits: [buildVisit(), ...pet.visits] }, queueItem, status, method, paidTotal);
+  const save = (status, method, paidTotal, billEdits) => {
+    onFinish && onFinish({ ...pet, visits: [buildVisit(), ...pet.visits] }, queueItem, status, method, paidTotal, billEdits);
   };
 
   return (
@@ -1016,7 +1016,7 @@ function CaseView({ pet, queueItem, vets, services, stock, shopStock = [], allPe
           petName={pet.name} ownerName={pet.owner.name} ownerPhone={pet.owner.phone}
           receiptNo={previewReceiptNo}
           onClose={() => setShowReceipt(false)}
-          onConfirm={(method, grandTotal) => { setShowReceipt(false); isAdmittedMode ? dischargeAdmitted(method, grandTotal) : save('paid', method, grandTotal); }}
+          onConfirm={(method, grandTotal, billEdits) => { setShowReceipt(false); isAdmittedMode ? dischargeAdmitted(method, grandTotal, billEdits) : save('paid', method, grandTotal, billEdits); }}
           confirmLabel={isAdmittedMode ? 'จำหน่าย + ออกใบเสร็จ' : 'รับชำระ + ปิดเคส'}
         />
       ) : null}

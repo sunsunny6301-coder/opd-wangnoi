@@ -228,6 +228,14 @@ function ReceiptModal({ title, items, petName, ownerName, ownerPhone, receiptNo,
   const [buyerAddr, setBuyerAddr] = useState('');
   const [buyerTaxId, setBuyerTaxId] = useState('');
   const [customNo, setCustomNo] = useState('');
+  const [saveBill, setSaveBill] = useState(true); // บันทึกข้อมูลที่แก้ลงบิลถาวรไหม
+
+  // ข้อมูลบิลที่แก้ — ส่งไปบันทึกลงใบเสร็จจริงตอนกดยืนยัน (ถ้าเปิดแผงแก้ไข + ติ๊กบันทึก)
+  const billEdits = {
+    ownerName: buyerName.trim(), ownerPhone: buyerPhone.trim(),
+    ownerAddr: buyerAddr.trim(), ownerTaxId: buyerTaxId.trim(),
+  };
+  const editsToSave = () => (showEditBuyer && saveBill) ? billEdits : null;
 
   // เลขที่ใบเสร็จจริงมาจากระบบรันเลขรายปี (RCP-2026-00001) — fallback เฉพาะกรณีเปิดดูโดยไม่ได้ส่งเลขมา
   const no = useMemo(() => customNo.trim() || receiptNo || `RCP-${new Date().getFullYear()}-${String(Date.now()).slice(-5)}`, [customNo, receiptNo]);
@@ -243,7 +251,7 @@ function ReceiptModal({ title, items, petName, ownerName, ownerPhone, receiptNo,
       footer={<>
         <button className="btn no-print" onClick={() => window.print()}><Icon name="printer" size={16} /> พิมพ์ใบเสร็จ</button>
         {onConfirm ? (
-          <button className="btn btn-primary no-print" onClick={() => onConfirm(method, grandTotal)}>
+          <button className="btn btn-primary no-print" onClick={() => onConfirm(method, grandTotal, editsToSave())}>
             <Icon name="check" size={16} /> {confirmLabel || 'รับชำระเงิน'} — {fmtB(grandTotal)}
           </button>
         ) : null}
@@ -312,7 +320,7 @@ function ReceiptModal({ title, items, petName, ownerName, ownerPhone, receiptNo,
       {/* ── edit buyer panel ── */}
       {showEditBuyer && (
         <div className="no-print" style={{ background: 'var(--powder-soft)', border: '1.5px solid var(--powder-deep)', borderRadius: 'var(--radius-sm)', padding: '14px 16px', marginBottom: 16, display: 'flex', flexDirection: 'column', gap: 10 }}>
-          <div style={{ fontWeight: 700, fontSize: 13, color: 'var(--powder-deep)', marginBottom: 2 }}>✏️ แก้ไขข้อมูลบิล (เฉพาะการพิมพ์ครั้งนี้)</div>
+          <div style={{ fontWeight: 700, fontSize: 13, color: 'var(--powder-deep)', marginBottom: 2 }}>✏️ แก้ไขข้อมูลบิล</div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
             <Field label="ชื่อลูกค้า">
               <input className="input" value={buyerName} onChange={(e) => setBuyerName(e.target.value)} placeholder="ชื่อ-นามสกุล" />
@@ -326,10 +334,17 @@ function ReceiptModal({ title, items, petName, ownerName, ownerPhone, receiptNo,
             <Field label="เลขประจำตัวผู้เสียภาษี (ลูกค้า)">
               <input className="input" value={buyerTaxId} onChange={(e) => setBuyerTaxId(e.target.value)} placeholder="13 หลัก" maxLength={13} />
             </Field>
-            <Field label="เลขที่บิล (ถ้าต้องการเปลี่ยน)">
+            <Field label="เลขที่บิล (เฉพาะการพิมพ์ครั้งนี้)">
               <input className="input" value={customNo} onChange={(e) => setCustomNo(e.target.value)} placeholder={receiptNo || 'RCP-2026-XXXXX'} />
             </Field>
           </div>
+          {/* เลือกว่าจะบันทึกข้อมูลที่แก้ลงบิลถาวรไหม */}
+          <label style={{ display: 'flex', alignItems: 'center', gap: 9, fontSize: 13.5, cursor: 'pointer', marginTop: 6, padding: '8px 10px', background: '#fff', borderRadius: 'var(--radius-sm)', border: '1.5px solid var(--powder-deep)' }}>
+            <input type="checkbox" checked={saveBill} onChange={(e) => setSaveBill(e.target.checked)} style={{ width: 17, height: 17, flexShrink: 0, cursor: 'pointer' }} />
+            <span style={{ fontWeight: 700, color: 'var(--ink)' }}>💾 บันทึกข้อมูลที่แก้ลงบิลด้วย</span>
+            <span style={{ color: 'var(--ink-faint)', fontSize: 12 }}>(ถ้าไม่ติ๊ก = แก้เฉพาะการพิมพ์ครั้งนี้)</span>
+          </label>
+          <div style={{ fontSize: 11.5, color: 'var(--ink-faint)' }}>* ชื่อ/เบอร์/ที่อยู่/เลขผู้เสียภาษี จะถูกบันทึกลงใบเสร็จเมื่อกด “{confirmLabel || 'รับชำระเงิน'}” · เลขที่บิลใช้เฉพาะการพิมพ์ครั้งนี้เท่านั้น</div>
         </div>
       )}
 
