@@ -736,7 +736,7 @@ function App() {
           vets={vets} services={services} stock={stock} shopStock={shopStock} allPets={pets} appointments={appointments}
           onBack={() => {setPage('dashboard');setCaseCtx(null);}}
           onFinish={finishCase} onAddVet={addVet} onDeleteVet={deleteVet}
-          onAddAppointment={addAppointment}
+          onAddAppointment={addAppointment} onUpdateAppointment={updateAppointment}
           onUpdateAdmitted={updateAdmitted} onDischargeAdmitted={dischargeAdmitted}
           onAddAdmitted={addAdmitted} pushToast={pushToast}
           onUpdatePet={updatePet} onUpdateVisit={updateVisit} onAddService={addService} onDeleteService={deleteService} onUpdateService={updateService} onSaveDraft={saveDraft} previewReceiptNo={nextReceiptNo().no} /> :

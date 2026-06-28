@@ -294,7 +294,7 @@ function ChargePicker({ services, stock, shopStock = [], onAdd }) {
   );
 }
 
-function CaseView({ pet, queueItem, vets, services, stock, shopStock = [], allPets, appointments = [], onBack, onFinish, onAddVet, onDeleteVet, onAddAdmitted, onUpdateAdmitted, onDischargeAdmitted, onAddAppointment, pushToast, onUpdatePet, onUpdateVisit, onAddService, onDeleteService, onUpdateService, onSaveDraft, previewReceiptNo }) {
+function CaseView({ pet, queueItem, vets, services, stock, shopStock = [], allPets, appointments = [], onBack, onFinish, onAddVet, onDeleteVet, onAddAdmitted, onUpdateAdmitted, onDischargeAdmitted, onAddAppointment, onUpdateAppointment, pushToast, onUpdatePet, onUpdateVisit, onAddService, onDeleteService, onUpdateService, onSaveDraft, previewReceiptNo }) {
   const latestWeight = pet.visits.length ? pet.visits[0].weight : pet.weight;
   const draft = queueItem?.draft;
   const [rec, setRec] = useState({
@@ -328,6 +328,7 @@ function CaseView({ pet, queueItem, vets, services, stock, shopStock = [], allPe
   const [expandedVisits, setExpandedVisits] = useState({ 0: true });
   const [showAllHistory, setShowAllHistory] = useState(false);
   const [showApptHistory, setShowApptHistory] = useState(false);
+  const [smsAppt, setSmsAppt] = useState(null); // นัดที่กำลังเปิด modal ส่ง SMS
   const setR = (k) => (e) => setRec({ ...rec, [k]: e.target.value });
   // เปิดหน้าต่างแก้ไขข้อมูลสัตว์ (รวมข้อควรระวัง/แพ้ยา)
   const openPetEdit = () => setEditPetInfo({ kind: 'pet', name: pet.name, breed: pet.breed || '', sex: pet.sex || 'ผู้', sterilized: pet.sterilized === true ? 'true' : pet.sterilized === false ? 'false' : '', color: pet.color || '', birth: pet.birth || '', caution: pet.caution || '', allergy: pet.allergy || '' });
@@ -862,6 +863,16 @@ function CaseView({ pet, queueItem, vets, services, stock, shopStock = [], allPe
                       {a.note ? <span style={{ fontSize: 13, color: isPast ? 'var(--ink-faint)' : 'var(--ink-soft)' }}>{a.note}</span> : null}
                     </div>
                   </div>
+                  {/* ปุ่มส่ง SMS เตือน (เฉพาะนัดที่ยังไม่ผ่าน) — กดแล้วเปิด modal แก้ข้อความได้ */}
+                  {!isPast && typeof SmsComposerModal !== 'undefined' ? (
+                    <button className="btn btn-sm" style={{ flexShrink: 0, textDecoration: 'none', alignSelf: 'center',
+                      ...(a.reminderSent
+                        ? { color: 'var(--mint-deep)', borderColor: 'var(--mint-deep)', background: 'var(--mint-soft)', fontWeight: 700 }
+                        : { color: 'var(--navy)', borderColor: 'var(--navy)' }) }}
+                      onClick={() => setSmsAppt(a)}>
+                      {a.reminderSent ? '✓ ส่งแล้ว' : '📱 ส่ง SMS'}
+                    </button>
+                  ) : null}
                 </div>
               );
             };
@@ -881,6 +892,20 @@ function CaseView({ pet, queueItem, vets, services, stock, shopStock = [], allPe
             );
           })()}
         </Modal>
+      ) : null}
+      {smsAppt && typeof SmsComposerModal !== 'undefined' ? (
+        <SmsComposerModal
+          title={`ส่ง SMS เตือนนัด — ${smsAppt.petName || pet.name}`}
+          initPhone={smsAppt.phone || pet.owner?.phone || ''}
+          initMsg={typeof buildReminderMsg !== 'undefined' ? buildReminderMsg(smsAppt) : ''}
+          onClose={() => setSmsAppt(null)}
+          onSend={(phone, msg) => {
+            typeof openSmsApp !== 'undefined' && openSmsApp(phone, msg);
+            onUpdateAppointment && onUpdateAppointment({ ...smsAppt, reminderSent: true, reminderSentAt: todayISO() });
+            pushToast && pushToast(phone ? `เปิดส่ง SMS ถึง ${phone} · คัดลอกข้อความแล้ว` : 'คัดลอกข้อความแล้ว');
+            setSmsAppt(null);
+          }}
+        />
       ) : null}
       {editVisit ? (
         <Modal title="แก้ไขประวัติการรักษา" onClose={() => setEditVisit(null)} footer={<>
