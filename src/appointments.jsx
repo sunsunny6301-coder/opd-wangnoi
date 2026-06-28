@@ -29,17 +29,45 @@ function buildReminderMsg(a) {
     + `${a.note ? ' ' + a.note : ''} วังน้อยสัตวแพทย์ โทร 0822813207`;
 }
 
-// ส่ง SMS (เฟส 1: เปิดแอปส่งข้อความในเครื่อง + คัดลอกข้อความสำรอง) แล้วทำเครื่องหมายว่าส่งแล้ว
-function sendSmsReminder(a, onUpdate, pushToast) {
-  const msg = buildReminderMsg(a);
-  const phone = String(a.phone || '').replace(/[^0-9+]/g, '');
+// เปิดแอปส่งข้อความในเครื่อง (มือถือ) + คัดลอกข้อความสำรอง (เดสก์ท็อป)
+function openSmsApp(phone, msg) {
   try { navigator.clipboard && navigator.clipboard.writeText(msg); } catch (e) {}
-  if (phone) {
-    const link = `sms:${phone}?body=${encodeURIComponent(msg)}`;
+  const clean = String(phone || '').replace(/[^0-9+]/g, '');
+  if (clean) {
+    const link = `sms:${clean}?body=${encodeURIComponent(msg)}`;
     const el = document.createElement('a'); el.href = link; document.body.appendChild(el); el.click(); el.remove();
   }
-  onUpdate && onUpdate({ ...a, reminderSent: true, reminderSentAt: todayISO() });
-  pushToast && pushToast(phone ? `เปิดส่ง SMS ถึง ${a.petName} (${phone}) · คัดลอกข้อความแล้ว` : `${a.petName} ไม่มีเบอร์โทร — คัดลอกข้อความให้แล้ว`);
+}
+
+// ── Modal ส่ง SMS: แก้เบอร์/ข้อความได้ก่อนส่ง (ใช้ทั้งเตือนนัด และส่งเอง) ──
+function SmsComposerModal({ title, initPhone, initMsg, onClose, onSend }) {
+  const [phone, setPhone] = useState(initPhone || '');
+  const [msg, setMsg] = useState(initMsg || '');
+  const clean = phone.replace(/[^0-9+]/g, '');
+  const segments = Math.max(1, Math.ceil(msg.length / 70)); // ไทย ~70 ตัว/ข้อความ
+  const copyMsg = () => { try { navigator.clipboard && navigator.clipboard.writeText(msg); } catch (e) {} };
+  return (
+    <Modal title={title || 'ส่ง SMS'} onClose={onClose} footer={<>
+      <button className="btn" onClick={onClose}>ปิด</button>
+      <button className="btn" onClick={copyMsg}>📋 คัดลอกข้อความ</button>
+      <button className="btn btn-primary" disabled={!msg.trim()} onClick={() => onSend(clean, msg)}>📱 ส่ง SMS</button>
+    </>}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 13 }}>
+        <Field label="เบอร์โทร">
+          <input className="input" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="08x-xxx-xxxx" inputMode="tel" />
+        </Field>
+        <Field label="ข้อความ (แก้ไขได้)">
+          <textarea className="textarea" rows="5" value={msg} onChange={(e) => setMsg(e.target.value)} placeholder="พิมพ์ข้อความที่จะส่ง..." />
+        </Field>
+        <div style={{ fontSize: 12, color: 'var(--ink-faint)' }}>
+          {msg.length} ตัวอักษร · ประมาณ {segments} ข้อความ (SMS ภาษาไทย ~70 ตัว/ข้อความ)
+        </div>
+        <div style={{ fontSize: 12, color: 'var(--ink-soft)', background: 'var(--paper)', borderRadius: 'var(--radius-sm)', padding: '8px 11px' }}>
+          💡 บนมือถือจะเปิดแอปข้อความให้พร้อมเบอร์+ข้อความ · บนคอมจะคัดลอกข้อความไว้ให้วาง
+        </div>
+      </div>
+    </Modal>
+  );
 }
 
 // ── Mini Calendar ────────────────────────────────────────────
@@ -299,7 +327,10 @@ function AppointmentsView({ appointments, pets, onAdd, onUpdate, onOpenPet, push
   // วันพรุ่งนี้ (local — ไม่ใช้ toISOString กัน UTC+7 เพี้ยน)
   const tmr = new Date(); tmr.setDate(tmr.getDate() + 1);
   const tomorrowStr = `${tmr.getFullYear()}-${String(tmr.getMonth() + 1).padStart(2, '0')}-${String(tmr.getDate()).padStart(2, '0')}`;
-  const sendSms = (a) => sendSmsReminder(a, onUpdate, pushToast);
+  // smsModal = { appt } (เตือนนัด) หรือ {} (ส่งเอง) | null
+  const [smsModal, setSmsModal] = useState(null);
+  const sendSms = (a) => setSmsModal({ appt: a });            // เปิด modal เตือนนัด (แก้ข้อความได้)
+  const openFreeSms = () => setSmsModal({ appt: null });      // เปิด modal ส่งเอง (กรอกเบอร์+ข้อความ)
 
   const dayAppts = useMemo(() =>
     appointments.filter((a) => a.date === selectedDay).sort((a, b) => (a.time || '').localeCompare(b.time || '')),
@@ -341,6 +372,9 @@ function AppointmentsView({ appointments, pets, onAdd, onUpdate, onOpenPet, push
           </div>
         </div>
         <div style={{ flex: 1 }}></div>
+        <button className="btn btn-lg btn-soft" style={{ color: 'var(--navy)', borderColor: 'var(--navy)' }} onClick={openFreeSms}>
+          📱 ส่ง SMS เอง
+        </button>
         <button className="btn btn-primary btn-lg" onClick={openAdd}>
           <Icon name="plus" size={18} /> เพิ่มนัดใหม่
         </button>
@@ -435,6 +469,21 @@ function AppointmentsView({ appointments, pets, onAdd, onUpdate, onOpenPet, push
           onSave={(appt) => {
             if (editAppt) onUpdate(appt); else onAdd(appt);
             setShowForm(false); setEditAppt(null);
+          }}
+        />
+      ) : null}
+
+      {smsModal ? (
+        <SmsComposerModal
+          title={smsModal.appt ? `ส่ง SMS เตือนนัด — ${smsModal.appt.petName}` : 'ส่ง SMS'}
+          initPhone={smsModal.appt ? smsModal.appt.phone : ''}
+          initMsg={smsModal.appt ? buildReminderMsg(smsModal.appt) : ''}
+          onClose={() => setSmsModal(null)}
+          onSend={(phone, msg) => {
+            openSmsApp(phone, msg);
+            if (smsModal.appt) onUpdate({ ...smsModal.appt, reminderSent: true, reminderSentAt: todayISO() });
+            pushToast && pushToast(phone ? `เปิดส่ง SMS ถึง ${phone} · คัดลอกข้อความแล้ว` : 'คัดลอกข้อความแล้ว');
+            setSmsModal(null);
           }}
         />
       ) : null}
