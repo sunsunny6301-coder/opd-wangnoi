@@ -5004,6 +5004,26 @@ function dateTHShort(isoDate) {
   return `${d.getDate()} ${THAI_MONTHS_SHORT[d.getMonth()]} ${d.getFullYear() + 543}`;
 }
 
+// ข้อความ SMS เตือนนัด (สั้น กระชับ — ภาษาไทย 1 SMS = 70 ตัวอักษร)
+function buildReminderMsg(a) {
+  const when = `${dateTHShort(a.date)}${a.time ? ' ' + a.time + ' น.' : ''}`;
+  return `แจ้งเตือนนัด ${a.petName} (${a.type}) ${when}`
+    + `${a.note ? ' ' + a.note : ''} วังน้อยสัตวแพทย์ โทร 0822813207`;
+}
+
+// ส่ง SMS (เฟส 1: เปิดแอปส่งข้อความในเครื่อง + คัดลอกข้อความสำรอง) แล้วทำเครื่องหมายว่าส่งแล้ว
+function sendSmsReminder(a, onUpdate, pushToast) {
+  const msg = buildReminderMsg(a);
+  const phone = String(a.phone || '').replace(/[^0-9+]/g, '');
+  try { navigator.clipboard && navigator.clipboard.writeText(msg); } catch (e) {}
+  if (phone) {
+    const link = `sms:${phone}?body=${encodeURIComponent(msg)}`;
+    const el = document.createElement('a'); el.href = link; document.body.appendChild(el); el.click(); el.remove();
+  }
+  onUpdate && onUpdate({ ...a, reminderSent: true, reminderSentAt: todayISO() });
+  pushToast && pushToast(phone ? `เปิดส่ง SMS ถึง ${a.petName} (${phone}) · คัดลอกข้อความแล้ว` : `${a.petName} ไม่มีเบอร์โทร — คัดลอกข้อความให้แล้ว`);
+}
+
 // ── Mini Calendar ────────────────────────────────────────────
 function MiniCalendar({ appointments, selectedDay, onSelectDay }) {
   const [viewDate, setViewDate] = useState(() => {
@@ -5066,7 +5086,7 @@ function MiniCalendar({ appointments, selectedDay, onSelectDay }) {
 }
 
 // ── Appointment Card ─────────────────────────────────────────
-function ApptCard({ appt, onUpdate, onEdit, onOpenPet }) {
+function ApptCard({ appt, onUpdate, onEdit, onOpenPet, onSendSms }) {
   const statusCls = { scheduled: 'chip-butter', arrived: 'chip-mint', cancelled: '' };
   const statusLabel = { scheduled: 'นัด', arrived: 'มาแล้ว', cancelled: 'ยกเลิก' };
   return (
@@ -5100,6 +5120,18 @@ function ApptCard({ appt, onUpdate, onEdit, onOpenPet }) {
             <Icon name="doc" size={14} /> ดูประวัติ (OPD)
           </button>
         ) : null}
+        {/* ส่ง SMS เตือน (เฉพาะที่มีเบอร์ + ยังไม่ยกเลิก) */}
+        {appt.status !== 'cancelled' && onSendSms ? (
+          appt.reminderSent ? (
+            <button className="btn btn-sm" style={{ color: 'var(--mint-deep)', borderColor: 'var(--mint-deep)', background: 'var(--mint-soft)', fontWeight: 700 }} onClick={() => onSendSms(appt)}>
+              ✓ ส่ง SMS แล้ว · ส่งอีกครั้ง
+            </button>
+          ) : (
+            <button className="btn btn-sm btn-primary" onClick={() => onSendSms(appt)}>
+              📱 ส่ง SMS เตือน
+            </button>
+          )
+        ) : null}
         {appt.status !== 'cancelled' ? <button className="btn btn-sm" onClick={onEdit}><Icon name="edit" size={14} /> แก้ไข</button> : null}
         {appt.status !== 'cancelled' ? <button className="btn btn-sm" style={{ color: 'var(--blush-deep)' }} onClick={() => onUpdate({ ...appt, status: 'cancelled' })}>ยกเลิกนัด</button> : null}
       </div>
@@ -5115,8 +5147,9 @@ function ApptFormModal({ pets, defaultDate, defaultPet, editAppt, onClose, onSav
     species: initPet?.species || 'สุนัข',
     ownerName: initPet?.owner?.name || '', phone: initPet?.owner?.phone || '',
     date: defaultDate || todayISO(),
-    time: '09:00', type: 'ติดตามอาการ', note: '', status: 'scheduled',
+    time: '09:00', type: 'ติดตามอาการ', note: '', status: 'scheduled', smsAuto: true,
   });
+  const smsOn = f.smsAuto !== false; // ค่าเริ่มต้น = เปิด
   const [petQ, setPetQ] = useState(initPet ? `${initPet.name} — ${initPet.owner.name}` : '');
   const [petResults, setPetResults] = useState([]);
   const [ptOpen, setPtOpen] = useState(false);
@@ -5216,17 +5249,39 @@ function ApptFormModal({ pets, defaultDate, defaultPet, editAppt, onClose, onSav
           <input className="input" value={f.note} onChange={(e) => setF({ ...f, note: e.target.value })}
             placeholder="เช่น ฉีดยา 3 เข็ม, เตรียมตัวผ่าตัด งดน้ำงดอาหาร..." />
         </Field>
+
+        {/* ปุ่มเปิด/ปิดส่ง SMS เตือนอัตโนมัติ — เปิดไว้เป็นหลัก กดแล้วปิด (สีจาง) */}
+        <Field label="การแจ้งเตือน SMS">
+          <button type="button" onClick={() => setF({ ...f, smsAuto: !smsOn })} style={{
+            width: '100%', padding: '12px 16px', borderRadius: 'var(--radius-sm)',
+            border: '2px solid var(--navy)',
+            background: smsOn ? 'var(--navy)' : '#fff',
+            color: smsOn ? '#fff' : 'var(--ink-faint)',
+            fontWeight: 800, fontSize: 14.5, cursor: 'pointer',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+            opacity: smsOn ? 1 : 0.6, transition: 'all .15s',
+          }}>
+            📱 {smsOn ? 'ส่ง SMS เตือนอัตโนมัติ — เปิดอยู่' : 'ปิดส่ง SMS อัตโนมัติ (แตะเพื่อเปิด)'}
+          </button>
+          <div style={{ fontSize: 11.5, color: 'var(--ink-faint)', marginTop: 6 }}>
+            ระบบจะเตือนลูกค้าก่อนวันนัด 1 วัน · ตอนนี้ส่งจากเมนู “นัดที่กำลังมาถึง” เองก่อน (ระบบส่งอัตโนมัติเต็มรูปแบบจะเปิดในเฟสถัดไป)
+          </div>
+        </Field>
       </div>
     </Modal>
   );
 }
 
 // ── Appointments Page ────────────────────────────────────────
-function AppointmentsView({ appointments, pets, onAdd, onUpdate, onOpenPet }) {
+function AppointmentsView({ appointments, pets, onAdd, onUpdate, onOpenPet, pushToast }) {
   const todayStr = todayISO();
   const [selectedDay, setSelectedDay] = useState(todayStr);
   const [showForm, setShowForm] = useState(false);
   const [editAppt, setEditAppt] = useState(null);
+  // วันพรุ่งนี้ (local — ไม่ใช้ toISOString กัน UTC+7 เพี้ยน)
+  const tmr = new Date(); tmr.setDate(tmr.getDate() + 1);
+  const tomorrowStr = `${tmr.getFullYear()}-${String(tmr.getMonth() + 1).padStart(2, '0')}-${String(tmr.getDate()).padStart(2, '0')}`;
+  const sendSms = (a) => sendSmsReminder(a, onUpdate, pushToast);
 
   const dayAppts = useMemo(() =>
     appointments.filter((a) => a.date === selectedDay).sort((a, b) => (a.time || '').localeCompare(b.time || '')),
@@ -5301,36 +5356,56 @@ function AppointmentsView({ appointments, pets, onAdd, onUpdate, onOpenPet }) {
                   </div>
                 </div>
               ) : dayAppts.map((a) => (
-                <ApptCard key={a.id} appt={a} onUpdate={onUpdate} onEdit={() => openEdit(a)} onOpenPet={onOpenPet} />
+                <ApptCard key={a.id} appt={a} onUpdate={onUpdate} onEdit={() => openEdit(a)} onOpenPet={onOpenPet} onSendSms={sendSms} />
               ))}
             </div>
           </div>
         </div>
 
-        {/* right: upcoming list */}
+        {/* right: upcoming list + ปุ่มส่ง SMS เตือน */}
         <div className="card case-right">
           <div className="card-head">
-            <span><Icon name="doc" size={16} style={{ verticalAlign: -3, marginRight: 6 }} />นัดที่กำลังมาถึง</span>
+            <span>📱 ส่ง SMS เตือนนัด</span>
             <span className="chip chip-navy">{upcoming.length}</span>
           </div>
-          <div className="card-pad" style={{ maxHeight: 580, overflowY: 'auto' }}>
+          <div className="card-pad" style={{ maxHeight: 620, overflowY: 'auto' }}>
             {upcoming.length === 0 ? (
               <div className="queue-empty">ยังไม่มีนัด</div>
-            ) : upcoming.map((a) => (
-              <div key={a.id} className="hist-item" style={{ cursor: 'pointer' }} onClick={() => setSelectedDay(a.date)}>
-                <div className="hist-date">
-                  <span className="chip chip-powder" style={{ fontSize: 11.5 }}>{dateTHShort(a.date)}</span>
-                  {a.time ? <span style={{ color: 'var(--ink-faint)', fontWeight: 600, fontSize: 12 }}>{a.time}</span> : null}
-                  {a.date === todayStr ? <span className="chip chip-blush" style={{ fontSize: 11 }}>วันนี้!</span> : null}
+            ) : upcoming.map((a) => {
+              const isTomorrow = a.date === tomorrowStr;
+              const phone = String(a.phone || '').replace(/[^0-9+]/g, '');
+              return (
+                <div key={a.id} className="hist-item" style={{ borderLeft: isTomorrow ? '3px solid var(--blush-deep)' : undefined, paddingLeft: isTomorrow ? 9 : undefined }}>
+                  <div className="hist-date" style={{ cursor: 'pointer' }} onClick={() => setSelectedDay(a.date)}>
+                    <span className="chip chip-powder" style={{ fontSize: 11.5 }}>{dateTHShort(a.date)}</span>
+                    {a.time ? <span style={{ color: 'var(--ink-faint)', fontWeight: 600, fontSize: 12 }}>{a.time}</span> : null}
+                    {a.date === todayStr ? <span className="chip chip-blush" style={{ fontSize: 11 }}>วันนี้!</span>
+                      : isTomorrow ? <span className="chip chip-blush" style={{ fontSize: 11 }}>พรุ่งนี้</span> : null}
+                  </div>
+                  <div style={{ fontWeight: 700, fontSize: 14.5, cursor: 'pointer' }} onClick={() => setSelectedDay(a.date)}>{SPECIES_EMOJI[a.species] || '🐾'} {a.petName}</div>
+                  <div style={{ display: 'flex', gap: 6, marginTop: 3, flexWrap: 'wrap', alignItems: 'center' }}>
+                    <span className={`chip ${APPT_CHIP[a.type] || ''}`} style={{ fontSize: 12 }}>{a.type}</span>
+                    <span style={{ fontSize: 12.5, color: 'var(--ink-soft)' }}>{a.ownerName}</span>
+                  </div>
+                  <div style={{ fontSize: 12.5, color: 'var(--ink-soft)', marginTop: 2, display: 'flex', alignItems: 'center', gap: 5 }}>
+                    <Icon name="phone" size={12} style={{ color: 'var(--ink-faint)' }} /> {phone || '— ไม่มีเบอร์ —'}
+                  </div>
+                  {a.note ? <div className="hist-items" style={{ marginTop: 3 }}>{a.note}</div> : null}
+                  {/* ปุ่มส่ง SMS + สถานะ */}
+                  <div style={{ marginTop: 8 }}>
+                    {a.reminderSent ? (
+                      <button className="btn btn-sm" style={{ width: '100%', color: 'var(--mint-deep)', borderColor: 'var(--mint-deep)', background: 'var(--mint-soft)', fontWeight: 700 }} onClick={() => sendSms(a)}>
+                        ✓ ส่ง SMS แล้ว · กดส่งอีกครั้ง
+                      </button>
+                    ) : (
+                      <button className="btn btn-sm btn-primary" style={{ width: '100%' }} onClick={() => sendSms(a)}>
+                        📱 ส่ง SMS เตือน
+                      </button>
+                    )}
+                  </div>
                 </div>
-                <div style={{ fontWeight: 700, fontSize: 14.5 }}>{SPECIES_EMOJI[a.species] || '🐾'} {a.petName}</div>
-                <div style={{ display: 'flex', gap: 6, marginTop: 3, flexWrap: 'wrap' }}>
-                  <span className={`chip ${APPT_CHIP[a.type] || ''}`} style={{ fontSize: 12 }}>{a.type}</span>
-                  <span style={{ fontSize: 12.5, color: 'var(--ink-soft)' }}>{a.ownerName}</span>
-                </div>
-                {a.note ? <div className="hist-items" style={{ marginTop: 3 }}>{a.note}</div> : null}
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       </div>
@@ -7164,7 +7239,7 @@ function App() {
           onAddAdmitted={addAdmitted} pushToast={pushToast}
           onUpdatePet={updatePet} onUpdateVisit={updateVisit} onAddService={addService} onDeleteService={deleteService} onUpdateService={updateService} onSaveDraft={saveDraft} previewReceiptNo={nextReceiptNo().no} /> :
           null}
-          {page === 'appointments' ? <AppointmentsView appointments={appointments} pets={pets} onAdd={addAppointment} onUpdate={updateAppointment} onOpenPet={openPet} /> : null}
+          {page === 'appointments' ? <AppointmentsView appointments={appointments} pets={pets} onAdd={addAppointment} onUpdate={updateAppointment} onOpenPet={openPet} pushToast={pushToast} /> : null}
           {page === 'shop' ? <PetShop stock={shopStock} onCheckout={shopCheckout} previewReceiptNo={nextReceiptNo().no} onDeleteItem={deleteShopItem} onAddItem={addShopItem} onImportStock={importShopItems} onUpdateItem={updateShopItem} /> : null}
           {page === 'stock' ? <StockView stock={stock} onAdjust={adjustStock} onAddItem={addStockItem} onImportStock={importStockItems} onDeleteItem={deleteStockItem} onClearAll={clearStock} onUpdateItem={updateStockItem} /> : null}
           {page === 'reports' ? <ReportsView pets={pets} queue={queue} stock={stock} shopStock={shopStock} services={services} receipts={receipts} onCancelReceipt={cancelReceipt} onUpdateReceipt={updateReceipt} onOpenPet={openPet} /> : null}
