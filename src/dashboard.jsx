@@ -668,7 +668,7 @@ function Dashboard({ pets, queue, appointments, admitted, receipts = [], onOpenC
   const [showWalkIn, setShowWalkIn] = useState(false);
   const [walkInPrefillHn, setWalkInPrefillHn] = useState(null);
   // วันที่ของแผงนัด (เลื่อนดูวันก่อน/ถัดไปได้ด้วยลูกศร) — เริ่มที่วันนี้
-  const [apptDay, setApptDay] = useState(() => new Date().toISOString().slice(0, 10));
+  const [apptDay, setApptDay] = useState(todayISO);
   const shiftApptDay = (delta) => {
     const [y, m, dd] = apptDay.split('-').map(Number);
     const d = new Date(y, m - 1, dd + delta); // คำนวณแบบ local ไม่ใช้ toISOString (กันวันเพี้ยนเพราะ timezone)

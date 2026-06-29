@@ -2290,7 +2290,7 @@ function Dashboard({ pets, queue, appointments, admitted, receipts = [], onOpenC
   const [showWalkIn, setShowWalkIn] = useState(false);
   const [walkInPrefillHn, setWalkInPrefillHn] = useState(null);
   // วันที่ของแผงนัด (เลื่อนดูวันก่อน/ถัดไปได้ด้วยลูกศร) — เริ่มที่วันนี้
-  const [apptDay, setApptDay] = useState(() => new Date().toISOString().slice(0, 10));
+  const [apptDay, setApptDay] = useState(todayISO);
   const shiftApptDay = (delta) => {
     const [y, m, dd] = apptDay.split('-').map(Number);
     const d = new Date(y, m - 1, dd + delta); // คำนวณแบบ local ไม่ใช้ toISOString (กันวันเพี้ยนเพราะ timezone)
@@ -4598,7 +4598,7 @@ function exportToExcel(visits, receipts, rangeLabel, stock = [], dateRange = nul
   const csv = '\ufeff' + rows.map((r) => r.map((c) => `"${String(c ?? '').replace(/"/g, '""')}"`).join(',')).join('\n');
   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
   const url = URL.createObjectURL(blob);
-  const a = document.createElement('a'); a.href = url; a.download = `รายรับ_${rangeLabel}_${new Date().toISOString().slice(0,10)}.csv`;
+  const a = document.createElement('a'); a.href = url; a.download = `รายรับ_${rangeLabel}_${todayISO()}.csv`;
   document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
 }
 
@@ -5817,7 +5817,7 @@ function CopyBtn({ text }) {
 
 // ── Purchase Tax Form Modal ──
 function PurchaseFormModal({ onClose, onSave, edit }) {
-  const [f, setF] = useState(edit || { date: new Date().toISOString().slice(0,10), invNo:'', sellerName:'', taxId:'', detail:'', total:'', rate:7 });
+  const [f, setF] = useState(edit || { date: todayISO(), invNo:'', sellerName:'', taxId:'', detail:'', total:'', rate:7 });
   const setV = k => e => setF({...f,[k]:e.target.value});
   const beforeVat = f.total ? n2(Number(f.total)/1.07) : 0;
   const vat = f.total ? n2(Number(f.total)-beforeVat) : 0;
@@ -5959,7 +5959,7 @@ function WHTCertModal({ record, onClose }) {
 
 // ── WHT Form Modal ──
 function WHTFormModal({ onClose, onSave, edit }) {
-  const [f, setF] = useState(edit || { date:new Date().toISOString().slice(0,10), form:'ภ.ง.ด.3', payeeName:'', taxId:'', address:'', incomeType:INCOME_TYPES[0].label, detail:'', amount:'', rate:3, taxWithheld:0 });
+  const [f, setF] = useState(edit || { date:todayISO(), form:'ภ.ง.ด.3', payeeName:'', taxId:'', address:'', incomeType:INCOME_TYPES[0].label, detail:'', amount:'', rate:3, taxWithheld:0 });
   const setV = k => e => {
     const v = e.target.value;
     if (k==='incomeType') {
@@ -6963,7 +6963,7 @@ function App() {
         : { name: f.owner, phone: f.phone || '-' };
       newPets = [...pets, {
         hn, name: f.pet, species: f.species, breed: '-', sex: f.sex,
-        birth: d.toISOString().slice(0, 10), color: '-',
+        birth: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`, color: '-',
         weight: parseFloat(f.weight) || null, sterilized: null,
         owner: ownerObj, allergies: [], visits: []
       }];

@@ -135,15 +135,27 @@ module.exports = async function handler(req, res) {
   }
 
   // ── บันทึก reminderSent กลับ Supabase ──────────────────────────────────────
+  // ⚠️ สำคัญ: cron รัน 08:00 = ช่วงคลินิกเปิด อาจมีการบันทึกข้อมูลจากแอปพร้อมกัน
+  // ถ้าเขียนทับด้วย appState ที่อ่านไว้ตอนต้น (เก่าหลายวินาทีจากการส่ง SMS) ข้อมูลที่
+  // คลินิกแก้ระหว่างนั้นจะหาย → ต้อง "อ่าน state ล่าสุดใหม่" แล้ว merge เฉพาะ
+  // reminderSent ตาม appointment id เท่านั้น (เหมือน setState((s)=>...) ในแอป)
+  let patchError = null;
   if (sentIds.size > 0) {
-    const updatedAppointments = appointments.map(a =>
-      sentIds.has(a.id)
-        ? { ...a, reminderSent: true, reminderSentAt: targetIso }
-        : a
-    );
-
     try {
-      await fetch(`${SB_URL}/rest/v1/app_state?id=eq.main`, {
+      const fresh = await fetch(`${SB_URL}/rest/v1/app_state?id=eq.main&select=data`, {
+        headers: { apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}` },
+      });
+      const freshRows = fresh.ok ? await fresh.json() : [];
+      const latest = (freshRows[0] && freshRows[0].data) ? freshRows[0].data : appState;
+      const latestAppts = Array.isArray(latest.appointments) ? latest.appointments : [];
+
+      const mergedAppts = latestAppts.map(a =>
+        sentIds.has(a.id) && !a.reminderSent
+          ? { ...a, reminderSent: true, reminderSentAt: targetIso }
+          : a
+      );
+
+      const r = await fetch(`${SB_URL}/rest/v1/app_state?id=eq.main`, {
         method: 'PATCH',
         headers: {
           apikey: SB_KEY,
@@ -152,12 +164,14 @@ module.exports = async function handler(req, res) {
           Prefer: 'return=minimal',
         },
         body: JSON.stringify({
-          data: { ...appState, appointments: updatedAppointments },
+          data: { ...latest, appointments: mergedAppts },
           updated_at: new Date().toISOString(),
         }),
       });
+      if (!r.ok) patchError = `PATCH HTTP ${r.status}`;
     } catch (e) {
-      // SMS ส่งแล้วแต่ mark ไม่ได้ — log ไว้ได้ แต่ไม่ fail ทั้ง request
+      // SMS ส่งแล้วแต่ mark ไม่ได้ — รายงานกลับไปด้วย แต่ไม่ fail ทั้ง request
+      patchError = e.message;
       console.error('[send-reminders] Supabase patch failed:', e.message);
     }
   }
@@ -167,6 +181,8 @@ module.exports = async function handler(req, res) {
     total: toRemind.length,
     sent: sentIds.size,
     failed: toRemind.length - sentIds.size,
+    markedSent: sentIds.size > 0 && !patchError,
+    patchError,
     results,
   });
 };

@@ -84,7 +84,7 @@ function CopyBtn({ text }) {
 
 // ── Purchase Tax Form Modal ──
 function PurchaseFormModal({ onClose, onSave, edit }) {
-  const [f, setF] = useState(edit || { date: new Date().toISOString().slice(0,10), invNo:'', sellerName:'', taxId:'', detail:'', total:'', rate:7 });
+  const [f, setF] = useState(edit || { date: todayISO(), invNo:'', sellerName:'', taxId:'', detail:'', total:'', rate:7 });
   const setV = k => e => setF({...f,[k]:e.target.value});
   const beforeVat = f.total ? n2(Number(f.total)/1.07) : 0;
   const vat = f.total ? n2(Number(f.total)-beforeVat) : 0;
@@ -226,7 +226,7 @@ function WHTCertModal({ record, onClose }) {
 
 // ── WHT Form Modal ──
 function WHTFormModal({ onClose, onSave, edit }) {
-  const [f, setF] = useState(edit || { date:new Date().toISOString().slice(0,10), form:'ภ.ง.ด.3', payeeName:'', taxId:'', address:'', incomeType:INCOME_TYPES[0].label, detail:'', amount:'', rate:3, taxWithheld:0 });
+  const [f, setF] = useState(edit || { date:todayISO(), form:'ภ.ง.ด.3', payeeName:'', taxId:'', address:'', incomeType:INCOME_TYPES[0].label, detail:'', amount:'', rate:3, taxWithheld:0 });
   const setV = k => e => {
     const v = e.target.value;
     if (k==='incomeType') {

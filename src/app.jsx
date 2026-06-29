@@ -391,7 +391,7 @@ function App() {
         : { name: f.owner, phone: f.phone || '-' };
       newPets = [...pets, {
         hn, name: f.pet, species: f.species, breed: '-', sex: f.sex,
-        birth: d.toISOString().slice(0, 10), color: '-',
+        birth: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`, color: '-',
         weight: parseFloat(f.weight) || null, sterilized: null,
         owner: ownerObj, allergies: [], visits: []
       }];
