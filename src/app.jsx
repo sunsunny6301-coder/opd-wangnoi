@@ -33,6 +33,7 @@ function App() {
   const [page, setPage] = useState('dashboard');
   const [caseCtx, setCaseCtx] = useState(null);
   const [payFor, setPayFor] = useState(null);
+  const [showBackup, setShowBackup] = useState(false);
   const [pushToast, toastRack] = useToasts();
 
   const { pets, queue, stock } = state;
@@ -663,6 +664,27 @@ function App() {
     pushToast(`นำเข้าเพ็ทช้อป — เพิ่มใหม่ ${res.added}` + (res.merged ? ` · รวมของเดิม ${res.merged} (บวกจำนวน/ต้นทุนสูงสุด)` : '') + ' รายการ');
   };
 
+  /* ── สำรอง / กู้ข้อมูลทั้งระบบ (JSON — ครบทุกอย่าง: สัตว์/ประวัติ/ใบเสร็จ/สต็อก/นัด) ── */
+  const exportAllData = () => {
+    try {
+      const json = JSON.stringify(state, null, 2);
+      const blob = new Blob([json], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = `OPD-วังน้อย-สำรองข้อมูล-${todayISO()}.json`;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      pushToast('ส่งออกข้อมูลทั้งหมดแล้ว (.json) — เก็บไฟล์นี้ไว้สำรอง');
+    } catch (e) { pushToast('ส่งออกไม่สำเร็จ: ' + e.message); }
+  };
+  // เขียนทับข้อมูลทั้งระบบด้วยไฟล์ที่กู้ (ยืนยันใน BackupModal แล้ว) — auto-save จะ sync ขึ้นคลาวด์เอง
+  const applyImport = (data) => {
+    setState(data);
+    try { localStorage.setItem(LS_KEY, JSON.stringify(data)); } catch (e) {}
+    setShowBackup(false); setCaseCtx(null); setPayFor(null); setPage('dashboard');
+    pushToast('กู้ข้อมูลสำเร็จ — โหลดข้อมูลจากไฟล์เรียบร้อย');
+  };
+
   /* ── nav ── */
   const NAV = [
   { id: 'dashboard', label: 'หน้า OPD / คิวตรวจ', icon: 'home' },
@@ -718,6 +740,11 @@ function App() {
           <span className="page-title" style={{ fontSize: "21px" }}>{titles[page]}</span>
           <span className="date-chip" style={{ fontSize: "15px" }}>{todayTH()}</span>
           <div style={{ flex: 1 }}></div>
+          <button className="btn btn-sm no-print" onClick={() => setShowBackup(true)}
+            style={{ color: 'var(--navy)', borderColor: 'var(--navy)', marginRight: 10 }}
+            title="สำรอง / กู้ข้อมูลทั้งระบบ">
+            💾 <span className="nav-label">สำรอง/กู้ข้อมูล</span>
+          </button>
           <span className="chip chip-mint nav-label">
             <span style={{ width: 7, height: 7, borderRadius: 99, background: 'var(--mint-deep)', display: 'inline-block' }}></span>
             พร้อมใช้งาน
@@ -764,9 +791,97 @@ function App() {
 
       null}
 
+      {showBackup ? (
+        <BackupModal state={state} onClose={() => setShowBackup(false)} onExport={exportAllData} onImport={applyImport} />
+      ) : null}
+
       {toastRack}
     </div>);
 
+}
+
+// ── สำรอง / กู้ข้อมูลทั้งระบบ (JSON) ──────────────────────────
+function BackupModal({ state, onClose, onExport, onImport }) {
+  const [pending, setPending] = useState(null); // ข้อมูลจากไฟล์ที่รอยืนยันเขียนทับ
+  const [err, setErr] = useState('');
+  const fileRef = useRef(null);
+
+  const counts = (d) => ({
+    pets: (d.pets || []).length,
+    visits: (d.pets || []).reduce((s, p) => s + ((p.visits || []).length), 0),
+    receipts: (d.receipts || []).length,
+    appts: (d.appointments || []).length,
+    stock: (d.stock || []).length + (d.shopStock || []).length,
+  });
+  const cur = counts(state);
+
+  const pickFile = (e) => {
+    const f = e.target.files && e.target.files[0];
+    e.target.value = ''; // ให้เลือกไฟล์เดิมซ้ำได้
+    if (!f) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const d = JSON.parse(reader.result);
+        if (!d || !Array.isArray(d.pets) || !Array.isArray(d.queue) || !Array.isArray(d.stock)) {
+          setErr('ไฟล์นี้ไม่ใช่ไฟล์สำรองของระบบ (ไม่พบข้อมูลสัตว์/คิว/สต็อก)'); setPending(null); return;
+        }
+        setErr(''); setPending(d);
+      } catch (ex) { setErr('อ่านไฟล์ไม่ได้ — ต้องเป็นไฟล์ .json ที่ส่งออกจากระบบนี้'); setPending(null); }
+    };
+    reader.readAsText(f);
+  };
+
+  const Row = ({ label, n }) => (
+    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13.5, padding: '3px 0' }}>
+      <span style={{ color: 'var(--ink-soft)' }}>{label}</span><b>{n}</b>
+    </div>
+  );
+
+  return (
+    <Modal title="💾 สำรอง / กู้ข้อมูลทั้งระบบ" onClose={onClose} footer={<>
+      <button className="btn" onClick={onClose}>ปิด</button>
+    </>}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+        {/* ── ส่งออก ── */}
+        <div style={{ border: '1.5px solid var(--line)', borderRadius: 'var(--radius)', padding: '14px 16px' }}>
+          <div style={{ fontWeight: 800, marginBottom: 4 }}>📤 ส่งออก (สำรองข้อมูล)</div>
+          <div style={{ fontSize: 12.5, color: 'var(--ink-faint)', marginBottom: 10 }}>
+            ดาวน์โหลดข้อมูลทั้งหมดเป็นไฟล์ .json ครบทุกอย่าง — สัตว์ {cur.pets} · ประวัติรักษา {cur.visits} · ใบเสร็จ {cur.receipts} · นัด {cur.appts} · สต็อก {cur.stock}
+          </div>
+          <button className="btn btn-primary" onClick={onExport}>📥 ดาวน์โหลดไฟล์สำรอง (.json)</button>
+        </div>
+
+        {/* ── นำเข้า / กู้คืน ── */}
+        <div style={{ border: '1.5px solid var(--blush-deep)', borderRadius: 'var(--radius)', padding: '14px 16px', background: 'var(--blush-soft, #FBDED9)' }}>
+          <div style={{ fontWeight: 800, marginBottom: 4, color: 'var(--blush-deep)' }}>📂 นำเข้า / กู้คืนข้อมูล</div>
+          <div style={{ fontSize: 12.5, color: 'var(--ink-soft)', marginBottom: 10 }}>
+            ⚠️ การกู้คืนจะ <b>เขียนทับข้อมูลปัจจุบันทั้งหมด</b> (และ sync ขึ้นคลาวด์ทุกเครื่อง) แนะนำให้กดส่งออกสำรองของปัจจุบันไว้ก่อน
+          </div>
+          <input ref={fileRef} type="file" accept="application/json,.json" style={{ display: 'none' }} onChange={pickFile} />
+          <button className="btn" style={{ borderColor: 'var(--blush-deep)', color: 'var(--blush-deep)' }} onClick={() => fileRef.current && fileRef.current.click()}>
+            เลือกไฟล์ .json…
+          </button>
+          {err ? <div style={{ color: 'var(--blush-deep)', fontSize: 13, marginTop: 8, fontWeight: 600 }}>{err}</div> : null}
+
+          {pending ? (() => { const n = counts(pending); return (
+            <div style={{ marginTop: 12, background: '#fff', borderRadius: 'var(--radius-sm)', padding: '12px 14px' }}>
+              <div style={{ fontWeight: 700, marginBottom: 6 }}>ข้อมูลในไฟล์ที่จะกู้คืน:</div>
+              <Row label="สัตว์เลี้ยง" n={n.pets} />
+              <Row label="ประวัติการรักษา" n={n.visits} />
+              <Row label="ใบเสร็จ" n={n.receipts} />
+              <Row label="นัดหมาย" n={n.appts} />
+              <Row label="รายการสต็อก" n={n.stock} />
+              <button className="btn btn-primary" style={{ width: '100%', marginTop: 12, background: 'var(--blush-deep)', borderColor: 'var(--blush-deep)' }}
+                onClick={() => onImport(pending)}>
+                ⚠️ ยืนยันเขียนทับข้อมูลทั้งหมดด้วยไฟล์นี้
+              </button>
+            </div>
+          ); })() : null}
+        </div>
+      </div>
+    </Modal>
+  );
 }
 
 ReactDOM.createRoot(document.getElementById('root')).render(<App />);
