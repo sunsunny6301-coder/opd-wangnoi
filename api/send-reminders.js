@@ -5,8 +5,10 @@
 //
 //   SUPABASE_URL           https://lvybmnzuzsefsizgszaf.supabase.co
 //   SUPABASE_SERVICE_KEY   <Service Role key: Supabase → Settings → API → service_role>
-//   SMS2PRO_API_KEY        <API Key จาก SMS2PRO Dashboard>
-//   SMS2PRO_SENDER         <Sender name ≤11 chars เช่น WangNoiVet — ต้องสมัครกับ SMS2PRO>
+//   SMS2PRO_API_KEY        <API Key จาก SMS2PRO → SMS API → ปุ่ม Update API Key>
+//   SMS2PRO_SENDER         <ชื่อผู้ส่งที่ "อนุมัติแล้ว" — ก่อน approve ใช้ชื่อ default
+//                           ที่ใช้ได้จากหน้า "ชื่อผู้ส่ง"; หลัง approve เปลี่ยนเป็น WangNoiVet
+//                           (แก้ค่านี้อย่างเดียว ไม่ต้องแก้โค้ด)>
 //   CRON_SECRET            <สตริงสุ่มอะไรก็ได้ เช่น opd2026secret — ปกป้อง endpoint>
 //
 // ทดสอบมือด้วย:
@@ -35,15 +37,32 @@ function isoToDisplay(iso) {
   return `${d} ${MONTHS_TH[m - 1]} ${y + 543}`;
 }
 
-// ส่ง SMS ผ่าน SMS2PRO HTTP API
+// ส่ง SMS ผ่าน SMS2PRO REST API
+// endpoint จากพอร์ทัล (SMS API tab): POST https://portal.sms2pro.com/sms-api
+// auth = Bearer API Key, body = JSON
+// ⚠️ ถ้าทดสอบแล้วได้ error เรื่อง field ให้เทียบชื่อคีย์ใน body กับแท็บ "SMS API"
+//    ของพอร์ทัล แล้วแก้ที่ object ด้านล่างจุดเดียว (เช่น msisdn↔recipient↔phone)
 async function sendViaSms2Pro(phone, message, apiKey, sender) {
-  const resp = await fetch('https://www.sms2pro.com/member/send_sms', {
+  const resp = await fetch('https://portal.sms2pro.com/sms-api', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({ api_key: apiKey, msisdn: phone, message, sender }),
+    headers: {
+      'Content-Type': 'application/json',
+      'Accept': 'application/json',
+      'Authorization': `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({ sender, msisdn: phone, message }),
   });
-  const body = await resp.text();
-  return { ok: resp.ok, httpStatus: resp.status, body };
+  const raw = await resp.text();
+  let body; try { body = JSON.parse(raw); } catch (e) { body = raw; }
+  // SMS2PRO อาจตอบ HTTP 200 แต่มี code ติดลบใน body เมื่อ error (ดูตาราง Status Gateway)
+  let apiCode = null;
+  if (body && typeof body === 'object') {
+    apiCode = body.code != null ? body.code
+            : body.status != null ? body.status
+            : body.error_code != null ? body.error_code : null;
+  }
+  const ok = resp.ok && (apiCode == null || Number(apiCode) >= 0);
+  return { ok, httpStatus: resp.status, apiCode, body };
 }
 
 module.exports = async function handler(req, res) {
