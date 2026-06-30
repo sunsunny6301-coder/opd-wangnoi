@@ -15,6 +15,17 @@ const APPT_CHIP = {
   'ตรวจเลือด': 'chip-blush', 'ผ่าตัด': 'chip-alert',
   'อาบน้ำตัดขน': 'chip-mint',
 };
+// ตัวเลือกหมายเหตุด่วน (ตามประเภทนัด) — แตะแล้วเติมลงช่องหมายเหตุ ทำให้ข้อความ SMS เป็นมาตรฐาน
+const NOTE_PRESETS = {
+  'วัคซีน': [
+    'วัคซีนรวมไข้หัดหวัดแมว เข็มกระตุ้น',
+    'วัคซีนรวมไข้หัดหวัดแมวประจำปี',
+    'วัคซีนรวม 5 โรคสุนัข เข็มกระตุ้น',
+    'วัคซีนรวม 5 โรคสุนัขประจำปี',
+    'วัคซีนพิษสุนัขบ้า เข็มกระตุ้น',
+    'วัคซีนพิษสุนัขบ้า ประจำปี',
+  ],
+};
 
 function dateTHShort(isoDate) {
   if (!isoDate) return '';
@@ -294,6 +305,25 @@ function ApptFormModal({ pets, defaultDate, defaultPet, editAppt, onClose, onSav
         <Field label="หมายเหตุ (ถ้ามี)">
           <input className="input" value={f.note} onChange={(e) => setF({ ...f, note: e.target.value })}
             placeholder="เช่น ฉีดยา 3 เข็ม, เตรียมตัวผ่าตัด งดน้ำงดอาหาร..." />
+          {NOTE_PRESETS[f.type] ? (
+            <div style={{ marginTop: 9 }}>
+              <div style={{ fontSize: 11.5, color: 'var(--ink-faint)', marginBottom: 6 }}>แตะเพื่อใส่ในหมายเหตุ — ข้อความ SMS จะตรงกันทุกครั้ง</div>
+              <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap' }}>
+                {NOTE_PRESETS[f.type].map((opt) => {
+                  const active = (f.note || '').trim() === opt;
+                  return (
+                    <button key={opt} type="button" onClick={() => setF({ ...f, note: active ? '' : opt })} style={{
+                      padding: '6px 12px', borderRadius: 'var(--radius-sm)',
+                      border: active ? '2px solid var(--navy)' : '1.5px solid var(--powder-deep)',
+                      background: active ? 'var(--navy)' : 'var(--powder-soft)',
+                      color: active ? '#fff' : 'var(--navy)',
+                      fontWeight: active ? 700 : 600, fontSize: 12.5, cursor: 'pointer',
+                    }}>{active ? '✓ ' : ''}{opt}</button>
+                  );
+                })}
+              </div>
+            </div>
+          ) : null}
         </Field>
 
         {/* ปุ่มเปิด/ปิดส่ง SMS เตือนอัตโนมัติ — เปิดไว้เป็นหลัก กดแล้วปิด (สีจาง) */}
