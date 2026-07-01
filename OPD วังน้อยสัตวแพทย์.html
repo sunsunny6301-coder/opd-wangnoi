@@ -5131,12 +5131,27 @@ const VAX_SHORT = {
 // คำท้ายแบบย่อ (ใช้เมื่อบีบวันแล้วยังเกิน 70): "เข็มกระตุ้น" → "กระตุ้น"
 // (ไม่ย่อเป็น "เข็ม 2" เพราะชนกับชุดลูกสัตว์ที่ "เข็ม 2" เป็นเข็มที่ 2 จริงๆ)
 const SUFFIX_SHORT = { 'เข็มกระตุ้น': 'กระตุ้น' };
-function shortenNote(note, useShort, tight, shortSfx) {
+function shortenNote(note, useShort, tight, shortSfx, vaxOnly) {
   if (!note) return '';
   const sep = tight ? '' : ' '; // tight = ตัดเว้นวรรคระหว่างชื่อกับคำท้าย ให้พอ 70
   const sf = (s) => shortSfx ? (SUFFIX_SHORT[s] || s) : s;
   const segs = String(note).split(' และ ').map((s) => s.trim()).filter(Boolean);
-  const parsed = segs.map((s) => { const v = VAX_SHORT[s]; return v ? [useShort ? v[1] : v[0], v[2]] : [s, '']; });
+  let parsed;
+  if (vaxOnly) {
+    // นัดวัคซีน: เอาเฉพาะส่วนที่เป็นวัคซีนเข้า SMS · ตัดหมายเหตุอื่นทิ้ง (เช่น "+ หยดยา", "ตัดขน")
+    parsed = [];
+    for (const seg of segs) {
+      let key = null;
+      if (VAX_SHORT[seg]) key = seg;                                    // ตรงเป๊ะ
+      else for (const k in VAX_SHORT) if (seg.indexOf(k) === 0 && (!key || k.length > key.length)) key = k; // preset + ต่อท้าย → ตัดท้าย
+      if (key) parsed.push([useShort ? VAX_SHORT[key][1] : VAX_SHORT[key][0], VAX_SHORT[key][2]]);
+      else if (seg.indexOf('วัคซีน') === 0) parsed.push([seg, '']);     // วัคซีนที่พิมพ์เอง (ลูคีเมีย/7โรค) → เก็บไว้
+      // ไม่ใช่วัคซีน → ตัดทิ้ง
+    }
+    if (!parsed.length) return '';
+  } else {
+    parsed = segs.map((s) => { const v = VAX_SHORT[s]; return v ? [useShort ? v[1] : v[0], v[2]] : [s, '']; });
+  }
   const sfx = [...new Set(parsed.map((p) => p[1]))];
   // หลายตัว + คำท้ายเหมือนกัน → "base1และbase2+คำท้าย" (ไม่มีเว้นวรรคอยู่แล้ว)
   if (parsed.length > 1 && sfx.length === 1 && sfx[0]) return parsed.map((p) => p[0]).join('และ') + sf(sfx[0]);
@@ -5158,8 +5173,8 @@ function buildReminderMsg(a) {
   const name = a.petName || '';
   const isVax = a.type === 'วัคซีน';
   const mk = (useShort, numericDate, withTail, tight, shortSfx) => {
-    const note = shortenNote(a.note, useShort, tight, shortSfx);
-    // วัคซีน: "ฉีด{ชื่อวัคซีน}" · "อื่นๆ": ใช้หมายเหตุแทน (เช่น "ตัดไหม") · ประเภทอื่น: "{ประเภท} {หมายเหตุ}"
+    const note = shortenNote(a.note, useShort, tight, shortSfx, isVax);
+    // วัคซีน: "ฉีด{ชื่อวัคซีน}" (เอาเฉพาะวัคซีน) · "อื่นๆ": ใช้หมายเหตุแทน · ประเภทอื่น: "{ประเภท} {หมายเหตุ}"
     const body = isVax
       ? 'ฉีด' + (note || a.type || '')
       : (a.type && a.type !== 'อื่นๆ')

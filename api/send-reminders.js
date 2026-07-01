@@ -53,12 +53,25 @@ const VAX_SHORT = {
   'วัคซีนพิษสุนัขบ้า ประจำปี':          ['พิษสุนัขบ้า', 'พิษสุนัขบ้า', 'ประจำปี'],
 };
 const SUFFIX_SHORT = { 'เข็มกระตุ้น': 'กระตุ้น' };
-function shortenNote(note, useShort, tight, shortSfx) {
+function shortenNote(note, useShort, tight, shortSfx, vaxOnly) {
   if (!note) return '';
   const sep = tight ? '' : ' ';
   const sf = (s) => shortSfx ? (SUFFIX_SHORT[s] || s) : s;
   const segs = String(note).split(' และ ').map((s) => s.trim()).filter(Boolean);
-  const parsed = segs.map((s) => { const v = VAX_SHORT[s]; return v ? [useShort ? v[1] : v[0], v[2]] : [s, '']; });
+  let parsed;
+  if (vaxOnly) {
+    parsed = [];
+    for (const seg of segs) {
+      let key = null;
+      if (VAX_SHORT[seg]) key = seg;
+      else for (const k in VAX_SHORT) if (seg.indexOf(k) === 0 && (!key || k.length > key.length)) key = k;
+      if (key) parsed.push([useShort ? VAX_SHORT[key][1] : VAX_SHORT[key][0], VAX_SHORT[key][2]]);
+      else if (seg.indexOf('วัคซีน') === 0) parsed.push([seg, '']);
+    }
+    if (!parsed.length) return '';
+  } else {
+    parsed = segs.map((s) => { const v = VAX_SHORT[s]; return v ? [useShort ? v[1] : v[0], v[2]] : [s, '']; });
+  }
   const sfx = [...new Set(parsed.map((p) => p[1]))];
   if (parsed.length > 1 && sfx.length === 1 && sfx[0]) return parsed.map((p) => p[0]).join('และ') + sf(sfx[0]);
   return parsed.map((p) => p[1] ? `${p[0]}${sep}${sf(p[1])}` : p[0]).join(' และ ');
@@ -75,7 +88,7 @@ function buildReminderMsg(appt) {
   const name = appt.petName || '';
   const isVax = appt.type === 'วัคซีน';
   const mk = (useShort, numericDate, withTail, tight, shortSfx) => {
-    const note = shortenNote(appt.note, useShort, tight, shortSfx);
+    const note = shortenNote(appt.note, useShort, tight, shortSfx, isVax);
     const body = isVax
       ? 'ฉีด' + (note || appt.type || '')
       : (appt.type && appt.type !== 'อื่นๆ')
