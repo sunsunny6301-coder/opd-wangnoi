@@ -44,15 +44,16 @@ const VAX_SHORT = {
   'วัคซีนพิษสุนัขบ้า เข็มกระตุ้น':      ['พิษสุนัขบ้า', 'พิษสุนัขบ้า', 'เข็มกระตุ้น'],
   'วัคซีนพิษสุนัขบ้า ประจำปี':          ['พิษสุนัขบ้า', 'พิษสุนัขบ้า', 'ประจำปี'],
 };
-function shortenNote(note, useShort) {
+function shortenNote(note, useShort, tight) {
   if (!note) return '';
+  const sep = tight ? '' : ' '; // tight = ตัดเว้นวรรคระหว่างชื่อกับคำท้าย ให้พอ 70
   const segs = String(note).split(' และ ').map((s) => s.trim()).filter(Boolean);
   const parsed = segs.map((s) => { const v = VAX_SHORT[s]; return v ? [useShort ? v[1] : v[0], v[2]] : [s, '']; });
   const sfx = [...new Set(parsed.map((p) => p[1]))];
-  // หลายตัว + คำท้ายเหมือนกัน → "base1และbase2+คำท้าย" (ไม่มีเว้นวรรค)
+  // หลายตัว + คำท้ายเหมือนกัน → "base1และbase2+คำท้าย" (ไม่มีเว้นวรรคอยู่แล้ว)
   if (parsed.length > 1 && sfx.length === 1 && sfx[0]) return parsed.map((p) => p[0]).join('และ') + sfx[0];
-  // ตัวเดียว หรือคำท้ายต่างกัน → "base คำท้าย" คั่นด้วย "และ"
-  return parsed.map((p) => p[1] ? `${p[0]} ${p[1]}` : p[0]).join(' และ ');
+  // ตัวเดียว หรือคำท้ายต่างกัน → "base{sep}คำท้าย" คั่นด้วย "และ"
+  return parsed.map((p) => p[1] ? `${p[0]}${sep}${p[1]}` : p[0]).join(' และ ');
 }
 // วันที่แบบ SMS: "1 กค 70" (ปกติ) หรือ "1/7/70" (สั้นกว่า) — ปี พ.ศ. 2 หลัก
 function smsDate(iso, numeric) {
@@ -64,23 +65,27 @@ function smsDate(iso, numeric) {
 
 // ข้อความ SMS เตือนนัด — สไตล์อบอุ่น: "น้อง{ชื่อ} ถึงนัด{รายละเอียด} {วันที่} นี้นะครับ"
 // ชื่อร้านอยู่ที่ Sender name (ไม่ใส่ในเนื้อ) · วัคซีนขึ้นต้นด้วย "ฉีด"
-// ลำดับ: ชื่อเต็ม+วันไทย+ปิดท้าย → (ถ้าเกิน) ชื่อย่อ → วันตัวเลข → ตัด "นี้นะครับ"
+// ลำดับ auto-fit (หยุดที่อันแรกที่ ≤70): ชื่อเต็ม → บีบเว้นวรรค → ชื่อย่อ → วันตัวเลข → ตัด "นี้นะครับ"
 function buildReminderMsg(a) {
   const name = a.petName || '';
   const isVax = a.type === 'วัคซีน';
-  const mk = (useShort, numericDate, withTail) => {
-    const detail = shortenNote(a.note, useShort) || a.type || '';
+  const mk = (useShort, numericDate, withTail, tight) => {
+    const detail = shortenNote(a.note, useShort, tight) || a.type || '';
     const body = (isVax ? 'ฉีด' : '') + detail;
     let s = `น้อง${name} ถึงนัด${body} ${smsDate(a.date, numericDate)}`;
-    if (withTail) s += ' นี้นะครับ';
+    if (withTail) s += tight ? 'นี้นะครับ' : ' นี้นะครับ';
     return s.replace(/\s+/g, ' ').trim();
   };
-  const full = mk(false, false, true);          // ชื่อเต็ม + วันไทย + ปิดท้าย
-  if (full.length <= 70) return full;            // พอดี → ใช้ชื่อเต็มเลย
-  let msg = mk(true, false, true);               // ชื่อย่อ + วันไทย + ปิดท้าย
-  if (msg.length > 70) msg = mk(true, true, true);   // เปลี่ยนวันเป็นตัวเลข
-  if (msg.length > 70) msg = mk(true, true, false);  // ตัด "นี้นะครับ"
-  return msg;
+  const attempts = [
+    mk(false, false, true, false), // ชื่อเต็ม + วันไทย + ปิดท้าย + เว้นวรรคปกติ
+    mk(false, false, true, true),  // ชื่อเต็ม + บีบเว้นวรรค (คงชื่อเต็มไว้)
+    mk(true, false, true, false),  // ชื่อย่อ (ตัด "ไข้หัดหวัดแมว"/"5 โรคสุนัข")
+    mk(true, false, true, true),   // ชื่อย่อ + บีบเว้นวรรค
+    mk(true, true, true, true),    // + เปลี่ยนวันเป็นตัวเลข
+    mk(true, true, false, true),   // + ตัด "นี้นะครับ"
+  ];
+  for (const m of attempts) if (m.length <= 70) return m;
+  return attempts[attempts.length - 1];
 }
 
 // เปิดแอปส่งข้อความในเครื่อง (มือถือ) + คัดลอกข้อความสำรอง (เดสก์ท็อป)

@@ -46,13 +46,14 @@ const VAX_SHORT = {
   'วัคซีนพิษสุนัขบ้า เข็มกระตุ้น':      ['พิษสุนัขบ้า', 'พิษสุนัขบ้า', 'เข็มกระตุ้น'],
   'วัคซีนพิษสุนัขบ้า ประจำปี':          ['พิษสุนัขบ้า', 'พิษสุนัขบ้า', 'ประจำปี'],
 };
-function shortenNote(note, useShort) {
+function shortenNote(note, useShort, tight) {
   if (!note) return '';
+  const sep = tight ? '' : ' ';
   const segs = String(note).split(' และ ').map((s) => s.trim()).filter(Boolean);
   const parsed = segs.map((s) => { const v = VAX_SHORT[s]; return v ? [useShort ? v[1] : v[0], v[2]] : [s, '']; });
   const sfx = [...new Set(parsed.map((p) => p[1]))];
   if (parsed.length > 1 && sfx.length === 1 && sfx[0]) return parsed.map((p) => p[0]).join('และ') + sfx[0];
-  return parsed.map((p) => p[1] ? `${p[0]} ${p[1]}` : p[0]).join(' และ ');
+  return parsed.map((p) => p[1] ? `${p[0]}${sep}${p[1]}` : p[0]).join(' และ ');
 }
 // วันที่แบบ SMS: "1 กค 70" หรือ "1/7/70" — ปี พ.ศ. 2 หลัก
 function smsDate(iso, numeric) {
@@ -61,23 +62,27 @@ function smsDate(iso, numeric) {
   const be2 = String((p[0] + 543) % 100).padStart(2, '0');
   return numeric ? `${p[2]}/${p[1]}/${be2}` : `${p[2]} ${MONTHS_TH[p[1] - 1].replace(/\./g, '')} ${be2}`;
 }
-// สร้างข้อความเตือน — ลองชื่อเต็มก่อน เกินค่อยย่อ+วันตัวเลข+ตัด "นี้นะครับ"
+// สร้างข้อความเตือน — ลำดับ: ชื่อเต็ม → บีบเว้นวรรค → ชื่อย่อ → วันตัวเลข → ตัด "นี้นะครับ"
 function buildReminderMsg(appt) {
   const name = appt.petName || '';
   const isVax = appt.type === 'วัคซีน';
-  const mk = (useShort, numericDate, withTail) => {
-    const detail = shortenNote(appt.note, useShort) || appt.type || '';
+  const mk = (useShort, numericDate, withTail, tight) => {
+    const detail = shortenNote(appt.note, useShort, tight) || appt.type || '';
     const body = (isVax ? 'ฉีด' : '') + detail;
     let s = `น้อง${name} ถึงนัด${body} ${smsDate(appt.date, numericDate)}`;
-    if (withTail) s += ' นี้นะครับ';
+    if (withTail) s += tight ? 'นี้นะครับ' : ' นี้นะครับ';
     return s.replace(/\s+/g, ' ').trim();
   };
-  const full = mk(false, false, true);
-  if (full.length <= 70) return full;
-  let msg = mk(true, false, true);
-  if (msg.length > 70) msg = mk(true, true, true);
-  if (msg.length > 70) msg = mk(true, true, false);
-  return msg;
+  const attempts = [
+    mk(false, false, true, false),
+    mk(false, false, true, true),
+    mk(true, false, true, false),
+    mk(true, false, true, true),
+    mk(true, true, true, true),
+    mk(true, true, false, true),
+  ];
+  for (const m of attempts) if (m.length <= 70) return m;
+  return attempts[attempts.length - 1];
 }
 
 // ส่ง SMS ผ่าน SMS2PRO REST API
