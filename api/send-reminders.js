@@ -36,6 +36,42 @@ function isoToDisplay(iso) {
   const [y, m, d] = iso.split('-').map(Number);
   return `${d} ${MONTHS_TH[m - 1]} ${y + 543}`;
 }
+// วันที่แบบสั้นสำหรับ SMS: "15 ก.ค." (ไม่ใส่ปี กันเปลืองตัวอักษร)
+function isoToShort(iso) {
+  const [, m, d] = iso.split('-').map(Number);
+  return `${d} ${MONTHS_TH[m - 1]}`;
+}
+
+// ── ต้องตรงกับ buildReminderMsg ใน src/appointments.jsx เป๊ะ ──
+// ชื่อวัคซีนย่อสำหรับ SMS (เก็บชื่อเต็มในระบบ แต่ส่งใช้ย่อให้พอ 70 ตัว)
+const SMS_ABBREV = {
+  'วัคซีนรวมไข้หัดหวัดแมว เข็มกระตุ้น': 'วัคซีนรวมแมว กระตุ้น',
+  'วัคซีนรวมไข้หัดหวัดแมวประจำปี': 'วัคซีนรวมแมวประจำปี',
+  'วัคซีนรวม 5 โรคสุนัข เข็มกระตุ้น': 'วัคซีนรวมสุนัข กระตุ้น',
+  'วัคซีนรวม 5 โรคสุนัขประจำปี': 'วัคซีนรวมสุนัขประจำปี',
+  'วัคซีนพิษสุนัขบ้า เข็มกระตุ้น': 'พิษสุนัขบ้า กระตุ้น',
+  'วัคซีนพิษสุนัขบ้า ประจำปี': 'พิษสุนัขบ้า ประจำปี',
+};
+function shortenNote(note) {
+  if (!note) return '';
+  return String(note).split(' และ ').map((s) => SMS_ABBREV[s.trim()] || s.trim()).filter(Boolean).join(' และ ');
+}
+// สร้างข้อความเตือน + auto-fit ≤70 (ตัดเบอร์ก่อน → ตัดเวลา → ไม่ตัดชื่อวัคซีน)
+function buildReminderMsg(appt, dateShort) {
+  const name = appt.petName || '';
+  const detail = shortenNote(appt.note) || appt.type || '';
+  const timePart = appt.time ? `${appt.time}น.` : '';
+  const build = (withPhone, withTime) => {
+    let s = `เตือนนัด ${name} ${detail} ${dateShort}`;
+    if (withTime && timePart) s += ` ${timePart}`;
+    if (withPhone) s += ` โทร 0822813207`;
+    return s.replace(/\s+/g, ' ').trim();
+  };
+  let msg = build(true, true);
+  if (msg.length > 70) msg = build(false, true);
+  if (msg.length > 70) msg = build(false, false);
+  return msg;
+}
 
 // ส่ง SMS ผ่าน SMS2PRO REST API
 // endpoint จากพอร์ทัล (SMS API tab): POST https://portal.sms2pro.com/sms-api
@@ -139,10 +175,7 @@ module.exports = async function handler(req, res) {
       continue;
     }
 
-    const msg = `แจ้งเตือนนัด ${appt.petName} (${appt.type}) ${targetDisplay}`
-      + (appt.time ? ` ${appt.time} น.` : '')
-      + (appt.note ? ` ${appt.note}` : '')
-      + ` วังน้อยสัตวแพทย์ โทร 0822813207`;
+    const msg = buildReminderMsg(appt, isoToShort(targetIso));
 
     try {
       const r = await sendViaSms2Pro(phone, msg, SMS_KEY, SMS_SENDER);

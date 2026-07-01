@@ -5102,11 +5102,39 @@ function dateTHShort(isoDate) {
   return `${d.getDate()} ${THAI_MONTHS_SHORT[d.getMonth()]} ${d.getFullYear() + 543}`;
 }
 
-// ข้อความ SMS เตือนนัด (สั้น กระชับ — ภาษาไทย 1 SMS = 70 ตัวอักษร)
+// ── ชื่อวัคซีนแบบย่อสำหรับ SMS (ให้พอ 70 ตัว) — เก็บชื่อเต็มในระบบ แต่ตอนส่งใช้ย่อ ──
+const SMS_ABBREV = {
+  'วัคซีนรวมไข้หัดหวัดแมว เข็มกระตุ้น': 'วัคซีนรวมแมว กระตุ้น',
+  'วัคซีนรวมไข้หัดหวัดแมวประจำปี': 'วัคซีนรวมแมวประจำปี',
+  'วัคซีนรวม 5 โรคสุนัข เข็มกระตุ้น': 'วัคซีนรวมสุนัข กระตุ้น',
+  'วัคซีนรวม 5 โรคสุนัขประจำปี': 'วัคซีนรวมสุนัขประจำปี',
+  'วัคซีนพิษสุนัขบ้า เข็มกระตุ้น': 'พิษสุนัขบ้า กระตุ้น',
+  'วัคซีนพิษสุนัขบ้า ประจำปี': 'พิษสุนัขบ้า ประจำปี',
+};
+function shortenNote(note) {
+  if (!note) return '';
+  return String(note).split(' และ ').map((s) => SMS_ABBREV[s.trim()] || s.trim()).filter(Boolean).join(' และ ');
+}
+
+// ข้อความ SMS เตือนนัด — ชื่อร้านอยู่ที่ Sender name (ไม่ใส่ในเนื้อ กันเปลืองตัวอักษร)
+// รูปแบบเต็ม: "เตือนนัด {ชื่อ} {หมายเหตุย่อ} {วันที่} {เวลา}น. โทร {เบอร์}"
+// auto-fit ให้ ≤70: เกิน → ตัดเบอร์ก่อน · ยังเกิน → ตัดเวลา · ไม่ตัดชื่อวัคซีน (ข้อมูลสำคัญ)
 function buildReminderMsg(a) {
-  const when = `${dateTHShort(a.date)}${a.time ? ' ' + a.time + ' น.' : ''}`;
-  return `แจ้งเตือนนัด ${a.petName} (${a.type}) ${when}`
-    + `${a.note ? ' ' + a.note : ''} วังน้อยสัตวแพทย์ โทร 0822813207`;
+  const name = a.petName || '';
+  const detail = shortenNote(a.note) || a.type || '';
+  const p = String(a.date || '').split('-').map(Number);
+  const dateShort = (p[1] && p[2]) ? `${p[2]} ${THAI_MONTHS_SHORT[p[1] - 1]}` : (a.date || '');
+  const timePart = a.time ? `${a.time}น.` : '';
+  const build = (withPhone, withTime) => {
+    let s = `เตือนนัด ${name} ${detail} ${dateShort}`;
+    if (withTime && timePart) s += ` ${timePart}`;
+    if (withPhone) s += ` โทร 0822813207`;
+    return s.replace(/\s+/g, ' ').trim();
+  };
+  let msg = build(true, true);
+  if (msg.length > 70) msg = build(false, true);   // ตัดเบอร์โทรก่อน
+  if (msg.length > 70) msg = build(false, false);  // ยังเกิน → ตัดเวลา
+  return msg;
 }
 
 // เปิดแอปส่งข้อความในเครื่อง (มือถือ) + คัดลอกข้อความสำรอง (เดสก์ท็อป)
@@ -5124,7 +5152,11 @@ function SmsComposerModal({ title, initPhone, initMsg, onClose, onSend }) {
   const [phone, setPhone] = useState(initPhone || '');
   const [msg, setMsg] = useState(initMsg || '');
   const clean = phone.replace(/[^0-9+]/g, '');
-  const segments = Math.max(1, Math.ceil(msg.length / 70)); // ไทย ~70 ตัว/ข้อความ
+  // ไทย: 1 ข้อความ = 70 ตัว · ถ้าต่อหลายท่อนคิด 67 ตัว/ท่อน (คิดเครดิตตามจำนวนท่อน)
+  const len = msg.length;
+  const over = len > 70;
+  const segments = over ? Math.ceil(len / 67) : 1;
+  const pct = Math.min(100, Math.round((len / 70) * 100));
   const copyMsg = () => { try { navigator.clipboard && navigator.clipboard.writeText(msg); } catch (e) {} };
   return (
     <Modal title={title || 'ส่ง SMS'} onClose={onClose} footer={<>
@@ -5139,8 +5171,13 @@ function SmsComposerModal({ title, initPhone, initMsg, onClose, onSend }) {
         <Field label="ข้อความ (แก้ไขได้)">
           <textarea className="textarea" rows="5" value={msg} onChange={(e) => setMsg(e.target.value)} placeholder="พิมพ์ข้อความที่จะส่ง..." />
         </Field>
-        <div style={{ fontSize: 12, color: 'var(--ink-faint)' }}>
-          {msg.length} ตัวอักษร · ประมาณ {segments} ข้อความ (SMS ภาษาไทย ~70 ตัว/ข้อความ)
+        <div>
+          <div style={{ height: 8, borderRadius: 99, background: 'var(--line)', overflow: 'hidden' }}>
+            <div style={{ height: '100%', width: pct + '%', background: over ? 'var(--blush-deep)' : 'var(--mint-deep)', transition: 'width .15s' }} />
+          </div>
+          <div style={{ fontSize: 12.5, fontWeight: 700, marginTop: 5, color: over ? 'var(--blush-deep)' : 'var(--mint-deep)' }}>
+            {len}/70 ตัวอักษร · {over ? `${segments} ข้อความ = ${segments} เครดิต (เกิน 70)` : '1 ข้อความ = 1 เครดิต ✓'}
+          </div>
         </div>
         <div style={{ fontSize: 12, color: 'var(--ink-soft)', background: 'var(--paper)', borderRadius: 'var(--radius-sm)', padding: '8px 11px' }}>
           💡 บนมือถือจะเปิดแอปข้อความให้พร้อมเบอร์+ข้อความ · บนคอมจะคัดลอกข้อความไว้ให้วาง
