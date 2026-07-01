@@ -142,6 +142,16 @@ function MiniCalendar({ appointments, selectedDay, onSelectDay }) {
   );
 }
 
+// ── ป้ายสถานะ SMS ของนัด (ใช้ร่วมกันทุกหน้า: นัดหมาย / OPD / หน้าหลัก) ──
+// ส่งแล้ว → ✓ เขียว · ปิดส่ง → 🔕 เทา · รอส่งอัตโนมัติ → ⏳ เหลือง · ผ่านมาแล้วยังไม่ส่ง → ซ่อน
+function ApptSmsStatus({ a, past, style }) {
+  if (!a) return null;
+  if (a.reminderSent) return <span className="chip chip-mint" style={{ fontSize: 11, fontWeight: 700, ...(style || {}) }}>✓ ส่ง SMS แล้ว</span>;
+  if (a.smsAuto === false) return <span className="chip" style={{ fontSize: 11, fontWeight: 700, color: 'var(--ink-faint)', ...(style || {}) }}>🔕 ไม่ส่ง SMS</span>;
+  if (past) return null;
+  return <span className="chip chip-butter" style={{ fontSize: 11, fontWeight: 700, ...(style || {}) }}>⏳ รอส่ง SMS</span>;
+}
+
 // ── Appointment Card ─────────────────────────────────────────
 function ApptCard({ appt, onUpdate, onEdit, onOpenPet, onSendSms }) {
   const statusCls = { scheduled: 'chip-butter', arrived: 'chip-mint', cancelled: '' };
@@ -164,6 +174,7 @@ function ApptCard({ appt, onUpdate, onEdit, onOpenPet, onSendSms }) {
       <div style={{ display: 'flex', gap: 6, marginTop: 8, flexWrap: 'wrap', alignItems: 'center' }}>
         <span className={`chip ${APPT_CHIP[appt.type] || ''}`}>{appt.type}</span>
         {appt.note ? <span style={{ fontSize: 13, color: 'var(--ink-soft)' }}>{appt.note}</span> : null}
+        {appt.status !== 'cancelled' ? <ApptSmsStatus a={appt} /> : null}
       </div>
       <div style={{ display: 'flex', gap: 7, marginTop: 10, flexWrap: 'wrap' }}>
         {appt.status !== 'cancelled' && appt.status === 'scheduled' ? (
@@ -501,22 +512,26 @@ function AppointmentsView({ appointments, pets, onAdd, onUpdate, onOpenPet, push
                   <div style={{ display: 'flex', gap: 6, marginTop: 3, flexWrap: 'wrap', alignItems: 'center' }}>
                     <span className={`chip ${APPT_CHIP[a.type] || ''}`} style={{ fontSize: 12 }}>{a.type}</span>
                     <span style={{ fontSize: 12.5, color: 'var(--ink-soft)' }}>{a.ownerName}</span>
+                    <ApptSmsStatus a={a} />
                   </div>
                   <div style={{ fontSize: 12.5, color: 'var(--ink-soft)', marginTop: 2, display: 'flex', alignItems: 'center', gap: 5 }}>
                     <Icon name="phone" size={12} style={{ color: 'var(--ink-faint)' }} /> {phone || '— ไม่มีเบอร์ —'}
                   </div>
                   {a.note ? <div className="hist-items" style={{ marginTop: 3 }}>{a.note}</div> : null}
-                  {/* ปุ่มส่ง SMS + สถานะ */}
-                  <div style={{ marginTop: 8 }}>
+                  {/* ปุ่มส่ง SMS + แก้ไขนัด */}
+                  <div style={{ marginTop: 8, display: 'flex', gap: 6 }}>
                     {a.reminderSent ? (
-                      <button className="btn btn-sm" style={{ width: '100%', color: 'var(--mint-deep)', borderColor: 'var(--mint-deep)', background: 'var(--mint-soft)', fontWeight: 700 }} onClick={() => sendSms(a)}>
-                        ✓ ส่ง SMS แล้ว · กดส่งอีกครั้ง
+                      <button className="btn btn-sm" style={{ flex: 1, color: 'var(--mint-deep)', borderColor: 'var(--mint-deep)', background: 'var(--mint-soft)', fontWeight: 700 }} onClick={() => sendSms(a)}>
+                        ✓ ส่งแล้ว · ส่งอีกครั้ง
                       </button>
                     ) : (
-                      <button className="btn btn-sm btn-primary" style={{ width: '100%' }} onClick={() => sendSms(a)}>
+                      <button className="btn btn-sm btn-primary" style={{ flex: 1 }} onClick={() => sendSms(a)}>
                         📱 ส่ง SMS เตือน
                       </button>
                     )}
+                    <button className="btn btn-sm" style={{ flexShrink: 0 }} onClick={() => openEdit(a)} title="แก้ไขรายละเอียดนัด">
+                      <Icon name="edit" size={14} /> แก้ไข
+                    </button>
                   </div>
                 </div>
               );
@@ -554,4 +569,4 @@ function AppointmentsView({ appointments, pets, onAdd, onUpdate, onOpenPet, push
   );
 }
 
-Object.assign(window, { AppointmentsView, ApptFormModal, APPT_TYPES, APPT_COLORS, APPT_CHIP });
+Object.assign(window, { AppointmentsView, ApptFormModal, ApptSmsStatus, APPT_TYPES, APPT_COLORS, APPT_CHIP });

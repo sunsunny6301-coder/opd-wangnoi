@@ -669,6 +669,8 @@ function Dashboard({ pets, queue, appointments, admitted, receipts = [], onOpenC
   const [walkInPrefillHn, setWalkInPrefillHn] = useState(null);
   // วันที่ของแผงนัด (เลื่อนดูวันก่อน/ถัดไปได้ด้วยลูกศร) — เริ่มที่วันนี้
   const [apptDay, setApptDay] = useState(todayISO);
+  const [editAppt, setEditAppt] = useState(null);   // นัดที่กำลังแก้ไข (ApptFormModal)
+  const [smsAppt, setSmsAppt] = useState(null);     // นัดที่กำลังส่ง SMS (SmsComposerModal)
   const shiftApptDay = (delta) => {
     const [y, m, dd] = apptDay.split('-').map(Number);
     const d = new Date(y, m - 1, dd + delta); // คำนวณแบบ local ไม่ใช้ toISOString (กันวันเพี้ยนเพราะ timezone)
@@ -763,7 +765,9 @@ function Dashboard({ pets, queue, appointments, admitted, receipts = [], onOpenC
                   <div style={{ display: 'flex', gap: 5, marginTop: 5, alignItems: 'center', flexWrap: 'wrap' }}>
                     <span className={`chip ${APPT_CHIP && APPT_CHIP[a.type] ? APPT_CHIP[a.type] : ''}`} style={{ fontSize: 11 }}>{a.type}</span>
                     {arrived ? <span className="chip chip-mint" style={{ fontSize: 11 }}>มาแล้ว</span> : null}
+                    {typeof ApptSmsStatus !== 'undefined' ? <ApptSmsStatus a={a} past={apptDay < todayStr} /> : null}
                   </div>
+                  {a.note ? <div style={{ fontSize: 12, color: 'var(--ink-soft)', marginTop: 4 }}>{a.note}</div> : null}
                   {!arrived && !alreadyQueued ?
                   <button className="btn btn-primary btn-sm" style={{ width: '100%', marginTop: 7, fontSize: 12 }}
                   onClick={() => {
@@ -775,6 +779,21 @@ function Dashboard({ pets, queue, appointments, admitted, receipts = [], onOpenC
                   alreadyQueued ?
                   <div style={{ fontSize: 12, color: 'var(--powder-deep)', marginTop: 5, fontWeight: 600, textAlign: 'center' }}>อยู่ในคิวแล้ว</div> :
                   null}
+                  {/* ส่ง SMS + แก้ไขนัด — ลิงก์กับหน้านัดหมาย/OPD */}
+                  <div style={{ display: 'flex', gap: 5, marginTop: 6 }}>
+                    {typeof SmsComposerModal !== 'undefined' ? (
+                      <button className="btn btn-sm" style={{ flex: 1, fontSize: 11.5,
+                        ...(a.reminderSent ? { color: 'var(--mint-deep)', borderColor: 'var(--mint-deep)', background: 'var(--mint-soft)', fontWeight: 700 } : {}) }}
+                        onClick={() => setSmsAppt(a)}>
+                        {a.reminderSent ? '✓ ส่งแล้ว' : '📱 ส่ง SMS'}
+                      </button>
+                    ) : null}
+                    {typeof ApptFormModal !== 'undefined' ? (
+                      <button className="btn btn-sm" style={{ flexShrink: 0, fontSize: 11.5 }} onClick={() => setEditAppt(a)} title="แก้ไขรายละเอียดนัด">
+                        <Icon name="edit" size={13} />
+                      </button>
+                    ) : null}
+                  </div>
                 </div>);
 
             })}
@@ -859,6 +878,27 @@ function Dashboard({ pets, queue, appointments, admitted, receipts = [], onOpenC
         onClose={() => { setShowWalkIn(false); setWalkInPrefillHn(null); }}
         onSubmit={(payload) => { setShowWalkIn(false); setWalkInPrefillHn(null); onWalkIn(payload); }} /> :
       null}
+
+      {editAppt && typeof ApptFormModal !== 'undefined' ? (
+        <ApptFormModal
+          pets={pets}
+          editAppt={editAppt}
+          onClose={() => setEditAppt(null)}
+          onSave={(appt) => { setEditAppt(null); onUpdateAppointment && onUpdateAppointment(appt); }} />
+      ) : null}
+
+      {smsAppt && typeof SmsComposerModal !== 'undefined' ? (
+        <SmsComposerModal
+          title={`ส่ง SMS เตือนนัด — ${smsAppt.petName}`}
+          initPhone={smsAppt.phone || ''}
+          initMsg={typeof buildReminderMsg !== 'undefined' ? buildReminderMsg(smsAppt) : ''}
+          onClose={() => setSmsAppt(null)}
+          onSend={(phone, msg) => {
+            typeof openSmsApp !== 'undefined' && openSmsApp(phone, msg);
+            onUpdateAppointment && onUpdateAppointment({ ...smsAppt, reminderSent: true, reminderSentAt: todayISO() });
+            setSmsAppt(null);
+          }} />
+      ) : null}
     </div>);
 
 }

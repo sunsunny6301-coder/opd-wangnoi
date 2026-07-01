@@ -329,6 +329,7 @@ function CaseView({ pet, queueItem, vets, services, stock, shopStock = [], allPe
   const [showAllHistory, setShowAllHistory] = useState(false);
   const [showApptHistory, setShowApptHistory] = useState(false);
   const [smsAppt, setSmsAppt] = useState(null); // นัดที่กำลังเปิด modal ส่ง SMS
+  const [editApptData, setEditApptData] = useState(null); // นัดที่กำลังแก้ไข (เปิด ApptFormModal)
   const setR = (k) => (e) => setRec({ ...rec, [k]: e.target.value });
   // เปิดหน้าต่างแก้ไขข้อมูลสัตว์ (รวมข้อควรระวัง/แพ้ยา)
   const openPetEdit = () => setEditPetInfo({ kind: 'pet', name: pet.name, breed: pet.breed || '', sex: pet.sex || 'ผู้', sterilized: pet.sterilized === true ? 'true' : pet.sterilized === false ? 'false' : '', color: pet.color || '', birth: pet.birth || '', caution: pet.caution || '', allergy: pet.allergy || '' });
@@ -861,17 +862,27 @@ function CaseView({ pet, queueItem, vets, services, stock, shopStock = [], allPe
                     <div style={{ display: 'flex', gap: 6, marginTop: 4, flexWrap: 'wrap', alignItems: 'center' }}>
                       <span className="chip" style={{ fontSize: 11.5, background: (APPT_COLORS[a.type] || 'var(--line)') + '22', textDecoration: 'none' }}>{a.type}</span>
                       {a.note ? <span style={{ fontSize: 13, color: isPast ? 'var(--ink-faint)' : 'var(--ink-soft)' }}>{a.note}</span> : null}
+                      {typeof ApptSmsStatus !== 'undefined' ? <span style={{ textDecoration: 'none' }}><ApptSmsStatus a={a} past={isPast} /></span> : null}
                     </div>
                   </div>
-                  {/* ปุ่มส่ง SMS เตือน (เฉพาะนัดที่ยังไม่ผ่าน) — กดแล้วเปิด modal แก้ข้อความได้ */}
-                  {!isPast && typeof SmsComposerModal !== 'undefined' ? (
-                    <button className="btn btn-sm" style={{ flexShrink: 0, textDecoration: 'none', alignSelf: 'center',
-                      ...(a.reminderSent
-                        ? { color: 'var(--mint-deep)', borderColor: 'var(--mint-deep)', background: 'var(--mint-soft)', fontWeight: 700 }
-                        : { color: 'var(--navy)', borderColor: 'var(--navy)' }) }}
-                      onClick={() => setSmsAppt(a)}>
-                      {a.reminderSent ? '✓ ส่งแล้ว' : '📱 ส่ง SMS'}
-                    </button>
+                  {/* ปุ่มส่ง SMS + แก้ไขนัด (เฉพาะนัดที่ยังไม่ผ่าน) — ลิงก์กับหน้านัดหมาย/หน้าหลัก */}
+                  {!isPast ? (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 5, flexShrink: 0, textDecoration: 'none', alignSelf: 'center' }}>
+                      {typeof SmsComposerModal !== 'undefined' ? (
+                        <button className="btn btn-sm" style={{ textDecoration: 'none',
+                          ...(a.reminderSent
+                            ? { color: 'var(--mint-deep)', borderColor: 'var(--mint-deep)', background: 'var(--mint-soft)', fontWeight: 700 }
+                            : { color: 'var(--navy)', borderColor: 'var(--navy)' }) }}
+                          onClick={() => setSmsAppt(a)}>
+                          {a.reminderSent ? '✓ ส่งแล้ว' : '📱 ส่ง SMS'}
+                        </button>
+                      ) : null}
+                      {typeof ApptFormModal !== 'undefined' ? (
+                        <button className="btn btn-sm" style={{ textDecoration: 'none' }} onClick={() => setEditApptData(a)}>
+                          <Icon name="edit" size={13} /> แก้ไข
+                        </button>
+                      ) : null}
+                    </div>
                   ) : null}
                 </div>
               );
@@ -1064,6 +1075,17 @@ function CaseView({ pet, queueItem, vets, services, stock, shopStock = [], allPe
             setShowApptForm(false);
             onAddAppointment && onAddAppointment({ ...appt, status: appt.status || 'scheduled' });
             pushToast && pushToast(`บันทึกนัด ${appt.petName} — ${appt.date} เรียบร้อย`);
+          }} />
+      ) : null}
+      {editApptData && typeof ApptFormModal !== 'undefined' ? (
+        <ApptFormModal
+          pets={allPets || []}
+          editAppt={editApptData}
+          onClose={() => setEditApptData(null)}
+          onSave={(appt) => {
+            setEditApptData(null);
+            onUpdateAppointment && onUpdateAppointment(appt);
+            pushToast && pushToast(`อัปเดตนัด ${appt.petName} เรียบร้อย`);
           }} />
       ) : null}
       {lightbox && (
