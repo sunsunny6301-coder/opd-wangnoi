@@ -82,11 +82,11 @@ function buildReminderMsg(a) {
   const attempts = [
     mk(false, false, true, false, false), // ชื่อเต็ม + วันไทย + ปิดท้าย + เว้นวรรคปกติ
     mk(false, false, true, true, false),  // ชื่อเต็ม + บีบเว้นวรรค (คงชื่อเต็มไว้)
-    mk(true, false, true, false, false),  // ชื่อย่อ (ตัด "ไข้หัดหวัดแมว"/"5 โรคสุนัข")
-    mk(true, false, true, true, false),   // ชื่อย่อ + บีบเว้นวรรค
-    mk(true, true, true, true, false),    // + เปลี่ยนวันเป็นตัวเลข (ทางแก้แรก)
-    mk(true, true, true, true, true),     // + ย่อ "เข็มกระตุ้น" → "เข็ม 2"
-    mk(true, true, false, true, true),    // + ตัด "นี้นะครับ"
+    mk(true, false, true, false, false),  // ชื่อย่อ (ตัด "ไข้หัดหวัดแมว"/"5 โรคสุนัข") — ยังใช้วันไทย
+    mk(true, false, true, true, false),   // ชื่อย่อ + บีบเว้นวรรค — ยังใช้วันไทย
+    mk(true, false, true, true, true),    // + ย่อ "เข็มกระตุ้น" → "เข็ม 2" (คงวันไทยไว้ก่อน)
+    mk(true, true, true, true, true),     // ยังเกิน → ค่อยเปลี่ยนวันเป็นตัวเลข
+    mk(true, true, false, true, true),    // ยังเกิน → ตัด "นี้นะครับ"
   ];
   for (const m of attempts) if (m.length <= 70) return m;
   return attempts[attempts.length - 1];
