@@ -329,13 +329,21 @@ function ApptFormModal({ pets, defaultDate, defaultPet, editAppt, onClose, onSav
           </div>
         </Field>
 
+        <div className="span2">
         <Field label="หมายเหตุ (ถ้ามี)">
-          <input className="input" value={f.note} onChange={(e) => setF({ ...f, note: e.target.value })}
-            placeholder="เช่น ฉีดยา 3 เข็ม, เตรียมตัวผ่าตัด งดน้ำงดอาหาร..." />
+          <textarea className="textarea" rows="2" value={f.note} onChange={(e) => setF({ ...f, note: e.target.value })}
+            placeholder="เช่น ฉีดยา 3 เข็ม, เตรียมตัวผ่าตัด งดน้ำงดอาหาร..." style={{ resize: 'vertical', minHeight: 58 }} />
           {NOTE_PRESETS[f.type] ? (() => {
             const SEP = ' และ ';
             const presetList = NOTE_PRESETS[f.type];
             const segs = (f.note || '').split(SEP).map((s) => s.trim()).filter(Boolean);
+            // สีตามชนิด: แมว=เหลือง · หมา(รวม 5 โรค)=ฟ้า · พิษสุนัขบ้า=แดง
+            const catColor = (opt) => {
+              if (opt.includes('พิษสุนัขบ้า')) return { on: '#C0392B', offBg: '#FBDED9', border: '#D98B82', text: '#A01F12' };
+              if (opt.includes('แมว')) return { on: '#E0A400', offBg: '#FFF3CC', border: '#E6C25A', text: '#8A6500' };
+              if (opt.includes('สุนัข')) return { on: '#3E7CB1', offBg: '#E3EEF7', border: '#9DC1DE', text: '#2C5A82' };
+              return { on: 'var(--navy)', offBg: 'var(--powder-soft)', border: 'var(--powder-deep)', text: 'var(--navy)' };
+            };
             // เลือกได้หลายอัน — เรียงตามลำดับ preset, เก็บข้อความที่พิมพ์เองไว้ท้าย, คั่นด้วย "และ"
             const toggle = (opt) => {
               let next;
@@ -354,12 +362,13 @@ function ApptFormModal({ pets, defaultDate, defaultPet, editAppt, onClose, onSav
                 <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap' }}>
                   {presetList.map((opt) => {
                     const active = segs.includes(opt);
+                    const c = catColor(opt);
                     return (
                       <button key={opt} type="button" onClick={() => toggle(opt)} style={{
                         padding: '6px 12px', borderRadius: 'var(--radius-sm)',
-                        border: active ? '2px solid var(--navy)' : '1.5px solid var(--powder-deep)',
-                        background: active ? 'var(--navy)' : 'var(--powder-soft)',
-                        color: active ? '#fff' : 'var(--navy)',
+                        border: active ? `2px solid ${c.on}` : `1.5px solid ${c.border}`,
+                        background: active ? c.on : c.offBg,
+                        color: active ? '#fff' : c.text,
                         fontWeight: active ? 700 : 600, fontSize: 12.5, cursor: 'pointer',
                       }}>{active ? '✓ ' : ''}{opt}</button>
                     );
@@ -369,8 +378,10 @@ function ApptFormModal({ pets, defaultDate, defaultPet, editAppt, onClose, onSav
             );
           })() : null}
         </Field>
+        </div>
 
         {/* ปุ่มเปิด/ปิดส่ง SMS เตือนอัตโนมัติ — เปิดไว้เป็นหลัก กดแล้วปิด (สีจาง) */}
+        <div className="span2">
         <Field label="การแจ้งเตือน SMS">
           <button type="button" onClick={() => setF({ ...f, smsAuto: !smsOn })} style={{
             width: '100%', padding: '12px 16px', borderRadius: 'var(--radius-sm)',
@@ -387,6 +398,7 @@ function ApptFormModal({ pets, defaultDate, defaultPet, editAppt, onClose, onSav
             ระบบจะเตือนลูกค้าก่อนวันนัด 1 วัน · ตอนนี้ส่งจากเมนู “นัดที่กำลังมาถึง” เองก่อน (ระบบส่งอัตโนมัติเต็มรูปแบบจะเปิดในเฟสถัดไป)
           </div>
         </Field>
+        </div>
       </div>
     </Modal>
   );
