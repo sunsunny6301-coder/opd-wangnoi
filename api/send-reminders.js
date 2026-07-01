@@ -46,14 +46,16 @@ const VAX_SHORT = {
   'วัคซีนพิษสุนัขบ้า เข็มกระตุ้น':      ['พิษสุนัขบ้า', 'พิษสุนัขบ้า', 'เข็มกระตุ้น'],
   'วัคซีนพิษสุนัขบ้า ประจำปี':          ['พิษสุนัขบ้า', 'พิษสุนัขบ้า', 'ประจำปี'],
 };
-function shortenNote(note, useShort, tight) {
+const SUFFIX_SHORT = { 'เข็มกระตุ้น': 'เข็ม 2' };
+function shortenNote(note, useShort, tight, shortSfx) {
   if (!note) return '';
   const sep = tight ? '' : ' ';
+  const sf = (s) => shortSfx ? (SUFFIX_SHORT[s] || s) : s;
   const segs = String(note).split(' และ ').map((s) => s.trim()).filter(Boolean);
   const parsed = segs.map((s) => { const v = VAX_SHORT[s]; return v ? [useShort ? v[1] : v[0], v[2]] : [s, '']; });
   const sfx = [...new Set(parsed.map((p) => p[1]))];
-  if (parsed.length > 1 && sfx.length === 1 && sfx[0]) return parsed.map((p) => p[0]).join('และ') + sfx[0];
-  return parsed.map((p) => p[1] ? `${p[0]}${sep}${p[1]}` : p[0]).join(' และ ');
+  if (parsed.length > 1 && sfx.length === 1 && sfx[0]) return parsed.map((p) => p[0]).join('และ') + sf(sfx[0]);
+  return parsed.map((p) => p[1] ? `${p[0]}${sep}${sf(p[1])}` : p[0]).join(' และ ');
 }
 // วันที่แบบ SMS: "1 กค 70" หรือ "1/7/70" — ปี พ.ศ. 2 หลัก
 function smsDate(iso, numeric) {
@@ -66,20 +68,21 @@ function smsDate(iso, numeric) {
 function buildReminderMsg(appt) {
   const name = appt.petName || '';
   const isVax = appt.type === 'วัคซีน';
-  const mk = (useShort, numericDate, withTail, tight) => {
-    const detail = shortenNote(appt.note, useShort, tight) || appt.type || '';
+  const mk = (useShort, numericDate, withTail, tight, shortSfx) => {
+    const detail = shortenNote(appt.note, useShort, tight, shortSfx) || appt.type || '';
     const body = (isVax ? 'ฉีด' : '') + detail;
     let s = `น้อง${name} ถึงนัด${body} ${smsDate(appt.date, numericDate)}`;
     if (withTail) s += tight ? 'นี้นะครับ' : ' นี้นะครับ';
     return s.replace(/\s+/g, ' ').trim();
   };
   const attempts = [
-    mk(false, false, true, false),
-    mk(false, false, true, true),
-    mk(true, false, true, false),
-    mk(true, false, true, true),
-    mk(true, true, true, true),
-    mk(true, true, false, true),
+    mk(false, false, true, false, false),
+    mk(false, false, true, true, false),
+    mk(true, false, true, false, false),
+    mk(true, false, true, true, false),
+    mk(true, true, true, true, false),
+    mk(true, true, true, true, true),
+    mk(true, true, false, true, true),
   ];
   for (const m of attempts) if (m.length <= 70) return m;
   return attempts[attempts.length - 1];
