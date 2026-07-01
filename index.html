@@ -5102,38 +5102,48 @@ function dateTHShort(isoDate) {
   return `${d.getDate()} ${THAI_MONTHS_SHORT[d.getMonth()]} ${d.getFullYear() + 543}`;
 }
 
-// ── ชื่อวัคซีนแบบย่อสำหรับ SMS (ให้พอ 70 ตัว) — เก็บชื่อเต็มในระบบ แต่ตอนส่งใช้ย่อ ──
-const SMS_ABBREV = {
-  'วัคซีนรวมไข้หัดหวัดแมว เข็มกระตุ้น': 'วัคซีนรวมแมว กระตุ้น',
-  'วัคซีนรวมไข้หัดหวัดแมวประจำปี': 'วัคซีนรวมแมวประจำปี',
-  'วัคซีนรวม 5 โรคสุนัข เข็มกระตุ้น': 'วัคซีนรวมสุนัข กระตุ้น',
-  'วัคซีนรวม 5 โรคสุนัขประจำปี': 'วัคซีนรวมสุนัขประจำปี',
-  'วัคซีนพิษสุนัขบ้า เข็มกระตุ้น': 'พิษสุนัขบ้า กระตุ้น',
-  'วัคซีนพิษสุนัขบ้า ประจำปี': 'พิษสุนัขบ้า ประจำปี',
+// ── ชื่อวัคซีนแบบย่อสำหรับ SMS: [ต้นคำ, ท้ายคำ] ──
+// ถ้าเลือกหลายตัวที่ "ท้ายคำ" เหมือนกัน (เช่น ประจำปี) จะยุบเหลือครั้งเดียวไว้ท้ายสุด
+// เช่น รวมสุนัขประจำปี + พิษสุนัขบ้าประจำปี → "วัคซีนรวมและพิษสุนัขบ้าประจำปี"
+const VAX_SHORT = {
+  'วัคซีนรวมไข้หัดหวัดแมว เข็มกระตุ้น': ['วัคซีนรวมแมว', 'เข็มกระตุ้น'],
+  'วัคซีนรวมไข้หัดหวัดแมวประจำปี':     ['วัคซีนรวมแมว', 'ประจำปี'],
+  'วัคซีนรวม 5 โรคสุนัข เข็มกระตุ้น':   ['วัคซีนรวม', 'เข็มกระตุ้น'],
+  'วัคซีนรวม 5 โรคสุนัขประจำปี':        ['วัคซีนรวม', 'ประจำปี'],
+  'วัคซีนพิษสุนัขบ้า เข็มกระตุ้น':      ['พิษสุนัขบ้า', 'เข็มกระตุ้น'],
+  'วัคซีนพิษสุนัขบ้า ประจำปี':          ['พิษสุนัขบ้า', 'ประจำปี'],
 };
 function shortenNote(note) {
   if (!note) return '';
-  return String(note).split(' และ ').map((s) => SMS_ABBREV[s.trim()] || s.trim()).filter(Boolean).join(' และ ');
+  const segs = String(note).split(' และ ').map((s) => s.trim()).filter(Boolean);
+  const parsed = segs.map((s) => VAX_SHORT[s] || [s, '']);
+  const sfx = [...new Set(parsed.map((p) => p[1]))];
+  if (parsed.length > 1 && sfx.length === 1 && sfx[0]) return parsed.map((p) => p[0]).join('และ') + sfx[0];
+  return parsed.map((p) => p[0] + p[1]).join(' และ ');
+}
+// วันที่แบบ SMS: "1 กค 70" (ปกติ) หรือ "1/7/70" (สั้นกว่า) — ปี พ.ศ. 2 หลัก
+function smsDate(iso, numeric) {
+  const p = String(iso || '').split('-').map(Number);
+  if (!p[1] || !p[2]) return iso || '';
+  const be2 = String((p[0] + 543) % 100).padStart(2, '0');
+  return numeric ? `${p[2]}/${p[1]}/${be2}` : `${p[2]} ${THAI_MONTHS_SHORT[p[1] - 1].replace(/\./g, '')} ${be2}`;
 }
 
-// ข้อความ SMS เตือนนัด — ชื่อร้านอยู่ที่ Sender name (ไม่ใส่ในเนื้อ กันเปลืองตัวอักษร)
-// รูปแบบเต็ม: "เตือนนัด {ชื่อ} {หมายเหตุย่อ} {วันที่} {เวลา}น. โทร {เบอร์}"
-// auto-fit ให้ ≤70: เกิน → ตัดเบอร์ก่อน · ยังเกิน → ตัดเวลา · ไม่ตัดชื่อวัคซีน (ข้อมูลสำคัญ)
+// ข้อความ SMS เตือนนัด — สไตล์อบอุ่น: "น้อง{ชื่อ} ถึงนัด{รายละเอียด} {วันที่} นี้นะครับ"
+// ชื่อร้านอยู่ที่ Sender name (ไม่ใส่ในเนื้อ) · วัคซีนขึ้นต้นด้วย "ฉีด"
+// auto-fit ≤70: เกิน → เปลี่ยนวันเป็นตัวเลข (1/7/70) · ยังเกิน → ตัด "นี้นะครับ"
 function buildReminderMsg(a) {
   const name = a.petName || '';
   const detail = shortenNote(a.note) || a.type || '';
-  const p = String(a.date || '').split('-').map(Number);
-  const dateShort = (p[1] && p[2]) ? `${p[2]} ${THAI_MONTHS_SHORT[p[1] - 1]}` : (a.date || '');
-  const timePart = a.time ? `${a.time}น.` : '';
-  const build = (withPhone, withTime) => {
-    let s = `เตือนนัด ${name} ${detail} ${dateShort}`;
-    if (withTime && timePart) s += ` ${timePart}`;
-    if (withPhone) s += ` โทร 0822813207`;
+  const body = (a.type === 'วัคซีน' ? 'ฉีด' : '') + detail;
+  const build = (numericDate, withTail) => {
+    let s = `น้อง${name} ถึงนัด${body} ${smsDate(a.date, numericDate)}`;
+    if (withTail) s += ' นี้นะครับ';
     return s.replace(/\s+/g, ' ').trim();
   };
-  let msg = build(true, true);
-  if (msg.length > 70) msg = build(false, true);   // ตัดเบอร์โทรก่อน
-  if (msg.length > 70) msg = build(false, false);  // ยังเกิน → ตัดเวลา
+  let msg = build(false, true);
+  if (msg.length > 70) msg = build(true, true);   // เปลี่ยนวันเป็นตัวเลข
+  if (msg.length > 70) msg = build(true, false);  // ยังเกิน → ตัด "นี้นะครับ"
   return msg;
 }
 

@@ -36,40 +36,44 @@ function isoToDisplay(iso) {
   const [y, m, d] = iso.split('-').map(Number);
   return `${d} ${MONTHS_TH[m - 1]} ${y + 543}`;
 }
-// วันที่แบบสั้นสำหรับ SMS: "15 ก.ค." (ไม่ใส่ปี กันเปลืองตัวอักษร)
-function isoToShort(iso) {
-  const [, m, d] = iso.split('-').map(Number);
-  return `${d} ${MONTHS_TH[m - 1]}`;
-}
-
 // ── ต้องตรงกับ buildReminderMsg ใน src/appointments.jsx เป๊ะ ──
-// ชื่อวัคซีนย่อสำหรับ SMS (เก็บชื่อเต็มในระบบ แต่ส่งใช้ย่อให้พอ 70 ตัว)
-const SMS_ABBREV = {
-  'วัคซีนรวมไข้หัดหวัดแมว เข็มกระตุ้น': 'วัคซีนรวมแมว กระตุ้น',
-  'วัคซีนรวมไข้หัดหวัดแมวประจำปี': 'วัคซีนรวมแมวประจำปี',
-  'วัคซีนรวม 5 โรคสุนัข เข็มกระตุ้น': 'วัคซีนรวมสุนัข กระตุ้น',
-  'วัคซีนรวม 5 โรคสุนัขประจำปี': 'วัคซีนรวมสุนัขประจำปี',
-  'วัคซีนพิษสุนัขบ้า เข็มกระตุ้น': 'พิษสุนัขบ้า กระตุ้น',
-  'วัคซีนพิษสุนัขบ้า ประจำปี': 'พิษสุนัขบ้า ประจำปี',
+// ชื่อวัคซีนย่อ: [ต้นคำ, ท้ายคำ] — เลือกหลายตัวท้ายเหมือนกัน → ยุบท้ายไว้ครั้งเดียว
+const VAX_SHORT = {
+  'วัคซีนรวมไข้หัดหวัดแมว เข็มกระตุ้น': ['วัคซีนรวมแมว', 'เข็มกระตุ้น'],
+  'วัคซีนรวมไข้หัดหวัดแมวประจำปี':     ['วัคซีนรวมแมว', 'ประจำปี'],
+  'วัคซีนรวม 5 โรคสุนัข เข็มกระตุ้น':   ['วัคซีนรวม', 'เข็มกระตุ้น'],
+  'วัคซีนรวม 5 โรคสุนัขประจำปี':        ['วัคซีนรวม', 'ประจำปี'],
+  'วัคซีนพิษสุนัขบ้า เข็มกระตุ้น':      ['พิษสุนัขบ้า', 'เข็มกระตุ้น'],
+  'วัคซีนพิษสุนัขบ้า ประจำปี':          ['พิษสุนัขบ้า', 'ประจำปี'],
 };
 function shortenNote(note) {
   if (!note) return '';
-  return String(note).split(' และ ').map((s) => SMS_ABBREV[s.trim()] || s.trim()).filter(Boolean).join(' และ ');
+  const segs = String(note).split(' และ ').map((s) => s.trim()).filter(Boolean);
+  const parsed = segs.map((s) => VAX_SHORT[s] || [s, '']);
+  const sfx = [...new Set(parsed.map((p) => p[1]))];
+  if (parsed.length > 1 && sfx.length === 1 && sfx[0]) return parsed.map((p) => p[0]).join('และ') + sfx[0];
+  return parsed.map((p) => p[0] + p[1]).join(' และ ');
 }
-// สร้างข้อความเตือน + auto-fit ≤70 (ตัดเบอร์ก่อน → ตัดเวลา → ไม่ตัดชื่อวัคซีน)
-function buildReminderMsg(appt, dateShort) {
+// วันที่แบบ SMS: "1 กค 70" หรือ "1/7/70" — ปี พ.ศ. 2 หลัก
+function smsDate(iso, numeric) {
+  const p = String(iso || '').split('-').map(Number);
+  if (!p[1] || !p[2]) return iso || '';
+  const be2 = String((p[0] + 543) % 100).padStart(2, '0');
+  return numeric ? `${p[2]}/${p[1]}/${be2}` : `${p[2]} ${MONTHS_TH[p[1] - 1].replace(/\./g, '')} ${be2}`;
+}
+// สร้างข้อความเตือน + auto-fit ≤70 (วันยาว → วันตัวเลข → ตัด "นี้นะครับ")
+function buildReminderMsg(appt) {
   const name = appt.petName || '';
   const detail = shortenNote(appt.note) || appt.type || '';
-  const timePart = appt.time ? `${appt.time}น.` : '';
-  const build = (withPhone, withTime) => {
-    let s = `เตือนนัด ${name} ${detail} ${dateShort}`;
-    if (withTime && timePart) s += ` ${timePart}`;
-    if (withPhone) s += ` โทร 0822813207`;
+  const body = (appt.type === 'วัคซีน' ? 'ฉีด' : '') + detail;
+  const build = (numericDate, withTail) => {
+    let s = `น้อง${name} ถึงนัด${body} ${smsDate(appt.date, numericDate)}`;
+    if (withTail) s += ' นี้นะครับ';
     return s.replace(/\s+/g, ' ').trim();
   };
-  let msg = build(true, true);
-  if (msg.length > 70) msg = build(false, true);
-  if (msg.length > 70) msg = build(false, false);
+  let msg = build(false, true);
+  if (msg.length > 70) msg = build(true, true);
+  if (msg.length > 70) msg = build(true, false);
   return msg;
 }
 
@@ -175,7 +179,7 @@ module.exports = async function handler(req, res) {
       continue;
     }
 
-    const msg = buildReminderMsg(appt, isoToShort(targetIso));
+    const msg = buildReminderMsg(appt);
 
     try {
       const r = await sendViaSms2Pro(phone, msg, SMS_KEY, SMS_SENDER);
