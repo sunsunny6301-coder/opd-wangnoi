@@ -765,7 +765,7 @@ function Dashboard({ pets, queue, appointments, admitted, receipts = [], onOpenC
                   <div style={{ display: 'flex', gap: 5, marginTop: 5, alignItems: 'center', flexWrap: 'wrap' }}>
                     <span className={`chip ${APPT_CHIP && APPT_CHIP[a.type] ? APPT_CHIP[a.type] : ''}`} style={{ fontSize: 11 }}>{a.type}</span>
                     {arrived ? <span className="chip chip-mint" style={{ fontSize: 11 }}>มาแล้ว</span> : null}
-                    {typeof ApptSmsStatus !== 'undefined' ? <ApptSmsStatus a={a} past={apptDay < todayStr} /> : null}
+                    {typeof ApptSmsStatus !== 'undefined' ? <ApptSmsStatus a={a} past={apptDay < todayStr} onToggle={() => onUpdateAppointment && onUpdateAppointment({ ...a, smsAuto: a.smsAuto === false })} /> : null}
                   </div>
                   {a.note ? <div style={{ fontSize: 12, color: 'var(--ink-soft)', marginTop: 4 }}>{a.note}</div> : null}
                   {!arrived && !alreadyQueued ?

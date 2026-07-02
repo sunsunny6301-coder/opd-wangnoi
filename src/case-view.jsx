@@ -862,7 +862,7 @@ function CaseView({ pet, queueItem, vets, services, stock, shopStock = [], allPe
                     <div style={{ display: 'flex', gap: 6, marginTop: 4, flexWrap: 'wrap', alignItems: 'center' }}>
                       <span className="chip" style={{ fontSize: 11.5, background: (APPT_COLORS[a.type] || 'var(--line)') + '22', textDecoration: 'none' }}>{a.type}</span>
                       {a.note ? <span style={{ fontSize: 13, color: isPast ? 'var(--ink-faint)' : 'var(--ink-soft)' }}>{a.note}</span> : null}
-                      {typeof ApptSmsStatus !== 'undefined' ? <span style={{ textDecoration: 'none' }}><ApptSmsStatus a={a} past={isPast} /></span> : null}
+                      {typeof ApptSmsStatus !== 'undefined' ? <span style={{ textDecoration: 'none' }}><ApptSmsStatus a={a} past={isPast} onToggle={() => onUpdateAppointment && onUpdateAppointment({ ...a, smsAuto: a.smsAuto === false })} /></span> : null}
                     </div>
                   </div>
                   {/* ปุ่มส่ง SMS + แก้ไขนัด (เฉพาะนัดที่ยังไม่ผ่าน) — ลิงก์กับหน้านัดหมาย/หน้าหลัก */}

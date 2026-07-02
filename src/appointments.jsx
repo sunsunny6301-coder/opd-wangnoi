@@ -213,12 +213,17 @@ function MiniCalendar({ appointments, selectedDay, onSelectDay }) {
 
 // ── ป้ายสถานะ SMS ของนัด (ใช้ร่วมกันทุกหน้า: นัดหมาย / OPD / หน้าหลัก) ──
 // ส่งแล้ว → ✓ เขียว · ปิดส่ง → 🔕 เทา · รอส่งอัตโนมัติ → ⏳ เหลือง · ผ่านมาแล้วยังไม่ส่ง → ซ่อน
-function ApptSmsStatus({ a, past, style }) {
+// onToggle (ถ้ามี) = กดป้ายเพื่อสลับเปิด/ปิดส่ง SMS อัตโนมัติของนัดนี้ (ลิงก์ทุกหน้าผ่าน updateAppointment)
+function ApptSmsStatus({ a, past, style, onToggle }) {
   if (!a) return null;
-  if (a.reminderSent) return <span className="chip chip-mint" style={{ fontSize: 11, fontWeight: 700, ...(style || {}) }}>✓ ส่ง SMS แล้ว</span>;
-  if (a.smsAuto === false) return <span className="chip" style={{ fontSize: 11, fontWeight: 700, color: 'var(--ink-faint)', ...(style || {}) }}>🔕 ไม่ส่ง SMS</span>;
+  const clickable = !!onToggle && !a.reminderSent;
+  const base = { fontSize: 11, fontWeight: 700, ...(clickable ? { cursor: 'pointer' } : {}), ...(style || {}) };
+  const onClk = clickable ? (e) => { e.stopPropagation(); onToggle(); } : undefined;
+  const title = clickable ? 'แตะเพื่อเปิด/ปิดส่ง SMS อัตโนมัติของนัดนี้' : undefined;
+  if (a.reminderSent) return <span className="chip chip-mint" style={base}>✓ ส่ง SMS แล้ว</span>;
+  if (a.smsAuto === false) return <span className="chip" style={{ ...base, color: 'var(--ink-faint)', border: clickable ? '1px dashed var(--ink-faint)' : undefined }} onClick={onClk} title={title}>🔕 ไม่ส่ง SMS{clickable ? ' · แตะเปิด' : ''}</span>;
   if (past) return null;
-  return <span className="chip chip-butter" style={{ fontSize: 11, fontWeight: 700, ...(style || {}) }}>⏳ รอส่ง SMS</span>;
+  return <span className="chip chip-butter" style={base} onClick={onClk} title={title}>⏳ ส่ง SMS อัตโนมัติ{clickable ? ' · แตะปิด' : ''}</span>;
 }
 
 // ── Appointment Card ─────────────────────────────────────────
@@ -243,7 +248,7 @@ function ApptCard({ appt, onUpdate, onEdit, onOpenPet, onSendSms }) {
       <div style={{ display: 'flex', gap: 6, marginTop: 8, flexWrap: 'wrap', alignItems: 'center' }}>
         <span className={`chip ${APPT_CHIP[appt.type] || ''}`}>{appt.type}</span>
         {appt.note ? <span style={{ fontSize: 13, color: 'var(--ink-soft)' }}>{appt.note}</span> : null}
-        {appt.status !== 'cancelled' ? <ApptSmsStatus a={appt} /> : null}
+        {appt.status !== 'cancelled' ? <ApptSmsStatus a={appt} onToggle={() => onUpdate({ ...appt, smsAuto: appt.smsAuto === false })} /> : null}
       </div>
       <div style={{ display: 'flex', gap: 7, marginTop: 10, flexWrap: 'wrap' }}>
         {appt.status !== 'cancelled' && appt.status === 'scheduled' ? (
@@ -662,7 +667,7 @@ function AppointmentsView({ appointments, pets, onAdd, onUpdate, onOpenPet, push
                   <div style={{ display: 'flex', gap: 6, marginTop: 3, flexWrap: 'wrap', alignItems: 'center' }}>
                     <span className={`chip ${APPT_CHIP[a.type] || ''}`} style={{ fontSize: 12 }}>{a.type}</span>
                     <span style={{ fontSize: 12.5, color: 'var(--ink-soft)' }}>{a.ownerName}</span>
-                    <ApptSmsStatus a={a} />
+                    <ApptSmsStatus a={a} onToggle={() => onUpdate({ ...a, smsAuto: a.smsAuto === false })} />
                   </div>
                   <div style={{ fontSize: 12.5, color: 'var(--ink-soft)', marginTop: 2, display: 'flex', alignItems: 'center', gap: 5 }}>
                     <Icon name="phone" size={12} style={{ color: 'var(--ink-faint)' }} /> {phone || '— ไม่มีเบอร์ —'}
