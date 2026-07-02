@@ -57,25 +57,53 @@ function smsDate(iso, numeric) {
   const be2 = String((p[0] + 543) % 100).padStart(2, '0');
   return numeric ? `${p[2]}/${p[1]}/${be2}` : `${p[2]} ${MONTHS_TH[p[1] - 1].replace(/\./g, '')} ${be2}`;
 }
-// สร้างข้อความเตือน — auto-fit: วันไทย → วันตัวเลข → ตัด "นี้นะครับ" (ยังเกิน = ยอม 2 เครดิต)
+// ย่อชื่อวัคซีน rule-based (ใช้เมื่อชื่อเต็มเกิน 70) — ตัด species qualifier + ยุบคำท้ายเดียวกัน
+const SHORTEN_BASE = [
+  ['วัคซีนรวมไข้หัดหวัดแมว', 'วัคซีนรวม'],
+  ['วัคซีนรวม 5 โรคสุนัข', 'วัคซีนรวม'],
+  ['วัคซีนพิษสุนัขบ้า', 'พิษสุนัขบ้า'],
+];
+const COMBO_SUFFIX = ['ประจำปี', 'เข็มกระตุ้น'];
+function shortenDetail(detail) {
+  if (!detail) return detail;
+  const segs = detail.split(' และ ').map((s) => {
+    let x = s.trim();
+    for (const [a, b] of SHORTEN_BASE) if (x.indexOf(a) === 0) { x = (b + x.slice(a.length)).trim(); break; }
+    return x;
+  });
+  if (segs.length > 1) {
+    for (const suf of COMBO_SUFFIX) {
+      if (segs.every((x) => x.endsWith(suf))) {
+        return segs.map((x) => x.slice(0, x.length - suf.length).trim()).join('และ') + suf;
+      }
+    }
+  }
+  return segs.join(' และ ');
+}
+// สร้างข้อความเตือน — ชื่อเต็ม → ย่อชื่อ → วันตัวเลข → ตัด "นี้นะครับ" (ยังเกิน = ยอม 2 เครดิต)
 function buildReminderMsg(appt) {
   const name = appt.petName || '';
   const isVax = appt.type === 'วัคซีน';
-  const detail = noteForSms(appt.note, isVax);
-  const body = isVax
+  const detailFull = noteForSms(appt.note, isVax);
+  const detailShort = isVax ? shortenDetail(detailFull) : detailFull;
+  const bodyOf = (detail) => isVax
     ? 'ฉีด' + (detail || appt.type || '')
-    : (appt.type && appt.type !== 'อื่นๆ')
-      ? appt.type + (detail ? ' ' + detail : '')
-      : (detail || '');
-  const mk = (numericDate, withTail) => {
-    let s = `น้อง${name} ถึงนัด${body} ${smsDate(appt.date, numericDate)}`;
+    : (appt.type && appt.type !== 'อื่นๆ') ? appt.type + (detail ? ' ' + detail : '') : (detail || '');
+  const mk = (detail, numericDate, withTail) => {
+    let s = `น้อง${name} ถึงนัด${bodyOf(detail)} ${smsDate(appt.date, numericDate)}`;
     if (withTail) s += ' นี้นะครับ';
     return s.replace(/\s+/g, ' ').trim();
   };
-  let msg = mk(false, true);
-  if (msg.length > 70) msg = mk(true, true);
-  if (msg.length > 70) msg = mk(true, false);
-  return msg;
+  const attempts = [
+    mk(detailFull, false, true),
+    mk(detailFull, true, true),
+    mk(detailFull, true, false),
+    mk(detailShort, false, true),
+    mk(detailShort, true, true),
+    mk(detailShort, true, false),
+  ];
+  for (const m of attempts) if (m.length <= 70) return m;
+  return attempts[attempts.length - 1];
 }
 
 // ส่ง SMS ผ่าน SMS2PRO REST API

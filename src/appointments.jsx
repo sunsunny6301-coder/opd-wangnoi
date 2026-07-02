@@ -76,28 +76,57 @@ function smsDate(iso, numeric) {
   return numeric ? `${p[2]}/${p[1]}/${be2}` : `${p[2]} ${THAI_MONTHS_SHORT[p[1] - 1].replace(/\./g, '')} ${be2}`;
 }
 
+// ── ย่อชื่อวัคซีนแบบ rule-based (ใช้เมื่อชื่อเต็มยาวเกิน 70 เช่นเลือก 2 ตัว) ──
+// ตัด species qualifier: "วัคซีนรวมไข้หัดหวัดแมว"/"วัคซีนรวม 5 โรคสุนัข" → "วัคซีนรวม" · "วัคซีนพิษสุนัขบ้า" → "พิษสุนัขบ้า"
+// ถ้าหลายตัวลงท้ายคำเดียวกัน (ในชุด COMBO_SUFFIX) → ยุบคำท้ายไว้ครั้งเดียว (เช่น "วัคซีนรวมและพิษสุนัขบ้าประจำปี")
+const SHORTEN_BASE = [
+  ['วัคซีนรวมไข้หัดหวัดแมว', 'วัคซีนรวม'],
+  ['วัคซีนรวม 5 โรคสุนัข', 'วัคซีนรวม'],
+  ['วัคซีนพิษสุนัขบ้า', 'พิษสุนัขบ้า'],
+];
+const COMBO_SUFFIX = ['ประจำปี', 'เข็มกระตุ้น'];
+function shortenDetail(detail) {
+  if (!detail) return detail;
+  const segs = detail.split(' และ ').map((s) => {
+    let x = s.trim();
+    for (const [a, b] of SHORTEN_BASE) if (x.indexOf(a) === 0) { x = (b + x.slice(a.length)).trim(); break; }
+    return x;
+  });
+  if (segs.length > 1) {
+    for (const suf of COMBO_SUFFIX) {
+      if (segs.every((x) => x.endsWith(suf))) {
+        return segs.map((x) => x.slice(0, x.length - suf.length).trim()).join('และ') + suf;
+      }
+    }
+  }
+  return segs.join(' และ ');
+}
+
 // ข้อความ SMS เตือนนัด — สไตล์อบอุ่น: "น้อง{ชื่อ} ถึงนัด{รายละเอียด} {วันที่} นี้นะครับ"
-// ใช้ข้อความ "ตามที่เลือก" ตรงๆ (ไม่ย่อชื่อวัคซีนอัตโนมัติ) · ชื่อร้านอยู่ที่ Sender name
-// auto-fit ถ้าเกิน 70: วันไทย → วันตัวเลข (1/7/70) → ตัด "นี้นะครับ" · ถ้ายังเกิน = ยอม 2 เครดิต
+// ลำดับ auto-fit: ชื่อเต็ม → (ถ้าเกิน) ย่อชื่อ → วันตัวเลข → ตัด "นี้นะครับ" · ยังเกิน = ยอม 2 เครดิต
 function buildReminderMsg(a) {
   const name = a.petName || '';
   const isVax = a.type === 'วัคซีน';
-  const detail = noteForSms(a.note, isVax);
-  // วัคซีน: "ฉีด{รายละเอียด}" · "อื่นๆ": ใช้หมายเหตุแทน label · ประเภทอื่น: "{ประเภท} {หมายเหตุ}"
-  const body = isVax
+  const detailFull = noteForSms(a.note, isVax);
+  const detailShort = isVax ? shortenDetail(detailFull) : detailFull;
+  const bodyOf = (detail) => isVax
     ? 'ฉีด' + (detail || a.type || '')
-    : (a.type && a.type !== 'อื่นๆ')
-      ? a.type + (detail ? ' ' + detail : '')
-      : (detail || '');
-  const mk = (numericDate, withTail) => {
-    let s = `น้อง${name} ถึงนัด${body} ${smsDate(a.date, numericDate)}`;
+    : (a.type && a.type !== 'อื่นๆ') ? a.type + (detail ? ' ' + detail : '') : (detail || '');
+  const mk = (detail, numericDate, withTail) => {
+    let s = `น้อง${name} ถึงนัด${bodyOf(detail)} ${smsDate(a.date, numericDate)}`;
     if (withTail) s += ' นี้นะครับ';
     return s.replace(/\s+/g, ' ').trim();
   };
-  let msg = mk(false, true);                    // วันไทย + ปิดท้าย
-  if (msg.length > 70) msg = mk(true, true);    // เปลี่ยนวันเป็นตัวเลข
-  if (msg.length > 70) msg = mk(true, false);   // ตัด "นี้นะครับ"
-  return msg;
+  const attempts = [
+    mk(detailFull, false, true),   // ชื่อเต็ม + วันไทย + ปิดท้าย (เดี่ยวมักจบตรงนี้)
+    mk(detailFull, true, true),    // ชื่อเต็ม + วันตัวเลข
+    mk(detailFull, true, false),   // ชื่อเต็ม + วันตัวเลข + ตัดท้าย
+    mk(detailShort, false, true),  // ย่อชื่อ + วันไทย + ปิดท้าย (คู่มักจบตรงนี้)
+    mk(detailShort, true, true),   // ย่อชื่อ + วันตัวเลข
+    mk(detailShort, true, false),  // ย่อชื่อ + วันตัวเลข + ตัดท้าย
+  ];
+  for (const m of attempts) if (m.length <= 70) return m;
+  return attempts[attempts.length - 1];
 }
 
 // เปิดแอปส่งข้อความในเครื่อง (มือถือ) + คัดลอกข้อความสำรอง (เดสก์ท็อป)
