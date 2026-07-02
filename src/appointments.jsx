@@ -40,8 +40,8 @@ const DEFAULT_NOTE_PRESETS = {
     { text: 'วัคซีนรวม 5 โรคสุนัข เข็ม 3/3', color: 'blue' },
     { text: 'วัคซีนรวม 5 โรคสุนัข เข็มกระตุ้น', color: 'blue' },
     { text: 'วัคซีนรวม 5 โรคสุนัขประจำปี', color: 'blue' },
-    // พิษสุนัขบ้า
-    { text: 'วัคซีนพิษสุนัขบ้า เข็มกระตุ้น', color: 'red' },
+    // พิษสุนัขบ้า (ชุดลูกสัตว์ = เข็ม 2/2 · สัตว์โต = ประจำปี)
+    { text: 'วัคซีนพิษสุนัขบ้า เข็ม 2/2', color: 'red' },
     { text: 'วัคซีนพิษสุนัขบ้า ประจำปี', color: 'red' },
   ],
 };
@@ -77,44 +77,47 @@ function smsDate(iso, numeric) {
 }
 
 // ── ย่อชื่อวัคซีนแบบ rule-based (ใช้เมื่อชื่อเต็มยาวเกิน 70 เช่นเลือก 2 ตัว) ──
-// ตัด species qualifier: "วัคซีนรวมไข้หัดหวัดแมว"/"วัคซีนรวม 5 โรคสุนัข" → "วัคซีนรวม" · "วัคซีนพิษสุนัขบ้า" → "พิษสุนัขบ้า"
-// ถ้าหลายตัวลงท้ายคำเดียวกัน (ในชุด COMBO_SUFFIX) → ยุบคำท้ายไว้ครั้งเดียว (เช่น "วัคซีนรวมและพิษสุนัขบ้าประจำปี")
+// ตัด species: "วัคซีนรวมไข้หัดหวัดแมว"/"วัคซีนรวม 5 โรคสุนัข" → "วัคซีนรวม" · "วัคซีนพิษสุนัขบ้า" → "พิษสุนัขบ้า"
 const SHORTEN_BASE = [
   ['วัคซีนรวมไข้หัดหวัดแมว', 'วัคซีนรวม'],
   ['วัคซีนรวม 5 โรคสุนัข', 'วัคซีนรวม'],
   ['วัคซีนพิษสุนัขบ้า', 'พิษสุนัขบ้า'],
 ];
-// เมื่อเลือกหลายตัว "คำท้ายเหมือนกัน" → ยุบตามกฎของคำท้ายนั้น
-//   ประจำปี  → ต่อท้าย: "วัคซีนรวมและพิษสุนัขบ้าประจำปี"
-//   เข็มกระตุ้น → ย้ายมาหน้า+ตัด "เข็ม": "กระตุ้นวัคซีนรวมและพิษสุนัขบ้า"
-const COMBO_RULES = [
-  { sfx: 'ประจำปี', join: (b) => b.join('และ') + 'ประจำปี' },
-  { sfx: 'เข็มกระตุ้น', join: (b) => 'กระตุ้น' + b.join('และ') },
-];
-function shortenDetail(detail) {
+// แยก [ชื่อฐาน, คำท้ายแสดงผล] — "ประจำปี"→ประจำปี · "เข็มกระตุ้น"→กระตุ้น · "เข็ม X"→X (ตัดคำ "เข็ม")
+function splitSuffix(seg) {
+  if (seg.endsWith('ประจำปี')) return [seg.slice(0, -('ประจำปี'.length)).trim(), 'ประจำปี'];
+  if (seg.endsWith('เข็มกระตุ้น')) return [seg.slice(0, -('เข็มกระตุ้น'.length)).trim(), 'กระตุ้น'];
+  const i = seg.indexOf('เข็ม');
+  if (i >= 0) return [seg.slice(0, i).trim(), seg.slice(i + 'เข็ม'.length).trim()];
+  return [seg, ''];
+}
+// tight = ตัดเว้นวรรคระหว่างชื่อกับเลขชุด (ใช้เมื่อแบบเว้นวรรคยังเกิน 70)
+function shortenDetail(detail, tight) {
   if (!detail) return detail;
-  const segs = detail.split(' และ ').map((s) => {
+  const parsed = detail.split(' และ ').map((s) => {
     let x = s.trim();
     for (const [a, b] of SHORTEN_BASE) if (x.indexOf(a) === 0) { x = (b + x.slice(a.length)).trim(); break; }
-    return x;
+    return splitSuffix(x);
   });
-  if (segs.length > 1) {
-    for (const r of COMBO_RULES) {
-      if (segs.every((x) => x.endsWith(r.sfx))) {
-        return r.join(segs.map((x) => x.slice(0, x.length - r.sfx.length).trim()));
-      }
-    }
+  const dsuf = [...new Set(parsed.map((p) => p[1]))];
+  // หลายตัว + คำท้ายเดียวกัน → ยุบครั้งเดียว: ประจำปี=ต่อท้าย · กระตุ้น=นำหน้า · อื่นๆ=ต่อท้าย
+  if (parsed.length > 1 && dsuf.length === 1 && dsuf[0]) {
+    const bases = parsed.map((p) => p[0]);
+    return dsuf[0] === 'กระตุ้น' ? 'กระตุ้น' + bases.join('และ') : bases.join('และ') + dsuf[0];
   }
-  return segs.join(' และ ');
+  // ตัวเดียว/คำท้ายต่างกัน → "ฐาน{เว้นวรรค}คำท้าย" คั่นด้วย "และ" (ไม่มีเว้นวรรครอบ "และ")
+  const sep = tight ? '' : ' ';
+  return parsed.map((p) => p[1] ? `${p[0]}${sep}${p[1]}` : p[0]).join('และ');
 }
 
 // ข้อความ SMS เตือนนัด — สไตล์อบอุ่น: "น้อง{ชื่อ} ถึงนัด{รายละเอียด} {วันที่} นี้นะครับ"
-// ลำดับ auto-fit: ชื่อเต็ม → (ถ้าเกิน) ย่อชื่อ → วันตัวเลข → ตัด "นี้นะครับ" · ยังเกิน = ยอม 2 เครดิต
+// ลำดับ auto-fit: ชื่อเต็ม → ย่อชื่อ(เว้นวรรค) → ย่อชื่อ(ติดกัน) · แต่ละชั้นลอง วันไทย→วันตัวเลข→ตัดท้าย
 function buildReminderMsg(a) {
   const name = a.petName || '';
   const isVax = a.type === 'วัคซีน';
   const detailFull = noteForSms(a.note, isVax);
-  const detailShort = isVax ? shortenDetail(detailFull) : detailFull;
+  const detailSpaced = isVax ? shortenDetail(detailFull, false) : detailFull;
+  const detailTight = isVax ? shortenDetail(detailFull, true) : detailFull;
   const bodyOf = (detail) => isVax
     ? 'ฉีด' + (detail || a.type || '')
     : (a.type && a.type !== 'อื่นๆ') ? a.type + (detail ? ' ' + detail : '') : (detail || '');
@@ -124,12 +127,9 @@ function buildReminderMsg(a) {
     return s.replace(/\s+/g, ' ').trim();
   };
   const attempts = [
-    mk(detailFull, false, true),   // ชื่อเต็ม + วันไทย + ปิดท้าย (เดี่ยวมักจบตรงนี้)
-    mk(detailFull, true, true),    // ชื่อเต็ม + วันตัวเลข
-    mk(detailFull, true, false),   // ชื่อเต็ม + วันตัวเลข + ตัดท้าย
-    mk(detailShort, false, true),  // ย่อชื่อ + วันไทย + ปิดท้าย (คู่มักจบตรงนี้)
-    mk(detailShort, true, true),   // ย่อชื่อ + วันตัวเลข
-    mk(detailShort, true, false),  // ย่อชื่อ + วันตัวเลข + ตัดท้าย
+    mk(detailFull, false, true), mk(detailFull, true, true), mk(detailFull, true, false),       // ชื่อเต็ม
+    mk(detailSpaced, false, true), mk(detailSpaced, true, true), mk(detailSpaced, true, false), // ย่อชื่อ + เว้นวรรค
+    mk(detailTight, true, true), mk(detailTight, true, false),                                  // ย่อชื่อ + ติดกัน
   ];
   for (const m of attempts) if (m.length <= 70) return m;
   return attempts[attempts.length - 1];

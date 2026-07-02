@@ -63,32 +63,35 @@ const SHORTEN_BASE = [
   ['วัคซีนรวม 5 โรคสุนัข', 'วัคซีนรวม'],
   ['วัคซีนพิษสุนัขบ้า', 'พิษสุนัขบ้า'],
 ];
-const COMBO_RULES = [
-  { sfx: 'ประจำปี', join: (b) => b.join('และ') + 'ประจำปี' },
-  { sfx: 'เข็มกระตุ้น', join: (b) => 'กระตุ้น' + b.join('และ') },
-];
-function shortenDetail(detail) {
+function splitSuffix(seg) {
+  if (seg.endsWith('ประจำปี')) return [seg.slice(0, -('ประจำปี'.length)).trim(), 'ประจำปี'];
+  if (seg.endsWith('เข็มกระตุ้น')) return [seg.slice(0, -('เข็มกระตุ้น'.length)).trim(), 'กระตุ้น'];
+  const i = seg.indexOf('เข็ม');
+  if (i >= 0) return [seg.slice(0, i).trim(), seg.slice(i + 'เข็ม'.length).trim()];
+  return [seg, ''];
+}
+function shortenDetail(detail, tight) {
   if (!detail) return detail;
-  const segs = detail.split(' และ ').map((s) => {
+  const parsed = detail.split(' และ ').map((s) => {
     let x = s.trim();
     for (const [a, b] of SHORTEN_BASE) if (x.indexOf(a) === 0) { x = (b + x.slice(a.length)).trim(); break; }
-    return x;
+    return splitSuffix(x);
   });
-  if (segs.length > 1) {
-    for (const r of COMBO_RULES) {
-      if (segs.every((x) => x.endsWith(r.sfx))) {
-        return r.join(segs.map((x) => x.slice(0, x.length - r.sfx.length).trim()));
-      }
-    }
+  const dsuf = [...new Set(parsed.map((p) => p[1]))];
+  if (parsed.length > 1 && dsuf.length === 1 && dsuf[0]) {
+    const bases = parsed.map((p) => p[0]);
+    return dsuf[0] === 'กระตุ้น' ? 'กระตุ้น' + bases.join('และ') : bases.join('และ') + dsuf[0];
   }
-  return segs.join(' และ ');
+  const sep = tight ? '' : ' ';
+  return parsed.map((p) => p[1] ? `${p[0]}${sep}${p[1]}` : p[0]).join('และ');
 }
-// สร้างข้อความเตือน — ชื่อเต็ม → ย่อชื่อ → วันตัวเลข → ตัด "นี้นะครับ" (ยังเกิน = ยอม 2 เครดิต)
+// สร้างข้อความเตือน — ชื่อเต็ม → ย่อชื่อ(เว้นวรรค) → ย่อชื่อ(ติดกัน) · แต่ละชั้นลอง วันไทย→ตัวเลข→ตัดท้าย
 function buildReminderMsg(appt) {
   const name = appt.petName || '';
   const isVax = appt.type === 'วัคซีน';
   const detailFull = noteForSms(appt.note, isVax);
-  const detailShort = isVax ? shortenDetail(detailFull) : detailFull;
+  const detailSpaced = isVax ? shortenDetail(detailFull, false) : detailFull;
+  const detailTight = isVax ? shortenDetail(detailFull, true) : detailFull;
   const bodyOf = (detail) => isVax
     ? 'ฉีด' + (detail || appt.type || '')
     : (appt.type && appt.type !== 'อื่นๆ') ? appt.type + (detail ? ' ' + detail : '') : (detail || '');
@@ -98,12 +101,9 @@ function buildReminderMsg(appt) {
     return s.replace(/\s+/g, ' ').trim();
   };
   const attempts = [
-    mk(detailFull, false, true),
-    mk(detailFull, true, true),
-    mk(detailFull, true, false),
-    mk(detailShort, false, true),
-    mk(detailShort, true, true),
-    mk(detailShort, true, false),
+    mk(detailFull, false, true), mk(detailFull, true, true), mk(detailFull, true, false),
+    mk(detailSpaced, false, true), mk(detailSpaced, true, true), mk(detailSpaced, true, false),
+    mk(detailTight, true, true), mk(detailTight, true, false),
   ];
   for (const m of attempts) if (m.length <= 70) return m;
   return attempts[attempts.length - 1];
