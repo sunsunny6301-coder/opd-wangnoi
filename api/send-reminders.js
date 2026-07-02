@@ -37,44 +37,18 @@ function isoToDisplay(iso) {
   return `${d} ${MONTHS_TH[m - 1]} ${y + 543}`;
 }
 // ── ต้องตรงกับ buildReminderMsg ใน src/appointments.jsx เป๊ะ ──
-// ชื่อวัคซีน: [ชื่อเต็ม, ชื่อย่อ, คำท้าย] — ลองเต็มก่อน เกินค่อยย่อ · คำท้ายเหมือนกัน→ยุบครั้งเดียว
-const VAX_SHORT = {
-  'วัคซีนรวมไข้หัดหวัดแมว เข็มแรก':     ['วัคซีนรวมไข้หัดหวัดแมว', 'วัคซีนรวม', 'เข็มแรก'],
-  'วัคซีนรวมไข้หัดหวัดแมว เข็ม 2':      ['วัคซีนรวมไข้หัดหวัดแมว', 'วัคซีนรวม', 'เข็ม 2'],
-  'วัคซีนรวมไข้หัดหวัดแมว เข็ม 3':      ['วัคซีนรวมไข้หัดหวัดแมว', 'วัคซีนรวม', 'เข็ม 3'],
-  'วัคซีนรวมไข้หัดหวัดแมว เข็มกระตุ้น': ['วัคซีนรวมไข้หัดหวัดแมว', 'วัคซีนรวม', 'เข็มกระตุ้น'],
-  'วัคซีนรวมไข้หัดหวัดแมวประจำปี':     ['วัคซีนรวมไข้หัดหวัดแมว', 'วัคซีนรวม', 'ประจำปี'],
-  'วัคซีนรวม 5 โรคสุนัข เข็มแรก':       ['วัคซีนรวม 5 โรคสุนัข', 'วัคซีนรวม', 'เข็มแรก'],
-  'วัคซีนรวม 5 โรคสุนัข เข็ม 2':        ['วัคซีนรวม 5 โรคสุนัข', 'วัคซีนรวม', 'เข็ม 2'],
-  'วัคซีนรวม 5 โรคสุนัข เข็ม 3':        ['วัคซีนรวม 5 โรคสุนัข', 'วัคซีนรวม', 'เข็ม 3'],
-  'วัคซีนรวม 5 โรคสุนัข เข็มกระตุ้น':   ['วัคซีนรวม 5 โรคสุนัข', 'วัคซีนรวม', 'เข็มกระตุ้น'],
-  'วัคซีนรวม 5 โรคสุนัขประจำปี':        ['วัคซีนรวม 5 โรคสุนัข', 'วัคซีนรวม', 'ประจำปี'],
-  'วัคซีนพิษสุนัขบ้า เข็มกระตุ้น':      ['พิษสุนัขบ้า', 'พิษสุนัขบ้า', 'เข็มกระตุ้น'],
-  'วัคซีนพิษสุนัขบ้า ประจำปี':          ['พิษสุนัขบ้า', 'พิษสุนัขบ้า', 'ประจำปี'],
-};
-const SUFFIX_SHORT = { 'เข็มกระตุ้น': 'กระตุ้น' };
-function shortenNote(note, useShort, tight, shortSfx, vaxOnly) {
+// ใช้ข้อความ "ตามที่เลือก/พิมพ์" ตรงๆ (ไม่ย่ออัตโนมัติ) · นัดวัคซีนเอาเฉพาะส่วนวัคซีน ตัด "+ ..." ทิ้ง
+function noteForSms(note, vaxOnly) {
   if (!note) return '';
-  const sep = tight ? '' : ' ';
-  const sf = (s) => shortSfx ? (SUFFIX_SHORT[s] || s) : s;
   const segs = String(note).split(' และ ').map((s) => s.trim()).filter(Boolean);
-  let parsed;
-  if (vaxOnly) {
-    parsed = [];
-    for (const seg of segs) {
-      let key = null;
-      if (VAX_SHORT[seg]) key = seg;
-      else for (const k in VAX_SHORT) if (seg.indexOf(k) === 0 && (!key || k.length > key.length)) key = k;
-      if (key) parsed.push([useShort ? VAX_SHORT[key][1] : VAX_SHORT[key][0], VAX_SHORT[key][2]]);
-      else if (seg.indexOf('วัคซีน') === 0) parsed.push([seg, '']);
-    }
-    if (!parsed.length) return '';
-  } else {
-    parsed = segs.map((s) => { const v = VAX_SHORT[s]; return v ? [useShort ? v[1] : v[0], v[2]] : [s, '']; });
+  if (!vaxOnly) return segs.join(' และ ');
+  const kept = [];
+  for (let seg of segs) {
+    const plus = seg.indexOf(' + ');
+    if (plus >= 0) seg = seg.slice(0, plus).trim();
+    if (seg.indexOf('วัคซีน') === 0) kept.push(seg);
   }
-  const sfx = [...new Set(parsed.map((p) => p[1]))];
-  if (parsed.length > 1 && sfx.length === 1 && sfx[0]) return parsed.map((p) => p[0]).join('และ') + sf(sfx[0]);
-  return parsed.map((p) => p[1] ? `${p[0]}${sep}${sf(p[1])}` : p[0]).join(' และ ');
+  return kept.join(' และ ');
 }
 // วันที่แบบ SMS: "1 กค 70" หรือ "1/7/70" — ปี พ.ศ. 2 หลัก
 function smsDate(iso, numeric) {
@@ -83,32 +57,25 @@ function smsDate(iso, numeric) {
   const be2 = String((p[0] + 543) % 100).padStart(2, '0');
   return numeric ? `${p[2]}/${p[1]}/${be2}` : `${p[2]} ${MONTHS_TH[p[1] - 1].replace(/\./g, '')} ${be2}`;
 }
-// สร้างข้อความเตือน — ลำดับ: ชื่อเต็ม → บีบเว้นวรรค → ชื่อย่อ → วันตัวเลข → ตัด "นี้นะครับ"
+// สร้างข้อความเตือน — auto-fit: วันไทย → วันตัวเลข → ตัด "นี้นะครับ" (ยังเกิน = ยอม 2 เครดิต)
 function buildReminderMsg(appt) {
   const name = appt.petName || '';
   const isVax = appt.type === 'วัคซีน';
-  const mk = (useShort, numericDate, withTail, tight, shortSfx) => {
-    const note = shortenNote(appt.note, useShort, tight, shortSfx, isVax);
-    const body = isVax
-      ? 'ฉีด' + (note || appt.type || '')
-      : (appt.type && appt.type !== 'อื่นๆ')
-        ? appt.type + (note ? ' ' + note : '')
-        : (note || '');
+  const detail = noteForSms(appt.note, isVax);
+  const body = isVax
+    ? 'ฉีด' + (detail || appt.type || '')
+    : (appt.type && appt.type !== 'อื่นๆ')
+      ? appt.type + (detail ? ' ' + detail : '')
+      : (detail || '');
+  const mk = (numericDate, withTail) => {
     let s = `น้อง${name} ถึงนัด${body} ${smsDate(appt.date, numericDate)}`;
-    if (withTail) s += tight ? 'นี้นะครับ' : ' นี้นะครับ';
+    if (withTail) s += ' นี้นะครับ';
     return s.replace(/\s+/g, ' ').trim();
   };
-  const attempts = [
-    mk(false, false, true, false, false), // ชื่อเต็ม + วันไทย + ปิดท้าย + เว้นวรรคปกติ
-    mk(false, false, true, true, false),  // ชื่อเต็ม + บีบเว้นวรรค
-    mk(true, false, true, false, false),  // ชื่อย่อ — ยังใช้วันไทย
-    mk(true, false, true, true, false),   // ชื่อย่อ + บีบเว้นวรรค — ยังใช้วันไทย
-    mk(true, false, true, true, true),    // + ย่อ "เข็มกระตุ้น" → "เข็ม 2" (คงวันไทยไว้ก่อน)
-    mk(true, true, true, true, true),     // ยังเกิน → ค่อยเปลี่ยนวันเป็นตัวเลข
-    mk(true, true, false, true, true),    // ยังเกิน → ตัด "นี้นะครับ"
-  ];
-  for (const m of attempts) if (m.length <= 70) return m;
-  return attempts[attempts.length - 1];
+  let msg = mk(false, true);
+  if (msg.length > 70) msg = mk(true, true);
+  if (msg.length > 70) msg = mk(true, false);
+  return msg;
 }
 
 // ส่ง SMS ผ่าน SMS2PRO REST API
