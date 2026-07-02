@@ -5156,7 +5156,13 @@ const SHORTEN_BASE = [
   ['วัคซีนรวม 5 โรคสุนัข', 'วัคซีนรวม'],
   ['วัคซีนพิษสุนัขบ้า', 'พิษสุนัขบ้า'],
 ];
-const COMBO_SUFFIX = ['ประจำปี', 'เข็มกระตุ้น'];
+// เมื่อเลือกหลายตัว "คำท้ายเหมือนกัน" → ยุบตามกฎของคำท้ายนั้น
+//   ประจำปี  → ต่อท้าย: "วัคซีนรวมและพิษสุนัขบ้าประจำปี"
+//   เข็มกระตุ้น → ย้ายมาหน้า+ตัด "เข็ม": "กระตุ้นวัคซีนรวมและพิษสุนัขบ้า"
+const COMBO_RULES = [
+  { sfx: 'ประจำปี', join: (b) => b.join('และ') + 'ประจำปี' },
+  { sfx: 'เข็มกระตุ้น', join: (b) => 'กระตุ้น' + b.join('และ') },
+];
 function shortenDetail(detail) {
   if (!detail) return detail;
   const segs = detail.split(' และ ').map((s) => {
@@ -5165,9 +5171,9 @@ function shortenDetail(detail) {
     return x;
   });
   if (segs.length > 1) {
-    for (const suf of COMBO_SUFFIX) {
-      if (segs.every((x) => x.endsWith(suf))) {
-        return segs.map((x) => x.slice(0, x.length - suf.length).trim()).join('และ') + suf;
+    for (const r of COMBO_RULES) {
+      if (segs.every((x) => x.endsWith(r.sfx))) {
+        return r.join(segs.map((x) => x.slice(0, x.length - r.sfx.length).trim()));
       }
     }
   }
