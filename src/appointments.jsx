@@ -15,26 +15,38 @@ const APPT_CHIP = {
   'ตรวจเลือด': 'chip-blush', 'ผ่าตัด': 'chip-alert',
   'อาบน้ำตัดขน': 'chip-mint',
 };
-// ตัวเลือกหมายเหตุด่วน (ตามประเภทนัด) — แตะแล้วเติมลงช่องหมายเหตุ ทำให้ข้อความ SMS เป็นมาตรฐาน
-const NOTE_PRESETS = {
+// ── ตัวเลือกหมายเหตุด่วน (ตามประเภทนัด) — แตะแล้วเติมลงช่องหมายเหตุ ทำให้ข้อความ SMS เป็นมาตรฐาน ──
+// แก้ไข/เพิ่ม/เปลี่ยนสี/เลื่อนตำแหน่งได้จากปุ่ม ⚙️ ในฟอร์มนัด → เก็บใน state.notePresets (sync ทุกเครื่อง)
+// ค่าด้านล่างเป็นค่าเริ่มต้น ใช้เมื่อประเภทนั้นยังไม่เคยถูกแก้
+const PRESET_COLORS = {
+  yellow: { on: '#E0A400', offBg: '#FFF3CC', border: '#E6C25A', text: '#8A6500' },
+  blue:   { on: '#3E7CB1', offBg: '#E3EEF7', border: '#9DC1DE', text: '#2C5A82' },
+  red:    { on: '#C0392B', offBg: '#FBDED9', border: '#D98B82', text: '#A01F12' },
+  green:  { on: '#2E7D5B', offBg: '#DFF2E9', border: '#93CDB2', text: '#1F5C41' },
+  purple: { on: '#6A4FA0', offBg: '#ECE6F6', border: '#B8A6DD', text: '#4E3A78' },
+  navy:   { on: '#2D4B72', offBg: '#E4EBF4', border: '#9FB4CE', text: '#2D4B72' },
+};
+const DEFAULT_NOTE_PRESETS = {
   'วัคซีน': [
     // แมว: ชุดลูกแมว (เข็มแรก/2/3) → กระตุ้น/ประจำปี (สัตว์โต)
-    'วัคซีนรวมไข้หัดหวัดแมว เข็มแรก',
-    'วัคซีนรวมไข้หัดหวัดแมว เข็ม 2',
-    'วัคซีนรวมไข้หัดหวัดแมว เข็ม 3',
-    'วัคซีนรวมไข้หัดหวัดแมว เข็มกระตุ้น',
-    'วัคซีนรวมไข้หัดหวัดแมวประจำปี',
+    { text: 'วัคซีนรวมไข้หัดหวัดแมว เข็มแรก', color: 'yellow' },
+    { text: 'วัคซีนรวมไข้หัดหวัดแมว เข็ม 2', color: 'yellow' },
+    { text: 'วัคซีนรวมไข้หัดหวัดแมว เข็ม 3', color: 'yellow' },
+    { text: 'วัคซีนรวมไข้หัดหวัดแมว เข็มกระตุ้น', color: 'yellow' },
+    { text: 'วัคซีนรวมไข้หัดหวัดแมวประจำปี', color: 'yellow' },
     // สุนัข: ชุดลูกสุนัข → กระตุ้น/ประจำปี
-    'วัคซีนรวม 5 โรคสุนัข เข็มแรก',
-    'วัคซีนรวม 5 โรคสุนัข เข็ม 2',
-    'วัคซีนรวม 5 โรคสุนัข เข็ม 3',
-    'วัคซีนรวม 5 โรคสุนัข เข็มกระตุ้น',
-    'วัคซีนรวม 5 โรคสุนัขประจำปี',
+    { text: 'วัคซีนรวม 5 โรคสุนัข เข็มแรก', color: 'blue' },
+    { text: 'วัคซีนรวม 5 โรคสุนัข เข็ม 2', color: 'blue' },
+    { text: 'วัคซีนรวม 5 โรคสุนัข เข็ม 3', color: 'blue' },
+    { text: 'วัคซีนรวม 5 โรคสุนัข เข็มกระตุ้น', color: 'blue' },
+    { text: 'วัคซีนรวม 5 โรคสุนัขประจำปี', color: 'blue' },
     // พิษสุนัขบ้า
-    'วัคซีนพิษสุนัขบ้า เข็มกระตุ้น',
-    'วัคซีนพิษสุนัขบ้า ประจำปี',
+    { text: 'วัคซีนพิษสุนัขบ้า เข็มกระตุ้น', color: 'red' },
+    { text: 'วัคซีนพิษสุนัขบ้า ประจำปี', color: 'red' },
   ],
 };
+// แปลง entry เก่า (string) → {text, color} เผื่อข้อมูลเก่าค้างใน state
+const normPreset = (p) => typeof p === 'string' ? { text: p, color: 'navy' } : { text: p.text || '', color: p.color || 'navy' };
 
 function dateTHShort(isoDate) {
   if (!isoDate) return '';
@@ -305,7 +317,7 @@ function ApptCard({ appt, onUpdate, onEdit, onOpenPet, onSendSms }) {
 }
 
 // ── Appointment Form Modal ───────────────────────────────────
-function ApptFormModal({ pets, defaultDate, defaultPet, editAppt, onClose, onSave }) {
+function ApptFormModal({ pets, defaultDate, defaultPet, editAppt, onClose, onSave, notePresets, onSavePresets }) {
   const initPet = defaultPet || (editAppt ? { hn: editAppt.hn, name: editAppt.petName, species: editAppt.species, owner: { name: editAppt.ownerName, phone: editAppt.phone } } : null);
   const [f, setF] = useState(editAppt ? { ...editAppt } : {
     hn: initPet?.hn || '', petName: initPet?.name || '',
@@ -325,6 +337,13 @@ function ApptFormModal({ pets, defaultDate, defaultPet, editAppt, onClose, onSav
     document.addEventListener('mousedown', fn);
     return () => document.removeEventListener('mousedown', fn);
   }, []);
+
+  // ตัวเลือกหมายเหตุของประเภทที่เลือก: ใช้ที่แก้ไว้ใน state ก่อน ถ้ายังไม่เคยแก้ใช้ค่าเริ่มต้น
+  const presetList = ((notePresets && notePresets[f.type] !== undefined)
+    ? notePresets[f.type] : (DEFAULT_NOTE_PRESETS[f.type] || [])).map(normPreset);
+  // โหมดแก้ไขตัวเลือก: null = ปิด | array = รายการที่กำลังแก้ (ยังไม่บันทึก)
+  const [editingPresets, setEditingPresets] = useState(null);
+  useEffect(() => { setEditingPresets(null); }, [f.type]);
 
   const searchPet = (q) => {
     setPetQ(q); setPtOpen(true);
@@ -353,6 +372,11 @@ function ApptFormModal({ pets, defaultDate, defaultPet, editAppt, onClose, onSav
     padding: '5px 11px', borderRadius: 'var(--radius-sm)',
     border: '1.5px solid #F0B97D', background: '#FFF1DF',
     color: '#B5651D', fontWeight: 700, fontSize: 12, cursor: 'pointer',
+  };
+  const miniBtn = {
+    padding: '0 6px', height: 16, lineHeight: '14px', fontSize: 9,
+    border: '1px solid var(--line)', borderRadius: 4, background: '#fff',
+    cursor: 'pointer', color: 'var(--ink-soft)',
   };
 
   const canSave = f.petName.trim() && f.date;
@@ -430,50 +454,107 @@ function ApptFormModal({ pets, defaultDate, defaultPet, editAppt, onClose, onSav
         <Field label="หมายเหตุ (ถ้ามี)">
           <textarea className="textarea" rows="2" value={f.note} onChange={(e) => setF({ ...f, note: e.target.value })}
             placeholder="เช่น ฉีดยา 3 เข็ม, เตรียมตัวผ่าตัด งดน้ำงดอาหาร..." style={{ resize: 'vertical', minHeight: 58 }} />
-          {NOTE_PRESETS[f.type] ? (() => {
+          {(() => {
             const SEP = ' และ ';
-            const presetList = NOTE_PRESETS[f.type];
             const segs = (f.note || '').split(SEP).map((s) => s.trim()).filter(Boolean);
-            // สีตามชนิด: แมว=เหลือง · หมา(รวม 5 โรค)=ฟ้า · พิษสุนัขบ้า=แดง
-            const catColor = (opt) => {
-              if (opt.includes('พิษสุนัขบ้า')) return { on: '#C0392B', offBg: '#FBDED9', border: '#D98B82', text: '#A01F12' };
-              if (opt.includes('แมว')) return { on: '#E0A400', offBg: '#FFF3CC', border: '#E6C25A', text: '#8A6500' };
-              if (opt.includes('สุนัข')) return { on: '#3E7CB1', offBg: '#E3EEF7', border: '#9DC1DE', text: '#2C5A82' };
-              return { on: 'var(--navy)', offBg: 'var(--powder-soft)', border: 'var(--powder-deep)', text: 'var(--navy)' };
-            };
+            const texts = presetList.map((p) => p.text);
             // เลือกได้หลายอัน — เรียงตามลำดับ preset, เก็บข้อความที่พิมพ์เองไว้ท้าย, คั่นด้วย "และ"
             const toggle = (opt) => {
               let next;
               if (segs.includes(opt)) {
                 next = segs.filter((s) => s !== opt);
               } else {
-                const customs = segs.filter((s) => !presetList.includes(s));
-                const chosen = presetList.filter((p) => segs.includes(p) || p === opt);
+                const customs = segs.filter((s) => !texts.includes(s));
+                const chosen = texts.filter((t) => segs.includes(t) || t === opt);
                 next = [...chosen, ...customs];
               }
               setF({ ...f, note: next.join(SEP) });
             };
+
+            // ── โหมดแก้ไขตัวเลือก: แก้ข้อความ / เปลี่ยนสี / เลื่อนตำแหน่ง / เพิ่ม / ลบ ──
+            if (editingPresets) {
+              const rows = editingPresets;
+              const setRow = (i, patch) => setEditingPresets(rows.map((r, j) => j === i ? { ...r, ...patch } : r));
+              const move = (i, d) => {
+                const j = i + d; if (j < 0 || j >= rows.length) return;
+                const next = [...rows]; const t = next[i]; next[i] = next[j]; next[j] = t;
+                setEditingPresets(next);
+              };
+              return (
+                <div style={{ marginTop: 9, border: '1.5px dashed var(--navy)', borderRadius: 'var(--radius-sm)', padding: '11px 13px', display: 'flex', flexDirection: 'column', gap: 8, background: 'var(--paper)' }}>
+                  <div style={{ fontWeight: 800, fontSize: 13, color: 'var(--navy)' }}>⚙️ แก้ไขตัวเลือกของ “{f.type}” — ▲▼ เลื่อนตำแหน่ง · แตะจุดสีเพื่อเปลี่ยนสี</div>
+                  {rows.map((r, i) => (
+                    <div key={i} style={{ display: 'flex', gap: 7, alignItems: 'center' }}>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 2, flexShrink: 0 }}>
+                        <button type="button" disabled={i === 0} onClick={() => move(i, -1)} style={{ ...miniBtn, opacity: i === 0 ? .35 : 1 }}>▲</button>
+                        <button type="button" disabled={i === rows.length - 1} onClick={() => move(i, 1)} style={{ ...miniBtn, opacity: i === rows.length - 1 ? .35 : 1 }}>▼</button>
+                      </div>
+                      <input className="input" style={{ flex: 1, padding: '7px 11px', fontSize: 13 }} value={r.text}
+                        onChange={(e) => setRow(i, { text: e.target.value })} placeholder="ข้อความตัวเลือก..." />
+                      <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
+                        {Object.keys(PRESET_COLORS).map((c) => (
+                          <button key={c} type="button" onClick={() => setRow(i, { color: c })} style={{
+                            width: 20, height: 20, borderRadius: 99, cursor: 'pointer', padding: 0,
+                            background: PRESET_COLORS[c].on,
+                            border: r.color === c ? '2.5px solid var(--ink)' : '2px solid #fff',
+                            boxShadow: '0 0 0 1px var(--line)',
+                          }} />
+                        ))}
+                      </div>
+                      <button type="button" onClick={() => setEditingPresets(rows.filter((_, j) => j !== i))}
+                        style={{ background: 'none', border: 'none', color: 'var(--blush-deep)', fontSize: 15, cursor: 'pointer', padding: '0 4px', flexShrink: 0 }} title="ลบตัวเลือกนี้">✕</button>
+                    </div>
+                  ))}
+                  <button type="button" className="btn btn-sm" style={{ alignSelf: 'flex-start' }}
+                    onClick={() => setEditingPresets([...rows, { text: '', color: 'navy' }])}>+ เพิ่มตัวเลือก</button>
+                  <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                    <button type="button" className="btn btn-sm" onClick={() => setEditingPresets(null)}>ยกเลิก</button>
+                    <button type="button" className="btn btn-primary btn-sm" onClick={() => {
+                      const clean = rows.map((r) => ({ text: String(r.text || '').trim(), color: r.color || 'navy' })).filter((r) => r.text);
+                      onSavePresets && onSavePresets(f.type, clean);
+                      setEditingPresets(null);
+                    }}>💾 บันทึกตัวเลือก</button>
+                  </div>
+                </div>
+              );
+            }
+
+            // ── โหมดปกติ: ปุ่ม chips + ปุ่ม ⚙️ แก้ไข ──
             return (
               <div style={{ marginTop: 9 }}>
-                <div style={{ fontSize: 11.5, color: 'var(--ink-faint)', marginBottom: 6 }}>แตะเพื่อใส่ในหมายเหตุ — เลือกได้หลายอัน (คั่นด้วย “และ”) · ข้อความ SMS จะตรงกันทุกครั้ง</div>
-                <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap' }}>
-                  {presetList.map((opt) => {
-                    const active = segs.includes(opt);
-                    const c = catColor(opt);
-                    return (
-                      <button key={opt} type="button" onClick={() => toggle(opt)} style={{
-                        padding: '6px 12px', borderRadius: 'var(--radius-sm)',
-                        border: active ? `2px solid ${c.on}` : `1.5px solid ${c.border}`,
-                        background: active ? c.on : c.offBg,
-                        color: active ? '#fff' : c.text,
-                        fontWeight: active ? 700 : 600, fontSize: 12.5, cursor: 'pointer',
-                      }}>{active ? '✓ ' : ''}{opt}</button>
-                    );
-                  })}
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 6 }}>
+                  <div style={{ fontSize: 11.5, color: 'var(--ink-faint)' }}>
+                    {presetList.length
+                      ? 'แตะเพื่อใส่ในหมายเหตุ — เลือกได้หลายอัน (คั่นด้วย “และ”) · ข้อความ SMS จะตรงกันทุกครั้ง'
+                      : `ประเภท “${f.type}” ยังไม่มีตัวเลือกด่วน — กด ⚙️ เพื่อเพิ่ม`}
+                  </div>
+                  {onSavePresets ? (
+                    <button type="button" className="btn btn-sm" style={{ flexShrink: 0, fontSize: 11.5, padding: '3px 9px', color: 'var(--ink-soft)' }}
+                      onClick={() => setEditingPresets(presetList.map((p) => ({ ...p })))}>
+                      ⚙️ {presetList.length ? 'แก้ไขตัวเลือก' : 'เพิ่มตัวเลือก'}
+                    </button>
+                  ) : null}
                 </div>
+                {presetList.length ? (
+                  <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap' }}>
+                    {presetList.map((p, i) => {
+                      const active = segs.includes(p.text);
+                      const c = PRESET_COLORS[p.color] || PRESET_COLORS.navy;
+                      return (
+                        <button key={i} type="button" onClick={() => toggle(p.text)} style={{
+                          padding: '6px 12px', borderRadius: 'var(--radius-sm)',
+                          border: active ? `2px solid ${c.on}` : `1.5px solid ${c.border}`,
+                          background: active ? c.on : c.offBg,
+                          color: active ? '#fff' : c.text,
+                          fontWeight: active ? 700 : 600, fontSize: 12.5, cursor: 'pointer',
+                        }}>{active ? '✓ ' : ''}{p.text}</button>
+                      );
+                    })}
+                  </div>
+                ) : null}
               </div>
             );
-          })() : null}
+          })()}
         </Field>
         </div>
 
@@ -502,7 +583,7 @@ function ApptFormModal({ pets, defaultDate, defaultPet, editAppt, onClose, onSav
 }
 
 // ── Appointments Page ────────────────────────────────────────
-function AppointmentsView({ appointments, pets, onAdd, onUpdate, onOpenPet, pushToast }) {
+function AppointmentsView({ appointments, pets, onAdd, onUpdate, onOpenPet, pushToast, notePresets, onSavePresets }) {
   const todayStr = todayISO();
   const [selectedDay, setSelectedDay] = useState(todayStr);
   const [showForm, setShowForm] = useState(false);
@@ -652,6 +733,7 @@ function AppointmentsView({ appointments, pets, onAdd, onUpdate, onOpenPet, push
       {showForm ? (
         <ApptFormModal
           pets={pets} defaultDate={selectedDay} editAppt={editAppt}
+          notePresets={notePresets} onSavePresets={onSavePresets}
           onClose={() => { setShowForm(false); setEditAppt(null); }}
           onSave={(appt) => {
             if (editAppt) onUpdate(appt); else onAdd(appt);

@@ -294,7 +294,7 @@ function ChargePicker({ services, stock, shopStock = [], onAdd }) {
   );
 }
 
-function CaseView({ pet, queueItem, vets, services, stock, shopStock = [], allPets, appointments = [], onBack, onFinish, onAddVet, onDeleteVet, onAddAdmitted, onUpdateAdmitted, onDischargeAdmitted, onAddAppointment, onUpdateAppointment, pushToast, onUpdatePet, onUpdateVisit, onAddService, onDeleteService, onUpdateService, onSaveDraft, previewReceiptNo }) {
+function CaseView({ pet, queueItem, vets, services, stock, shopStock = [], allPets, appointments = [], onBack, onFinish, onAddVet, onDeleteVet, onAddAdmitted, onUpdateAdmitted, onDischargeAdmitted, onAddAppointment, onUpdateAppointment, pushToast, onUpdatePet, onUpdateVisit, onAddService, onDeleteService, onUpdateService, onSaveDraft, previewReceiptNo, notePresets, onSavePresets }) {
   const latestWeight = pet.visits.length ? pet.visits[0].weight : pet.weight;
   const draft = queueItem?.draft;
   const [rec, setRec] = useState({
@@ -1070,6 +1070,7 @@ function CaseView({ pet, queueItem, vets, services, stock, shopStock = [], allPe
         <ApptFormModal
           pets={allPets || []}
           defaultPet={pet}
+          notePresets={notePresets} onSavePresets={onSavePresets}
           onClose={() => setShowApptForm(false)}
           onSave={(appt) => {
             setShowApptForm(false);
@@ -1081,6 +1082,7 @@ function CaseView({ pet, queueItem, vets, services, stock, shopStock = [], allPe
         <ApptFormModal
           pets={allPets || []}
           editAppt={editApptData}
+          notePresets={notePresets} onSavePresets={onSavePresets}
           onClose={() => setEditApptData(null)}
           onSave={(appt) => {
             setEditApptData(null);

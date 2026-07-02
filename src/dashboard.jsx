@@ -664,7 +664,7 @@ function FgCats() {
   );
 }
 
-function Dashboard({ pets, queue, appointments, admitted, receipts = [], onOpenCase, onOpenPet, onMove, onPay, onWalkIn, onUpdateAppointment, onDischargeAdmitted, onUpdateAdmitted, onOpenAdmittedCase, onCancelQueue, onCancelAdmit }) {
+function Dashboard({ pets, queue, appointments, admitted, receipts = [], onOpenCase, onOpenPet, onMove, onPay, onWalkIn, onUpdateAppointment, onDischargeAdmitted, onUpdateAdmitted, onOpenAdmittedCase, onCancelQueue, onCancelAdmit, notePresets, onSavePresets }) {
   const [showWalkIn, setShowWalkIn] = useState(false);
   const [walkInPrefillHn, setWalkInPrefillHn] = useState(null);
   // วันที่ของแผงนัด (เลื่อนดูวันก่อน/ถัดไปได้ด้วยลูกศร) — เริ่มที่วันนี้
@@ -883,6 +883,7 @@ function Dashboard({ pets, queue, appointments, admitted, receipts = [], onOpenC
         <ApptFormModal
           pets={pets}
           editAppt={editAppt}
+          notePresets={notePresets} onSavePresets={onSavePresets}
           onClose={() => setEditAppt(null)}
           onSave={(appt) => { setEditAppt(null); onUpdateAppointment && onUpdateAppointment(appt); }} />
       ) : null}
