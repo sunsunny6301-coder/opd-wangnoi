@@ -140,15 +140,25 @@ async function sendViaSms2Pro(phone, message, apiKey, sender) {
   });
   const raw = await resp.text();
   let body; try { body = JSON.parse(raw); } catch (e) { body = raw; }
-  // SMS2PRO อาจตอบ HTTP 200 แต่มี code ติดลบใน body เมื่อ error (ดูตาราง Status Gateway)
+  return { ...evalSms2ProResult(resp, body), body };
+}
+
+// ตรวจผลจาก SMS2PRO: ตอบ { status:"Success"/"Failed", system_code:200/400, ... } หรือ code ติดลบ (Status Gateway)
+// ตรวจ "ล้มเหลว" แบบชัดเจน (status มีคำว่า fail/error/invalid/expire หรือ system_code≥400 หรือ code<0) นอกนั้นถือว่าสำเร็จ
+function evalSms2ProResult(resp, body) {
+  let ok = resp.ok;
   let apiCode = null;
   if (body && typeof body === 'object') {
-    apiCode = body.code != null ? body.code
-            : body.status != null ? body.status
-            : body.error_code != null ? body.error_code : null;
+    apiCode = body.system_code != null ? body.system_code
+            : body.code != null ? body.code
+            : body.status != null ? body.status : null;
+    const statusStr = typeof body.status === 'string' ? body.status.toLowerCase() : '';
+    const sys = Number(body.system_code);
+    if (/fail|error|invalid|expire|reject/.test(statusStr)) ok = false;
+    else if (!isNaN(sys) && sys >= 400) ok = false;
+    else if (body.code != null && Number(body.code) < 0) ok = false;
   }
-  const ok = resp.ok && (apiCode == null || Number(apiCode) >= 0);
-  return { ok, httpStatus: resp.status, apiCode, body };
+  return { ok, httpStatus: resp.status, apiCode };
 }
 
 module.exports = async function handler(req, res) {
