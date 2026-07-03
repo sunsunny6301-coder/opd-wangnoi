@@ -731,6 +731,39 @@ function ApptFormModal({ pets, defaultDate, defaultPet, editAppt, onClose, onSav
 }
 
 // ── Appointments Page ────────────────────────────────────────
+// ── ป้ายเครดิต SMS คงเหลือ (ดึงจาก SMS2PRO ผ่าน /api/sms-credit) ──
+function SmsCreditBadge() {
+  const [st, setSt] = useState({ loading: true });
+  const load = () => {
+    setSt({ loading: true });
+    fetch('/api/sms-credit')
+      .then((r) => r.json())
+      .then((d) => setSt({ loading: false, ...d }))
+      .catch((e) => setSt({ loading: false, error: e.message }));
+  };
+  useEffect(() => { load(); }, []);
+
+  const has = st.remaining != null;
+  const low = has && st.remaining <= 50; // เครดิตต่ำ → เตือนสีแดง
+  const box = {
+    display: 'inline-flex', alignItems: 'center', gap: 8, padding: '7px 13px',
+    borderRadius: 'var(--radius-sm)', fontWeight: 700, fontSize: 13,
+    border: `1.5px solid ${low ? 'var(--blush-deep)' : 'var(--mint-deep)'}`,
+    background: low ? 'var(--blush-soft)' : 'var(--mint-soft)',
+    color: low ? 'var(--blush-deep)' : 'var(--mint-deep)',
+  };
+  return (
+    <div style={box} title={st.error ? ('ดึงเครดิตไม่ได้: ' + st.error) : 'เครดิต SMS จาก SMS2PRO'}>
+      <span>💳</span>
+      {st.loading ? <span>กำลังโหลด...</span>
+        : has ? <span>เครดิต {st.remaining.toLocaleString()}{st.used != null ? ` · ใช้ไป ${st.used.toLocaleString()}` : ''}</span>
+        : <span>เครดิต —</span>}
+      <button type="button" onClick={load} title="รีเฟรชเครดิต"
+        style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 13, padding: 0, color: 'inherit', opacity: st.loading ? .4 : 1 }}>↻</button>
+    </div>
+  );
+}
+
 function AppointmentsView({ appointments, pets, onAdd, onUpdate, onOpenPet, pushToast, notePresets, onSavePresets }) {
   const todayStr = todayISO();
   const [selectedDay, setSelectedDay] = useState(todayStr);
@@ -784,6 +817,7 @@ function AppointmentsView({ appointments, pets, onAdd, onUpdate, onOpenPet, push
           </div>
         </div>
         <div style={{ flex: 1 }}></div>
+        <SmsCreditBadge />
         <button className="btn btn-lg btn-soft" style={{ color: 'var(--navy)', borderColor: 'var(--navy)' }} onClick={openFreeSms}>
           📱 ส่ง SMS เอง
         </button>
