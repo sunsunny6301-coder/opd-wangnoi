@@ -29,7 +29,7 @@ async function sendViaSms2Pro(phone, message, apiKey, sender) {
   return { ...evalSms2ProResult(resp, body), body };
 }
 
-// ตรวจผลจาก SMS2PRO — ต้องตรงกับใน api/send-reminders.js
+// ตรวจผลจาก SMS2PRO — ต้องตรงกับใน api/send-reminders.js (success=status "success", system_code 1000)
 function evalSms2ProResult(resp, body) {
   let ok = resp.ok;
   let apiCode = null;
@@ -38,10 +38,8 @@ function evalSms2ProResult(resp, body) {
             : body.code != null ? body.code
             : body.status != null ? body.status : null;
     const statusStr = typeof body.status === 'string' ? body.status.toLowerCase() : '';
-    const sys = Number(body.system_code);
-    if (/fail|error|invalid|expire|reject/.test(statusStr)) ok = false;
-    else if (!isNaN(sys) && sys >= 400) ok = false;
-    else if (body.code != null && Number(body.code) < 0) ok = false;
+    if (statusStr) ok = /success/.test(statusStr);
+    else if (body.code != null) ok = Number(body.code) >= 0;
   }
   return { ok, httpStatus: resp.status, apiCode };
 }

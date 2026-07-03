@@ -143,8 +143,8 @@ async function sendViaSms2Pro(phone, message, apiKey, sender) {
   return { ...evalSms2ProResult(resp, body), body };
 }
 
-// ตรวจผลจาก SMS2PRO: ตอบ { status:"Success"/"Failed", system_code:200/400, ... } หรือ code ติดลบ (Status Gateway)
-// ตรวจ "ล้มเหลว" แบบชัดเจน (status มีคำว่า fail/error/invalid/expire หรือ system_code≥400 หรือ code<0) นอกนั้นถือว่าสำเร็จ
+// ตรวจผลจาก SMS2PRO: สำเร็จตอบ { status:"success", system_code:1000, ... } · ล้มเหลว { status:"Failed", system_code:400 }
+// ยึด "status string" เป็นหลัก (success=ผ่าน) — ห้ามใช้ system_code เทียบตัวเลข (1000=สำเร็จ ไม่ใช่ error)
 function evalSms2ProResult(resp, body) {
   let ok = resp.ok;
   let apiCode = null;
@@ -153,10 +153,8 @@ function evalSms2ProResult(resp, body) {
             : body.code != null ? body.code
             : body.status != null ? body.status : null;
     const statusStr = typeof body.status === 'string' ? body.status.toLowerCase() : '';
-    const sys = Number(body.system_code);
-    if (/fail|error|invalid|expire|reject/.test(statusStr)) ok = false;
-    else if (!isNaN(sys) && sys >= 400) ok = false;
-    else if (body.code != null && Number(body.code) < 0) ok = false;
+    if (statusStr) ok = /success/.test(statusStr);           // "success"=ผ่าน "failed"=ไม่ผ่าน
+    else if (body.code != null) ok = Number(body.code) >= 0; // เผื่อ Status Gateway แบบ code ติดลบ
   }
   return { ok, httpStatus: resp.status, apiCode };
 }
