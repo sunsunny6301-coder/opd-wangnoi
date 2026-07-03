@@ -402,7 +402,7 @@ function ApptSmsStatus({ a, past, style, onToggle }) {
 }
 
 // ── Appointment Card ─────────────────────────────────────────
-function ApptCard({ appt, onUpdate, onEdit, onOpenPet, onSendSms }) {
+function ApptCard({ appt, onUpdate, onEdit, onOpenPet, onSendSms, onDelete }) {
   const statusCls = { scheduled: 'chip-butter', arrived: 'chip-mint', cancelled: '' };
   const statusLabel = { scheduled: 'นัด', arrived: 'มาแล้ว', cancelled: 'ยกเลิก' };
   return (
@@ -451,6 +451,8 @@ function ApptCard({ appt, onUpdate, onEdit, onOpenPet, onSendSms }) {
         ) : null}
         {appt.status !== 'cancelled' ? <button className="btn btn-sm" onClick={onEdit}><Icon name="edit" size={14} /> แก้ไข</button> : null}
         {appt.status !== 'cancelled' ? <button className="btn btn-sm" style={{ color: 'var(--blush-deep)' }} onClick={() => onUpdate({ ...appt, status: 'cancelled' })}>ยกเลิกนัด</button> : null}
+        {/* ลบถาวร (เผื่อทำนัดผิด) — ลบตาม id หายทั้งนัดหมาย+OPD */}
+        {onDelete ? <button className="btn btn-sm" style={{ color: 'var(--blush-deep)', borderColor: 'var(--blush-deep)' }} onClick={() => { if (window.confirm(`ลบนัด ${appt.petName} (${appt.date})?\nนัดนี้จะหายถาวรทั้งในนัดหมายและ OPD`)) onDelete(appt.id); }}>🗑 ลบ</button> : null}
       </div>
     </div>
   );
@@ -764,7 +766,7 @@ function SmsCreditBadge() {
   );
 }
 
-function AppointmentsView({ appointments, pets, onAdd, onUpdate, onOpenPet, pushToast, notePresets, onSavePresets }) {
+function AppointmentsView({ appointments, pets, onAdd, onUpdate, onDelete, onOpenPet, pushToast, notePresets, onSavePresets }) {
   const todayStr = todayISO();
   const [selectedDay, setSelectedDay] = useState(todayStr);
   const [showForm, setShowForm] = useState(false);
@@ -854,7 +856,7 @@ function AppointmentsView({ appointments, pets, onAdd, onUpdate, onOpenPet, push
                   </div>
                 </div>
               ) : dayAppts.map((a) => (
-                <ApptCard key={a.id} appt={a} onUpdate={onUpdate} onEdit={() => openEdit(a)} onOpenPet={onOpenPet} onSendSms={sendSms} />
+                <ApptCard key={a.id} appt={a} onUpdate={onUpdate} onEdit={() => openEdit(a)} onOpenPet={onOpenPet} onSendSms={sendSms} onDelete={onDelete} />
               ))}
             </div>
           </div>

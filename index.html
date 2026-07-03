@@ -2835,7 +2835,7 @@ function ChargePicker({ services, stock, shopStock = [], onAdd }) {
   );
 }
 
-function CaseView({ pet, queueItem, vets, services, stock, shopStock = [], allPets, appointments = [], onBack, onFinish, onAddVet, onDeleteVet, onAddAdmitted, onUpdateAdmitted, onDischargeAdmitted, onAddAppointment, onUpdateAppointment, pushToast, onUpdatePet, onUpdateVisit, onAddService, onDeleteService, onUpdateService, onSaveDraft, previewReceiptNo, notePresets, onSavePresets }) {
+function CaseView({ pet, queueItem, vets, services, stock, shopStock = [], allPets, appointments = [], onBack, onFinish, onAddVet, onDeleteVet, onAddAdmitted, onUpdateAdmitted, onDischargeAdmitted, onAddAppointment, onUpdateAppointment, onDeleteAppointment, pushToast, onUpdatePet, onUpdateVisit, onAddService, onDeleteService, onUpdateService, onSaveDraft, previewReceiptNo, notePresets, onSavePresets }) {
   const latestWeight = pet.visits.length ? pet.visits[0].weight : pet.weight;
   const draft = queueItem?.draft;
   const [rec, setRec] = useState({
@@ -3408,25 +3408,29 @@ function CaseView({ pet, queueItem, vets, services, stock, shopStock = [], allPe
                       {typeof ApptSmsStatus !== 'undefined' ? <span style={{ textDecoration: 'none' }}><ApptSmsStatus a={a} past={isPast} onToggle={() => onUpdateAppointment && onUpdateAppointment({ ...a, smsAuto: a.smsAuto === false })} /></span> : null}
                     </div>
                   </div>
-                  {/* ปุ่มส่ง SMS + แก้ไขนัด (เฉพาะนัดที่ยังไม่ผ่าน) — ลิงก์กับหน้านัดหมาย/หน้าหลัก */}
-                  {!isPast ? (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 5, flexShrink: 0, textDecoration: 'none', alignSelf: 'center' }}>
-                      {typeof SmsComposerModal !== 'undefined' ? (
-                        <button className="btn btn-sm" style={{ textDecoration: 'none',
-                          ...(a.reminderSent
-                            ? { color: 'var(--mint-deep)', borderColor: 'var(--mint-deep)', background: 'var(--mint-soft)', fontWeight: 700 }
-                            : { color: 'var(--navy)', borderColor: 'var(--navy)' }) }}
-                          onClick={() => setSmsAppt(a)}>
-                          {a.reminderSent ? '✓ ส่งแล้ว' : '📱 ส่ง SMS'}
-                        </button>
-                      ) : null}
-                      {typeof ApptFormModal !== 'undefined' ? (
-                        <button className="btn btn-sm" style={{ textDecoration: 'none' }} onClick={() => setEditApptData(a)}>
-                          <Icon name="edit" size={13} /> แก้ไข
-                        </button>
-                      ) : null}
-                    </div>
-                  ) : null}
+                  {/* ปุ่มส่ง SMS + แก้ไข + ลบนัด — ลิงก์กับหน้านัดหมาย/หน้าหลัก (ลบที่นี่ = หายทั้ง 2 ที่) */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 5, flexShrink: 0, textDecoration: 'none', alignSelf: 'center' }}>
+                    {!isPast && typeof SmsComposerModal !== 'undefined' ? (
+                      <button className="btn btn-sm" style={{ textDecoration: 'none',
+                        ...(a.reminderSent
+                          ? { color: 'var(--mint-deep)', borderColor: 'var(--mint-deep)', background: 'var(--mint-soft)', fontWeight: 700 }
+                          : { color: 'var(--navy)', borderColor: 'var(--navy)' }) }}
+                        onClick={() => setSmsAppt(a)}>
+                        {a.reminderSent ? '✓ ส่งแล้ว' : '📱 ส่ง SMS'}
+                      </button>
+                    ) : null}
+                    {!isPast && typeof ApptFormModal !== 'undefined' ? (
+                      <button className="btn btn-sm" style={{ textDecoration: 'none' }} onClick={() => setEditApptData(a)}>
+                        <Icon name="edit" size={13} /> แก้ไข
+                      </button>
+                    ) : null}
+                    {onDeleteAppointment ? (
+                      <button className="btn btn-sm" style={{ textDecoration: 'none', color: 'var(--blush-deep)', borderColor: 'var(--blush-deep)' }}
+                        onClick={() => { if (window.confirm(`ลบนัด ${dateTH(a.date)} (${a.type})?\nนัดนี้จะหายทั้งในหน้านัดหมายและ OPD ถาวร`)) onDeleteAppointment(a.id); }}>
+                        🗑 ลบนัด
+                      </button>
+                    ) : null}
+                  </div>
                 </div>
               );
             };
@@ -5503,7 +5507,7 @@ function ApptSmsStatus({ a, past, style, onToggle }) {
 }
 
 // ── Appointment Card ─────────────────────────────────────────
-function ApptCard({ appt, onUpdate, onEdit, onOpenPet, onSendSms }) {
+function ApptCard({ appt, onUpdate, onEdit, onOpenPet, onSendSms, onDelete }) {
   const statusCls = { scheduled: 'chip-butter', arrived: 'chip-mint', cancelled: '' };
   const statusLabel = { scheduled: 'นัด', arrived: 'มาแล้ว', cancelled: 'ยกเลิก' };
   return (
@@ -5552,6 +5556,8 @@ function ApptCard({ appt, onUpdate, onEdit, onOpenPet, onSendSms }) {
         ) : null}
         {appt.status !== 'cancelled' ? <button className="btn btn-sm" onClick={onEdit}><Icon name="edit" size={14} /> แก้ไข</button> : null}
         {appt.status !== 'cancelled' ? <button className="btn btn-sm" style={{ color: 'var(--blush-deep)' }} onClick={() => onUpdate({ ...appt, status: 'cancelled' })}>ยกเลิกนัด</button> : null}
+        {/* ลบถาวร (เผื่อทำนัดผิด) — ลบตาม id หายทั้งนัดหมาย+OPD */}
+        {onDelete ? <button className="btn btn-sm" style={{ color: 'var(--blush-deep)', borderColor: 'var(--blush-deep)' }} onClick={() => { if (window.confirm(`ลบนัด ${appt.petName} (${appt.date})?\nนัดนี้จะหายถาวรทั้งในนัดหมายและ OPD`)) onDelete(appt.id); }}>🗑 ลบ</button> : null}
       </div>
     </div>
   );
@@ -5865,7 +5871,7 @@ function SmsCreditBadge() {
   );
 }
 
-function AppointmentsView({ appointments, pets, onAdd, onUpdate, onOpenPet, pushToast, notePresets, onSavePresets }) {
+function AppointmentsView({ appointments, pets, onAdd, onUpdate, onDelete, onOpenPet, pushToast, notePresets, onSavePresets }) {
   const todayStr = todayISO();
   const [selectedDay, setSelectedDay] = useState(todayStr);
   const [showForm, setShowForm] = useState(false);
@@ -5955,7 +5961,7 @@ function AppointmentsView({ appointments, pets, onAdd, onUpdate, onOpenPet, push
                   </div>
                 </div>
               ) : dayAppts.map((a) => (
-                <ApptCard key={a.id} appt={a} onUpdate={onUpdate} onEdit={() => openEdit(a)} onOpenPet={onOpenPet} onSendSms={sendSms} />
+                <ApptCard key={a.id} appt={a} onUpdate={onUpdate} onEdit={() => openEdit(a)} onOpenPet={onOpenPet} onSendSms={sendSms} onDelete={onDelete} />
               ))}
             </div>
           </div>
@@ -7181,6 +7187,12 @@ function App() {
   const updateAppointment = (appt) => {
     setState((s) => ({ ...s, appointments: (s.appointments || []).map((a) => a.id === appt.id ? appt : a) }));
   };
+  // ลบนัดถาวร (เผื่อทำนัดผิด) — ลบตาม id ในข้อมูลก้อนเดียว → หายทั้งหน้านัดหมายและ OPD พร้อมกัน
+  const deleteAppointment = (id) => {
+    const appt = (appointments || []).find((a) => a.id === id);
+    setState((s) => ({ ...s, appointments: (s.appointments || []).filter((a) => a.id !== id) }));
+    pushToast(`ลบนัด${appt ? ` ${appt.petName} (${appt.date})` : ''}แล้ว`);
+  };
   // ตัวเลือกหมายเหตุด่วนของฟอร์มนัด (แก้ไข/เพิ่ม/สี/ตำแหน่ง ได้จากปุ่ม ⚙️) — เก็บต่อประเภทนัด
   const notePresets = state.notePresets || {};
   const saveNotePresets = (type, list) => {
@@ -7893,13 +7905,13 @@ function App() {
           vets={vets} services={services} stock={stock} shopStock={shopStock} allPets={pets} appointments={appointments}
           onBack={() => {setPage('dashboard');setCaseCtx(null);}}
           onFinish={finishCase} onAddVet={addVet} onDeleteVet={deleteVet}
-          onAddAppointment={addAppointment} onUpdateAppointment={updateAppointment}
+          onAddAppointment={addAppointment} onUpdateAppointment={updateAppointment} onDeleteAppointment={deleteAppointment}
           onUpdateAdmitted={updateAdmitted} onDischargeAdmitted={dischargeAdmitted}
           onAddAdmitted={addAdmitted} pushToast={pushToast}
           onUpdatePet={updatePet} onUpdateVisit={updateVisit} onAddService={addService} onDeleteService={deleteService} onUpdateService={updateService} onSaveDraft={saveDraft} previewReceiptNo={nextReceiptNo().no}
           notePresets={notePresets} onSavePresets={saveNotePresets} /> :
           null}
-          {page === 'appointments' ? <AppointmentsView appointments={appointments} pets={pets} onAdd={addAppointment} onUpdate={updateAppointment} onOpenPet={openPet} pushToast={pushToast} notePresets={notePresets} onSavePresets={saveNotePresets} /> : null}
+          {page === 'appointments' ? <AppointmentsView appointments={appointments} pets={pets} onAdd={addAppointment} onUpdate={updateAppointment} onDelete={deleteAppointment} onOpenPet={openPet} pushToast={pushToast} notePresets={notePresets} onSavePresets={saveNotePresets} /> : null}
           {page === 'shop' ? <PetShop stock={shopStock} onCheckout={shopCheckout} previewReceiptNo={nextReceiptNo().no} onDeleteItem={deleteShopItem} onAddItem={addShopItem} onImportStock={importShopItems} onUpdateItem={updateShopItem} /> : null}
           {page === 'stock' ? <StockView stock={stock} onAdjust={adjustStock} onAddItem={addStockItem} onImportStock={importStockItems} onDeleteItem={deleteStockItem} onClearAll={clearStock} onUpdateItem={updateStockItem} /> : null}
           {page === 'reports' ? <ReportsView pets={pets} queue={queue} stock={stock} shopStock={shopStock} services={services} receipts={receipts} onCancelReceipt={cancelReceipt} onUpdateReceipt={updateReceipt} onOpenPet={openPet} /> : null}

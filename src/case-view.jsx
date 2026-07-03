@@ -294,7 +294,7 @@ function ChargePicker({ services, stock, shopStock = [], onAdd }) {
   );
 }
 
-function CaseView({ pet, queueItem, vets, services, stock, shopStock = [], allPets, appointments = [], onBack, onFinish, onAddVet, onDeleteVet, onAddAdmitted, onUpdateAdmitted, onDischargeAdmitted, onAddAppointment, onUpdateAppointment, pushToast, onUpdatePet, onUpdateVisit, onAddService, onDeleteService, onUpdateService, onSaveDraft, previewReceiptNo, notePresets, onSavePresets }) {
+function CaseView({ pet, queueItem, vets, services, stock, shopStock = [], allPets, appointments = [], onBack, onFinish, onAddVet, onDeleteVet, onAddAdmitted, onUpdateAdmitted, onDischargeAdmitted, onAddAppointment, onUpdateAppointment, onDeleteAppointment, pushToast, onUpdatePet, onUpdateVisit, onAddService, onDeleteService, onUpdateService, onSaveDraft, previewReceiptNo, notePresets, onSavePresets }) {
   const latestWeight = pet.visits.length ? pet.visits[0].weight : pet.weight;
   const draft = queueItem?.draft;
   const [rec, setRec] = useState({
@@ -867,25 +867,29 @@ function CaseView({ pet, queueItem, vets, services, stock, shopStock = [], allPe
                       {typeof ApptSmsStatus !== 'undefined' ? <span style={{ textDecoration: 'none' }}><ApptSmsStatus a={a} past={isPast} onToggle={() => onUpdateAppointment && onUpdateAppointment({ ...a, smsAuto: a.smsAuto === false })} /></span> : null}
                     </div>
                   </div>
-                  {/* ปุ่มส่ง SMS + แก้ไขนัด (เฉพาะนัดที่ยังไม่ผ่าน) — ลิงก์กับหน้านัดหมาย/หน้าหลัก */}
-                  {!isPast ? (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 5, flexShrink: 0, textDecoration: 'none', alignSelf: 'center' }}>
-                      {typeof SmsComposerModal !== 'undefined' ? (
-                        <button className="btn btn-sm" style={{ textDecoration: 'none',
-                          ...(a.reminderSent
-                            ? { color: 'var(--mint-deep)', borderColor: 'var(--mint-deep)', background: 'var(--mint-soft)', fontWeight: 700 }
-                            : { color: 'var(--navy)', borderColor: 'var(--navy)' }) }}
-                          onClick={() => setSmsAppt(a)}>
-                          {a.reminderSent ? '✓ ส่งแล้ว' : '📱 ส่ง SMS'}
-                        </button>
-                      ) : null}
-                      {typeof ApptFormModal !== 'undefined' ? (
-                        <button className="btn btn-sm" style={{ textDecoration: 'none' }} onClick={() => setEditApptData(a)}>
-                          <Icon name="edit" size={13} /> แก้ไข
-                        </button>
-                      ) : null}
-                    </div>
-                  ) : null}
+                  {/* ปุ่มส่ง SMS + แก้ไข + ลบนัด — ลิงก์กับหน้านัดหมาย/หน้าหลัก (ลบที่นี่ = หายทั้ง 2 ที่) */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 5, flexShrink: 0, textDecoration: 'none', alignSelf: 'center' }}>
+                    {!isPast && typeof SmsComposerModal !== 'undefined' ? (
+                      <button className="btn btn-sm" style={{ textDecoration: 'none',
+                        ...(a.reminderSent
+                          ? { color: 'var(--mint-deep)', borderColor: 'var(--mint-deep)', background: 'var(--mint-soft)', fontWeight: 700 }
+                          : { color: 'var(--navy)', borderColor: 'var(--navy)' }) }}
+                        onClick={() => setSmsAppt(a)}>
+                        {a.reminderSent ? '✓ ส่งแล้ว' : '📱 ส่ง SMS'}
+                      </button>
+                    ) : null}
+                    {!isPast && typeof ApptFormModal !== 'undefined' ? (
+                      <button className="btn btn-sm" style={{ textDecoration: 'none' }} onClick={() => setEditApptData(a)}>
+                        <Icon name="edit" size={13} /> แก้ไข
+                      </button>
+                    ) : null}
+                    {onDeleteAppointment ? (
+                      <button className="btn btn-sm" style={{ textDecoration: 'none', color: 'var(--blush-deep)', borderColor: 'var(--blush-deep)' }}
+                        onClick={() => { if (window.confirm(`ลบนัด ${dateTH(a.date)} (${a.type})?\nนัดนี้จะหายทั้งในหน้านัดหมายและ OPD ถาวร`)) onDeleteAppointment(a.id); }}>
+                        🗑 ลบนัด
+                      </button>
+                    ) : null}
+                  </div>
                 </div>
               );
             };

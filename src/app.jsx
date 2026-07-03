@@ -58,6 +58,12 @@ function App() {
   const updateAppointment = (appt) => {
     setState((s) => ({ ...s, appointments: (s.appointments || []).map((a) => a.id === appt.id ? appt : a) }));
   };
+  // ลบนัดถาวร (เผื่อทำนัดผิด) — ลบตาม id ในข้อมูลก้อนเดียว → หายทั้งหน้านัดหมายและ OPD พร้อมกัน
+  const deleteAppointment = (id) => {
+    const appt = (appointments || []).find((a) => a.id === id);
+    setState((s) => ({ ...s, appointments: (s.appointments || []).filter((a) => a.id !== id) }));
+    pushToast(`ลบนัด${appt ? ` ${appt.petName} (${appt.date})` : ''}แล้ว`);
+  };
   // ตัวเลือกหมายเหตุด่วนของฟอร์มนัด (แก้ไข/เพิ่ม/สี/ตำแหน่ง ได้จากปุ่ม ⚙️) — เก็บต่อประเภทนัด
   const notePresets = state.notePresets || {};
   const saveNotePresets = (type, list) => {
@@ -770,13 +776,13 @@ function App() {
           vets={vets} services={services} stock={stock} shopStock={shopStock} allPets={pets} appointments={appointments}
           onBack={() => {setPage('dashboard');setCaseCtx(null);}}
           onFinish={finishCase} onAddVet={addVet} onDeleteVet={deleteVet}
-          onAddAppointment={addAppointment} onUpdateAppointment={updateAppointment}
+          onAddAppointment={addAppointment} onUpdateAppointment={updateAppointment} onDeleteAppointment={deleteAppointment}
           onUpdateAdmitted={updateAdmitted} onDischargeAdmitted={dischargeAdmitted}
           onAddAdmitted={addAdmitted} pushToast={pushToast}
           onUpdatePet={updatePet} onUpdateVisit={updateVisit} onAddService={addService} onDeleteService={deleteService} onUpdateService={updateService} onSaveDraft={saveDraft} previewReceiptNo={nextReceiptNo().no}
           notePresets={notePresets} onSavePresets={saveNotePresets} /> :
           null}
-          {page === 'appointments' ? <AppointmentsView appointments={appointments} pets={pets} onAdd={addAppointment} onUpdate={updateAppointment} onOpenPet={openPet} pushToast={pushToast} notePresets={notePresets} onSavePresets={saveNotePresets} /> : null}
+          {page === 'appointments' ? <AppointmentsView appointments={appointments} pets={pets} onAdd={addAppointment} onUpdate={updateAppointment} onDelete={deleteAppointment} onOpenPet={openPet} pushToast={pushToast} notePresets={notePresets} onSavePresets={saveNotePresets} /> : null}
           {page === 'shop' ? <PetShop stock={shopStock} onCheckout={shopCheckout} previewReceiptNo={nextReceiptNo().no} onDeleteItem={deleteShopItem} onAddItem={addShopItem} onImportStock={importShopItems} onUpdateItem={updateShopItem} /> : null}
           {page === 'stock' ? <StockView stock={stock} onAdjust={adjustStock} onAddItem={addStockItem} onImportStock={importStockItems} onDeleteItem={deleteStockItem} onClearAll={clearStock} onUpdateItem={updateStockItem} /> : null}
           {page === 'reports' ? <ReportsView pets={pets} queue={queue} stock={stock} shopStock={shopStock} services={services} receipts={receipts} onCancelReceipt={cancelReceipt} onUpdateReceipt={updateReceipt} onOpenPet={openPet} /> : null}
