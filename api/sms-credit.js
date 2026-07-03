@@ -25,8 +25,9 @@ function deepFindNumber(obj, keyNames) {
 }
 
 module.exports = async function handler(req, res) {
-  const origin = (req.headers.origin || '').replace(/^https?:\/\//, '');
-  if (origin && !/(^|\.)vercel\.app$/.test(origin) && origin !== 'localhost') {
+  // อนุญาตเฉพาะโดเมนแอปเราเอง (opd-wangnoi*.vercel.app รวม preview) — ไม่ใช่ vercel.app ทั้งหมด
+  const origin = (req.headers.origin || '').replace(/^https?:\/\//, '').split('/')[0];
+  if (origin && !(origin.startsWith('opd-wangnoi') && origin.endsWith('.vercel.app')) && origin.split(':')[0] !== 'localhost') {
     return res.status(403).json({ error: 'origin ไม่ได้รับอนุญาต' });
   }
   const SMS_KEY = process.env.SMS2PRO_API_KEY;

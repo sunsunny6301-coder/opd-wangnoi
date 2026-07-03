@@ -211,9 +211,15 @@ function SmsComposerModal({ title, initPhone, initMsg, appt, notePresets, onSave
         body: JSON.stringify({ phone: clean, messages: list }),
       });
       const data = await resp.json().catch(() => ({}));
-      result = resp.ok && data.ok
-        ? { ok: true, sent: data.sent }
-        : { ok: false, error: (data && data.error) || `ส่งไม่สำเร็จ (${resp.status})`, data };
+      if (resp.ok && data.ok) {
+        result = { ok: true, sent: data.sent };
+      } else {
+        // ดึงสาเหตุจริงจาก SMS2PRO (เช่น "Invalid Phone Number Format") มาโชว์แทนแค่รหัส
+        const fail = Array.isArray(data.results) ? data.results.find((r) => !r.ok) : null;
+        const reason = (fail && fail.body && (fail.body.system_message || fail.body.message))
+          || data.error || `ส่งไม่สำเร็จ (${resp.status})`;
+        result = { ok: false, error: reason, data };
+      }
     } catch (e) {
       result = { ok: false, error: 'เชื่อมต่อไม่ได้: ' + e.message };
     } finally {

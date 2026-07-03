@@ -48,9 +48,10 @@ module.exports = async function handler(req, res) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'ใช้ POST เท่านั้น' });
   }
-  // กัน cross-site: อนุญาตเฉพาะที่มาจากโดเมนแอปเอง (curl ไม่มี Origin ยังผ่านไว้ทดสอบ)
-  const origin = (req.headers.origin || '').replace(/^https?:\/\//, '');
-  if (origin && !/(^|\.)vercel\.app$/.test(origin) && origin !== 'localhost') {
+  // กัน cross-site: อนุญาตเฉพาะโดเมนแอปเราเอง (opd-wangnoi*.vercel.app รวม preview) — ไม่ใช่ vercel.app ทั้งหมด
+  // (curl ไม่มี Origin ยังผ่าน — ใช้ทดสอบ; ความลับจริงคือ URL + key อยู่ server)
+  const origin = (req.headers.origin || '').replace(/^https?:\/\//, '').split('/')[0];
+  if (origin && !(origin.startsWith('opd-wangnoi') && origin.endsWith('.vercel.app')) && origin.split(':')[0] !== 'localhost') {
     return res.status(403).json({ error: 'origin ไม่ได้รับอนุญาต' });
   }
 
