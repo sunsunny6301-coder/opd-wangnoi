@@ -125,20 +125,18 @@ function buildReminderMsgs(appt) {
   return msgs;
 }
 
-// ส่ง SMS ผ่าน SMS2PRO REST API
-// endpoint จากพอร์ทัล (SMS API tab): POST https://portal.sms2pro.com/sms-api
-// auth = Bearer API Key, body = JSON
-// ⚠️ ถ้าทดสอบแล้วได้ error เรื่อง field ให้เทียบชื่อคีย์ใน body กับแท็บ "SMS API"
-//    ของพอร์ทัล แล้วแก้ที่ object ด้านล่างจุดเดียว (เช่น msisdn↔recipient↔phone)
+// ส่ง SMS ผ่าน SMS2PRO REST API (Send outbound SMS)
+// endpoint: POST https://portal.sms2pro.com/sms-api/message-sms/send
+// auth = Bearer API Key · body JSON: { recipient, sender_name, message }
 async function sendViaSms2Pro(phone, message, apiKey, sender) {
-  const resp = await fetch('https://portal.sms2pro.com/sms-api', {
+  const resp = await fetch('https://portal.sms2pro.com/sms-api/message-sms/send', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       'Accept': 'application/json',
       'Authorization': `Bearer ${apiKey}`,
     },
-    body: JSON.stringify({ sender, msisdn: phone, message }),
+    body: JSON.stringify({ recipient: phone, sender_name: sender, message }),
   });
   const raw = await resp.text();
   let body; try { body = JSON.parse(raw); } catch (e) { body = raw; }

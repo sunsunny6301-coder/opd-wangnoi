@@ -13,15 +13,16 @@
 'use strict';
 
 // ต้องตรงกับ sendViaSms2Pro ใน api/send-reminders.js
+// POST https://portal.sms2pro.com/sms-api/message-sms/send · body JSON: { recipient, sender_name, message }
 async function sendViaSms2Pro(phone, message, apiKey, sender) {
-  const resp = await fetch('https://portal.sms2pro.com/sms-api', {
+  const resp = await fetch('https://portal.sms2pro.com/sms-api/message-sms/send', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       'Accept': 'application/json',
       'Authorization': `Bearer ${apiKey}`,
     },
-    body: JSON.stringify({ sender, msisdn: phone, message }),
+    body: JSON.stringify({ recipient: phone, sender_name: sender, message }),
   });
   const raw = await resp.text();
   let body; try { body = JSON.parse(raw); } catch (e) { body = raw; }
