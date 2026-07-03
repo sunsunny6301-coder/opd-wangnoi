@@ -65,7 +65,7 @@ const SHORTEN_BASE = [
 ];
 function splitSuffix(seg) {
   if (seg.endsWith('ประจำปี')) return [seg.slice(0, -('ประจำปี'.length)).trim(), 'ประจำปี'];
-  if (seg.endsWith('เข็มกระตุ้น')) return [seg.slice(0, -('เข็มกระตุ้น'.length)).trim(), 'กระตุ้น'];
+  if (seg.endsWith('เข็มกระตุ้น')) return [seg.slice(0, -('เข็มกระตุ้น'.length)).trim(), '2/2'];
   const i = seg.indexOf('เข็ม');
   if (i >= 0) return [seg.slice(0, i).trim(), seg.slice(i + 'เข็ม'.length).trim()];
   return [seg, ''];
@@ -78,11 +78,11 @@ function shortenDetail(detail, tight) {
     return splitSuffix(x);
   });
   const dsuf = [...new Set(parsed.map((p) => p[1]))];
+  const sep = tight ? '' : ' ';
   if (parsed.length > 1 && dsuf.length === 1 && dsuf[0]) {
     const bases = parsed.map((p) => p[0]);
-    return dsuf[0] === 'กระตุ้น' ? 'กระตุ้น' + bases.join('และ') : bases.join('และ') + dsuf[0];
+    return bases.join('และ') + (dsuf[0] === 'ประจำปี' ? '' : sep) + dsuf[0];
   }
-  const sep = tight ? '' : ' ';
   return parsed.map((p) => p[1] ? `${p[0]}${sep}${p[1]}` : p[0]).join('และ');
 }
 // สร้างข้อความเตือน — ชื่อเต็ม → ย่อชื่อ(เว้นวรรค) → ย่อชื่อ(ติดกัน) · แต่ละชั้นลอง วันไทย→ตัวเลข→ตัดท้าย
@@ -239,7 +239,7 @@ module.exports = async function handler(req, res) {
 
       const mergedAppts = latestAppts.map(a =>
         sentIds.has(a.id) && !a.reminderSent
-          ? { ...a, reminderSent: true, reminderSentAt: targetIso }
+          ? { ...a, reminderSent: true, reminderSentAt: targetIso, reminderVia: 'auto' }
           : a
       );
 

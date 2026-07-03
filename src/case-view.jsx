@@ -907,12 +907,15 @@ function CaseView({ pet, queueItem, vets, services, stock, shopStock = [], allPe
       {smsAppt && typeof SmsComposerModal !== 'undefined' ? (
         <SmsComposerModal
           title={`ส่ง SMS เตือนนัด — ${smsAppt.petName || pet.name}`}
+          appt={smsAppt}
+          notePresets={notePresets} onSavePresets={onSavePresets}
           initPhone={smsAppt.phone || pet.owner?.phone || ''}
           initMsg={typeof buildReminderMsg !== 'undefined' ? buildReminderMsg(smsAppt) : ''}
           onClose={() => setSmsAppt(null)}
-          onSend={(phone, msg) => {
+          onSaveAppt={(d) => { onUpdateAppointment && onUpdateAppointment(d); pushToast && pushToast('บันทึกนัดแล้ว'); }}
+          onSend={(phone, msg, draft) => {
             typeof openSmsApp !== 'undefined' && openSmsApp(phone, msg);
-            onUpdateAppointment && onUpdateAppointment({ ...smsAppt, reminderSent: true, reminderSentAt: todayISO() });
+            onUpdateAppointment && onUpdateAppointment({ ...(draft || smsAppt), reminderSent: true, reminderSentAt: todayISO(), reminderVia: 'manual' });
             pushToast && pushToast(phone ? `เปิดส่ง SMS ถึง ${phone} · คัดลอกข้อความแล้ว` : 'คัดลอกข้อความแล้ว');
             setSmsAppt(null);
           }}

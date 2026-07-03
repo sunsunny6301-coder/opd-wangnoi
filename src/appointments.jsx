@@ -83,10 +83,10 @@ const SHORTEN_BASE = [
   ['วัคซีนรวม 5 โรคสุนัข', 'วัคซีนรวม'],
   ['วัคซีนพิษสุนัขบ้า', 'พิษสุนัขบ้า'],
 ];
-// แยก [ชื่อฐาน, คำท้ายแสดงผล] — "ประจำปี"→ประจำปี · "เข็มกระตุ้น"→กระตุ้น · "เข็ม X"→X (ตัดคำ "เข็ม")
+// แยก [ชื่อฐาน, คำท้ายแสดงผล] — "ประจำปี"→ประจำปี · "เข็มกระตุ้น"→2/2 (กระตุ้นทุกวัคซีน=2/2) · "เข็ม X"→X (ตัดคำ "เข็ม")
 function splitSuffix(seg) {
   if (seg.endsWith('ประจำปี')) return [seg.slice(0, -('ประจำปี'.length)).trim(), 'ประจำปี'];
-  if (seg.endsWith('เข็มกระตุ้น')) return [seg.slice(0, -('เข็มกระตุ้น'.length)).trim(), 'กระตุ้น'];
+  if (seg.endsWith('เข็มกระตุ้น')) return [seg.slice(0, -('เข็มกระตุ้น'.length)).trim(), '2/2'];
   const i = seg.indexOf('เข็ม');
   if (i >= 0) return [seg.slice(0, i).trim(), seg.slice(i + 'เข็ม'.length).trim()];
   return [seg, ''];
@@ -100,13 +100,13 @@ function shortenDetail(detail, tight) {
     return splitSuffix(x);
   });
   const dsuf = [...new Set(parsed.map((p) => p[1]))];
-  // หลายตัว + คำท้ายเดียวกัน → ยุบครั้งเดียว: ประจำปี=ต่อท้าย · กระตุ้น=นำหน้า · อื่นๆ=ต่อท้าย
+  const sep = tight ? '' : ' ';
+  // หลายตัว + คำท้ายเดียวกัน → ยุบเหลือครั้งเดียวท้ายประโยค: ประจำปี=ติดเสมอ (ตาม spec) · ตัวเลข (เช่น 2/2)=เว้นวรรคก่อน เกินค่อยติด
   if (parsed.length > 1 && dsuf.length === 1 && dsuf[0]) {
     const bases = parsed.map((p) => p[0]);
-    return dsuf[0] === 'กระตุ้น' ? 'กระตุ้น' + bases.join('และ') : bases.join('และ') + dsuf[0];
+    return bases.join('และ') + (dsuf[0] === 'ประจำปี' ? '' : sep) + dsuf[0];
   }
   // ตัวเดียว/คำท้ายต่างกัน → "ฐาน{เว้นวรรค}คำท้าย" คั่นด้วย "และ" (ไม่มีเว้นวรรครอบ "และ")
-  const sep = tight ? '' : ' ';
   return parsed.map((p) => p[1] ? `${p[0]}${sep}${p[1]}` : p[0]).join('และ');
 }
 
@@ -145,10 +145,32 @@ function openSmsApp(phone, msg) {
   }
 }
 
+// เลื่อนนัด (วันเปลี่ยน) ทั้งที่เคยส่ง SMS แล้ว → ล้างสถานะส่ง ให้ระบบกลับมาเตือนวันนัดใหม่ได้อีกครั้ง
+// (ถ้าไม่ล้าง cron จะข้ามเพราะ reminderSent=true และป้ายยังโชว์ "✓ ส่งแล้ว" ทั้งที่วันใหม่ยังไม่เคยเตือน)
+function resetReminderIfMoved(orig, next) {
+  if (orig && next && orig.date !== next.date && next.reminderSent) {
+    const { reminderSent, reminderSentAt, reminderVia, ...rest } = next;
+    return rest;
+  }
+  return next;
+}
+
 // ── Modal ส่ง SMS: แก้เบอร์/ข้อความได้ก่อนส่ง (ใช้ทั้งเตือนนัด และส่งเอง) ──
-function SmsComposerModal({ title, initPhone, initMsg, onClose, onSend }) {
-  const [phone, setPhone] = useState(initPhone || '');
+// ถ้าส่ง appt เข้ามา → โหมดแก้นัด: แก้ประเภท/หมายเหตุ/วันที่ได้ในนี้เลย ข้อความ SMS สร้างใหม่อัตโนมัติ
+//   · onSaveAppt(draft) = บันทึกนัด (ลิงก์ทั้งนัดหมาย + OPD) · onSend(phone,msg,draft) = ส่ง (บันทึกนัดด้วย)
+function SmsComposerModal({ title, initPhone, initMsg, appt, notePresets, onSavePresets, onSaveAppt, onClose, onSend }) {
+  const editMode = !!appt;
+  const [draft, setDraft] = useState(appt ? { ...appt } : null);
+  const [phone, setPhone] = useState(initPhone || (appt && appt.phone) || '');
   const [msg, setMsg] = useState(initMsg || '');
+
+  // โหมดแก้นัด: ข้อความสร้างอัตโนมัติจากรายละเอียดนัด — เปลี่ยนประเภท/หมายเหตุ/วันที่ แล้วอัปเดตทันที
+  // (พิมพ์แก้ข้อความเองได้ แต่จะถูกสร้างใหม่เมื่อแก้รายละเอียดนัดอีกครั้ง)
+  useEffect(() => {
+    if (!editMode) return;
+    setMsg(buildReminderMsg(draft));
+  }, [editMode, draft && draft.type, draft && draft.note, draft && draft.date, draft && draft.petName]);
+
   const clean = phone.replace(/[^0-9+]/g, '');
   // ไทย: 1 ข้อความ = 70 ตัว · ถ้าต่อหลายท่อนคิด 67 ตัว/ท่อน (คิดเครดิตตามจำนวนท่อน)
   const len = msg.length;
@@ -156,18 +178,59 @@ function SmsComposerModal({ title, initPhone, initMsg, onClose, onSend }) {
   const segments = over ? Math.ceil(len / 67) : 1;
   const pct = Math.min(100, Math.round((len / 70) * 100));
   const copyMsg = () => { try { navigator.clipboard && navigator.clipboard.writeText(msg); } catch (e) {} };
+
+  const setField = (patch) => setDraft((d) => ({ ...d, ...patch }));
+  // ปุ่มนัดเร็ว — นับจากวันนี้แบบ local (ไม่ใช้ toISOString กันวันเพี้ยน UTC+7)
+  const setDateFromToday = (addDays, addYears) => {
+    const t = new Date();
+    const d = new Date(t.getFullYear() + (addYears || 0), t.getMonth(), t.getDate() + (addDays || 0));
+    setField({ date: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}` });
+  };
+  const quickDateBtn = { padding: '5px 11px', borderRadius: 'var(--radius-sm)', border: '1.5px solid #F0B97D', background: '#FFF1DF', color: '#B5651D', fontWeight: 700, fontSize: 12, cursor: 'pointer' };
+
   return (
     <Modal title={title || 'ส่ง SMS'} onClose={onClose} footer={<>
       <button className="btn" onClick={onClose}>ปิด</button>
+      {editMode && onSaveAppt ? <button className="btn" onClick={() => { onSaveAppt(resetReminderIfMoved(appt, draft)); onClose(); }}>💾 บันทึกนัด</button> : null}
       <button className="btn" onClick={copyMsg}>📋 คัดลอกข้อความ</button>
-      <button className="btn btn-primary" disabled={!msg.trim()} onClick={() => onSend(clean, msg)}>📱 ส่ง SMS</button>
+      <button className="btn btn-primary" disabled={!msg.trim()} onClick={() => onSend(clean, msg, draft)}>📱 ส่ง SMS</button>
     </>}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 13 }}>
         <Field label="เบอร์โทร">
           <input className="input" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="08x-xxx-xxxx" inputMode="tel" />
         </Field>
-        <Field label="ข้อความ (แก้ไขได้)">
-          <textarea className="textarea" rows="5" value={msg} onChange={(e) => setMsg(e.target.value)} placeholder="พิมพ์ข้อความที่จะส่ง..." />
+
+        {editMode ? (
+          <div style={{ border: '1.5px solid var(--line)', borderRadius: 'var(--radius-sm)', padding: '11px 13px', display: 'flex', flexDirection: 'column', gap: 11, background: 'var(--paper)' }}>
+            <div style={{ fontWeight: 800, fontSize: 12.5, color: 'var(--navy)' }}>✏️ แก้รายละเอียดนัด — ข้อความ SMS ด้านล่างอัปเดตอัตโนมัติ</div>
+            <Field label="วันที่นัด">
+              <input className="input" type="date" value={draft.date || ''} onChange={(e) => setField({ date: e.target.value })} />
+              <div style={{ display: 'flex', gap: 7, marginTop: 8, flexWrap: 'wrap' }}>
+                <button type="button" onClick={() => setDateFromToday(28, 0)} style={quickDateBtn}>+ นัด 4 สัปดาห์</button>
+                <button type="button" onClick={() => setDateFromToday(0, 1)} style={quickDateBtn}>+ นัด 1 ปี</button>
+              </div>
+            </Field>
+            <Field label="ประเภทการนัด">
+              <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap' }}>
+                {APPT_TYPES.map((tp) => (
+                  <button key={tp} type="button" onClick={() => setField({ type: tp })} style={{
+                    padding: '7px 13px', borderRadius: 'var(--radius-sm)',
+                    border: draft.type === tp ? '2px solid var(--navy)' : '1.5px solid var(--line)',
+                    background: draft.type === tp ? 'var(--navy-soft)' : '#fff',
+                    fontWeight: draft.type === tp ? 700 : 500, fontSize: 13.5,
+                    color: draft.type === tp ? 'var(--navy)' : 'var(--ink-soft)', cursor: 'pointer',
+                  }}>{tp}</button>
+                ))}
+              </div>
+            </Field>
+            <NotePresetField type={draft.type} note={draft.note || ''}
+              onChange={(v) => setField({ note: v })}
+              notePresets={notePresets} onSavePresets={onSavePresets} rows={2} />
+          </div>
+        ) : null}
+
+        <Field label={editMode ? 'ข้อความ SMS (สร้างอัตโนมัติ · แก้เพิ่มได้)' : 'ข้อความ (แก้ไขได้)'}>
+          <textarea className="textarea" rows={editMode ? '3' : '5'} value={msg} onChange={(e) => setMsg(e.target.value)} placeholder="พิมพ์ข้อความที่จะส่ง..." />
         </Field>
         <div>
           <div style={{ height: 8, borderRadius: 99, background: 'var(--line)', overflow: 'hidden' }}>
@@ -247,7 +310,7 @@ function MiniCalendar({ appointments, selectedDay, onSelectDay }) {
 }
 
 // ── ป้ายสถานะ SMS ของนัด (ใช้ร่วมกันทุกหน้า: นัดหมาย / OPD / หน้าหลัก) ──
-// ส่งแล้ว → ✓ เขียว · ปิดส่ง → 🔕 เทา · รอส่งอัตโนมัติ → ⏳ เหลือง · ผ่านมาแล้วยังไม่ส่ง → ซ่อน
+// ส่งอัตโนมัติ (cron 8โมง) → ✓ เขียว · ส่งเอง → ✓ ฟ้า · ปิดส่ง → 🔕 เทา · รอส่งอัตโนมัติ → ⏳ เหลือง · ผ่านมาแล้วยังไม่ส่ง → ซ่อน
 // onToggle (ถ้ามี) = กดป้ายเพื่อสลับเปิด/ปิดส่ง SMS อัตโนมัติของนัดนี้ (ลิงก์ทุกหน้าผ่าน updateAppointment)
 function ApptSmsStatus({ a, past, style, onToggle }) {
   if (!a) return null;
@@ -255,7 +318,17 @@ function ApptSmsStatus({ a, past, style, onToggle }) {
   const base = { fontSize: 11, fontWeight: 700, ...(clickable ? { cursor: 'pointer' } : {}), ...(style || {}) };
   const onClk = clickable ? (e) => { e.stopPropagation(); onToggle(); } : undefined;
   const title = clickable ? 'แตะเพื่อเปิด/ปิดส่ง SMS อัตโนมัติของนัดนี้' : undefined;
-  if (a.reminderSent) return <span className="chip chip-mint" style={base}>✓ ส่ง SMS แล้ว</span>;
+  if (a.reminderSent) {
+    // แสดงวันที่ส่งบน hover (reminderSentAt = YYYY-MM-DD จาก cron 8โมง หรือ ส่งเอง)
+    const at = a.reminderSentAt ? String(a.reminderSentAt).split('-') : null;
+    const when = at && at[2] ? ` · ${+at[2]}/${+at[1]}/${String((+at[0] + 543) % 100).padStart(2, '0')}` : '';
+    // แยกสี: ส่งอัตโนมัติ (cron 8โมง) = เขียว · ส่งเอง = ฟ้า · เก่า (ไม่มี via) = เขียว
+    if (a.reminderVia === 'manual')
+      return <span className="chip chip-powder" style={base} title={`ส่ง SMS เอง${when}`}>✓ ส่ง SMS เอง</span>;
+    if (a.reminderVia === 'auto')
+      return <span className="chip chip-mint" style={base} title={`ส่ง SMS อัตโนมัติ (ระบบ 8โมง)${when}`}>✓ ส่งอัตโนมัติ</span>;
+    return <span className="chip chip-mint" style={base} title={`ส่ง SMS แล้ว${when}`}>✓ ส่ง SMS แล้ว</span>;
+  }
   if (a.smsAuto === false) return <span className="chip" style={{ ...base, color: 'var(--ink-faint)', border: clickable ? '1px dashed var(--ink-faint)' : undefined }} onClick={onClk} title={title}>🔕 ไม่ส่ง SMS{clickable ? ' · แตะเปิด' : ''}</span>;
   if (past) return null;
   return <span className="chip chip-butter" style={base} onClick={onClk} title={title}>⏳ ส่ง SMS อัตโนมัติ{clickable ? ' · แตะปิด' : ''}</span>;
@@ -316,6 +389,129 @@ function ApptCard({ appt, onUpdate, onEdit, onOpenPet, onSendSms }) {
   );
 }
 
+// ── ช่องหมายเหตุ + ปุ่มตัวเลือกด่วน (chips) + โหมดแก้ไขตัวเลือก ⚙️ ──
+// ใช้ร่วมกันทั้งฟอร์มนัด และ modal ส่ง SMS — เลือกได้หลายอัน (คั่นด้วย "และ")
+function NotePresetField({ type, note, onChange, notePresets, onSavePresets, rows }) {
+  // ตัวเลือกหมายเหตุของประเภทที่เลือก: ใช้ที่แก้ไว้ใน state ก่อน ถ้ายังไม่เคยแก้ใช้ค่าเริ่มต้น
+  const presetList = ((notePresets && notePresets[type] !== undefined)
+    ? notePresets[type] : (DEFAULT_NOTE_PRESETS[type] || [])).map(normPreset);
+  // โหมดแก้ไขตัวเลือก: null = ปิด | array = รายการที่กำลังแก้ (ยังไม่บันทึก)
+  const [editingPresets, setEditingPresets] = useState(null);
+  useEffect(() => { setEditingPresets(null); }, [type]);
+  const miniBtn = {
+    padding: '0 6px', height: 16, lineHeight: '14px', fontSize: 9,
+    border: '1px solid var(--line)', borderRadius: 4, background: '#fff',
+    cursor: 'pointer', color: 'var(--ink-soft)',
+  };
+  const SEP = ' และ ';
+  const segs = (note || '').split(SEP).map((s) => s.trim()).filter(Boolean);
+  const texts = presetList.map((p) => p.text);
+  // เลือกได้หลายอัน — เรียงตามลำดับ preset, เก็บข้อความที่พิมพ์เองไว้ท้าย, คั่นด้วย "และ"
+  const toggle = (opt) => {
+    let next;
+    if (segs.includes(opt)) {
+      next = segs.filter((s) => s !== opt);
+    } else {
+      const customs = segs.filter((s) => !texts.includes(s));
+      const chosen = texts.filter((t) => segs.includes(t) || t === opt);
+      next = [...chosen, ...customs];
+    }
+    onChange(next.join(SEP));
+  };
+
+  return (
+    <Field label="หมายเหตุ (ถ้ามี)">
+      <textarea className="textarea" rows={rows || 2} value={note} onChange={(e) => onChange(e.target.value)}
+        placeholder="เช่น ฉีดยา 3 เข็ม, เตรียมตัวผ่าตัด งดน้ำงดอาหาร..." style={{ resize: 'vertical', minHeight: 58 }} />
+      {(() => {
+        // ── โหมดแก้ไขตัวเลือก: แก้ข้อความ / เปลี่ยนสี / เลื่อนตำแหน่ง / เพิ่ม / ลบ ──
+        if (editingPresets) {
+          const rowsE = editingPresets;
+          const setRow = (i, patch) => setEditingPresets(rowsE.map((r, j) => j === i ? { ...r, ...patch } : r));
+          const move = (i, d) => {
+            const j = i + d; if (j < 0 || j >= rowsE.length) return;
+            const next = [...rowsE]; const t = next[i]; next[i] = next[j]; next[j] = t;
+            setEditingPresets(next);
+          };
+          return (
+            <div style={{ marginTop: 9, border: '1.5px dashed var(--navy)', borderRadius: 'var(--radius-sm)', padding: '11px 13px', display: 'flex', flexDirection: 'column', gap: 8, background: 'var(--paper)' }}>
+              <div style={{ fontWeight: 800, fontSize: 13, color: 'var(--navy)' }}>⚙️ แก้ไขตัวเลือกของ “{type}” — ▲▼ เลื่อนตำแหน่ง · แตะจุดสีเพื่อเปลี่ยนสี</div>
+              {rowsE.map((r, i) => (
+                <div key={i} style={{ display: 'flex', gap: 7, alignItems: 'center' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 2, flexShrink: 0 }}>
+                    <button type="button" disabled={i === 0} onClick={() => move(i, -1)} style={{ ...miniBtn, opacity: i === 0 ? .35 : 1 }}>▲</button>
+                    <button type="button" disabled={i === rowsE.length - 1} onClick={() => move(i, 1)} style={{ ...miniBtn, opacity: i === rowsE.length - 1 ? .35 : 1 }}>▼</button>
+                  </div>
+                  <input className="input" style={{ flex: 1, padding: '7px 11px', fontSize: 13 }} value={r.text}
+                    onChange={(e) => setRow(i, { text: e.target.value })} placeholder="ข้อความตัวเลือก..." />
+                  <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
+                    {Object.keys(PRESET_COLORS).map((c) => (
+                      <button key={c} type="button" onClick={() => setRow(i, { color: c })} style={{
+                        width: 20, height: 20, borderRadius: 99, cursor: 'pointer', padding: 0,
+                        background: PRESET_COLORS[c].on,
+                        border: r.color === c ? '2.5px solid var(--ink)' : '2px solid #fff',
+                        boxShadow: '0 0 0 1px var(--line)',
+                      }} />
+                    ))}
+                  </div>
+                  <button type="button" onClick={() => setEditingPresets(rowsE.filter((_, j) => j !== i))}
+                    style={{ background: 'none', border: 'none', color: 'var(--blush-deep)', fontSize: 15, cursor: 'pointer', padding: '0 4px', flexShrink: 0 }} title="ลบตัวเลือกนี้">✕</button>
+                </div>
+              ))}
+              <button type="button" className="btn btn-sm" style={{ alignSelf: 'flex-start' }}
+                onClick={() => setEditingPresets([...rowsE, { text: '', color: 'navy' }])}>+ เพิ่มตัวเลือก</button>
+              <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                <button type="button" className="btn btn-sm" onClick={() => setEditingPresets(null)}>ยกเลิก</button>
+                <button type="button" className="btn btn-primary btn-sm" onClick={() => {
+                  const clean = rowsE.map((r) => ({ text: String(r.text || '').trim(), color: r.color || 'navy' })).filter((r) => r.text);
+                  onSavePresets && onSavePresets(type, clean);
+                  setEditingPresets(null);
+                }}>💾 บันทึกตัวเลือก</button>
+              </div>
+            </div>
+          );
+        }
+
+        // ── โหมดปกติ: ปุ่ม chips + ปุ่ม ⚙️ แก้ไข ──
+        return (
+          <div style={{ marginTop: 9 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 6 }}>
+              <div style={{ fontSize: 11.5, color: 'var(--ink-faint)' }}>
+                {presetList.length
+                  ? 'แตะเพื่อใส่ในหมายเหตุ — เลือกได้หลายอัน (คั่นด้วย “และ”) · ข้อความ SMS จะตรงกันทุกครั้ง'
+                  : `ประเภท “${type}” ยังไม่มีตัวเลือกด่วน — กด ⚙️ เพื่อเพิ่ม`}
+              </div>
+              {onSavePresets ? (
+                <button type="button" className="btn btn-sm" style={{ flexShrink: 0, fontSize: 11.5, padding: '3px 9px', color: 'var(--ink-soft)' }}
+                  onClick={() => setEditingPresets(presetList.map((p) => ({ ...p })))}>
+                  ⚙️ {presetList.length ? 'แก้ไขตัวเลือก' : 'เพิ่มตัวเลือก'}
+                </button>
+              ) : null}
+            </div>
+            {presetList.length ? (
+              <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap' }}>
+                {presetList.map((p, i) => {
+                  const active = segs.includes(p.text);
+                  const c = PRESET_COLORS[p.color] || PRESET_COLORS.navy;
+                  return (
+                    <button key={i} type="button" onClick={() => toggle(p.text)} style={{
+                      padding: '6px 12px', borderRadius: 'var(--radius-sm)',
+                      border: active ? `2px solid ${c.on}` : `1.5px solid ${c.border}`,
+                      background: active ? c.on : c.offBg,
+                      color: active ? '#fff' : c.text,
+                      fontWeight: active ? 700 : 600, fontSize: 12.5, cursor: 'pointer',
+                    }}>{active ? '✓ ' : ''}{p.text}</button>
+                  );
+                })}
+              </div>
+            ) : null}
+          </div>
+        );
+      })()}
+    </Field>
+  );
+}
+
 // ── Appointment Form Modal ───────────────────────────────────
 function ApptFormModal({ pets, defaultDate, defaultPet, editAppt, onClose, onSave, notePresets, onSavePresets }) {
   const initPet = defaultPet || (editAppt ? { hn: editAppt.hn, name: editAppt.petName, species: editAppt.species, owner: { name: editAppt.ownerName, phone: editAppt.phone } } : null);
@@ -337,13 +533,6 @@ function ApptFormModal({ pets, defaultDate, defaultPet, editAppt, onClose, onSav
     document.addEventListener('mousedown', fn);
     return () => document.removeEventListener('mousedown', fn);
   }, []);
-
-  // ตัวเลือกหมายเหตุของประเภทที่เลือก: ใช้ที่แก้ไว้ใน state ก่อน ถ้ายังไม่เคยแก้ใช้ค่าเริ่มต้น
-  const presetList = ((notePresets && notePresets[f.type] !== undefined)
-    ? notePresets[f.type] : (DEFAULT_NOTE_PRESETS[f.type] || [])).map(normPreset);
-  // โหมดแก้ไขตัวเลือก: null = ปิด | array = รายการที่กำลังแก้ (ยังไม่บันทึก)
-  const [editingPresets, setEditingPresets] = useState(null);
-  useEffect(() => { setEditingPresets(null); }, [f.type]);
 
   const searchPet = (q) => {
     setPetQ(q); setPtOpen(true);
@@ -373,12 +562,6 @@ function ApptFormModal({ pets, defaultDate, defaultPet, editAppt, onClose, onSav
     border: '1.5px solid #F0B97D', background: '#FFF1DF',
     color: '#B5651D', fontWeight: 700, fontSize: 12, cursor: 'pointer',
   };
-  const miniBtn = {
-    padding: '0 6px', height: 16, lineHeight: '14px', fontSize: 9,
-    border: '1px solid var(--line)', borderRadius: 4, background: '#fff',
-    cursor: 'pointer', color: 'var(--ink-soft)',
-  };
-
   const canSave = f.petName.trim() && f.date;
 
   return (
@@ -386,7 +569,7 @@ function ApptFormModal({ pets, defaultDate, defaultPet, editAppt, onClose, onSav
       footer={<>
         <button className="btn" onClick={onClose}>ยกเลิก</button>
         <button className="btn btn-primary" disabled={!canSave}
-          onClick={() => onSave({ ...f, id: f.id || 'apt' + Date.now() })}>
+          onClick={() => onSave(resetReminderIfMoved(editAppt, { ...f, id: f.id || 'apt' + Date.now() }))}>
           <Icon name="check" size={16} /> บันทึกนัด
         </button>
       </>}
@@ -451,111 +634,9 @@ function ApptFormModal({ pets, defaultDate, defaultPet, editAppt, onClose, onSav
         </Field>
 
         <div className="span2">
-        <Field label="หมายเหตุ (ถ้ามี)">
-          <textarea className="textarea" rows="2" value={f.note} onChange={(e) => setF({ ...f, note: e.target.value })}
-            placeholder="เช่น ฉีดยา 3 เข็ม, เตรียมตัวผ่าตัด งดน้ำงดอาหาร..." style={{ resize: 'vertical', minHeight: 58 }} />
-          {(() => {
-            const SEP = ' และ ';
-            const segs = (f.note || '').split(SEP).map((s) => s.trim()).filter(Boolean);
-            const texts = presetList.map((p) => p.text);
-            // เลือกได้หลายอัน — เรียงตามลำดับ preset, เก็บข้อความที่พิมพ์เองไว้ท้าย, คั่นด้วย "และ"
-            const toggle = (opt) => {
-              let next;
-              if (segs.includes(opt)) {
-                next = segs.filter((s) => s !== opt);
-              } else {
-                const customs = segs.filter((s) => !texts.includes(s));
-                const chosen = texts.filter((t) => segs.includes(t) || t === opt);
-                next = [...chosen, ...customs];
-              }
-              setF({ ...f, note: next.join(SEP) });
-            };
-
-            // ── โหมดแก้ไขตัวเลือก: แก้ข้อความ / เปลี่ยนสี / เลื่อนตำแหน่ง / เพิ่ม / ลบ ──
-            if (editingPresets) {
-              const rows = editingPresets;
-              const setRow = (i, patch) => setEditingPresets(rows.map((r, j) => j === i ? { ...r, ...patch } : r));
-              const move = (i, d) => {
-                const j = i + d; if (j < 0 || j >= rows.length) return;
-                const next = [...rows]; const t = next[i]; next[i] = next[j]; next[j] = t;
-                setEditingPresets(next);
-              };
-              return (
-                <div style={{ marginTop: 9, border: '1.5px dashed var(--navy)', borderRadius: 'var(--radius-sm)', padding: '11px 13px', display: 'flex', flexDirection: 'column', gap: 8, background: 'var(--paper)' }}>
-                  <div style={{ fontWeight: 800, fontSize: 13, color: 'var(--navy)' }}>⚙️ แก้ไขตัวเลือกของ “{f.type}” — ▲▼ เลื่อนตำแหน่ง · แตะจุดสีเพื่อเปลี่ยนสี</div>
-                  {rows.map((r, i) => (
-                    <div key={i} style={{ display: 'flex', gap: 7, alignItems: 'center' }}>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: 2, flexShrink: 0 }}>
-                        <button type="button" disabled={i === 0} onClick={() => move(i, -1)} style={{ ...miniBtn, opacity: i === 0 ? .35 : 1 }}>▲</button>
-                        <button type="button" disabled={i === rows.length - 1} onClick={() => move(i, 1)} style={{ ...miniBtn, opacity: i === rows.length - 1 ? .35 : 1 }}>▼</button>
-                      </div>
-                      <input className="input" style={{ flex: 1, padding: '7px 11px', fontSize: 13 }} value={r.text}
-                        onChange={(e) => setRow(i, { text: e.target.value })} placeholder="ข้อความตัวเลือก..." />
-                      <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
-                        {Object.keys(PRESET_COLORS).map((c) => (
-                          <button key={c} type="button" onClick={() => setRow(i, { color: c })} style={{
-                            width: 20, height: 20, borderRadius: 99, cursor: 'pointer', padding: 0,
-                            background: PRESET_COLORS[c].on,
-                            border: r.color === c ? '2.5px solid var(--ink)' : '2px solid #fff',
-                            boxShadow: '0 0 0 1px var(--line)',
-                          }} />
-                        ))}
-                      </div>
-                      <button type="button" onClick={() => setEditingPresets(rows.filter((_, j) => j !== i))}
-                        style={{ background: 'none', border: 'none', color: 'var(--blush-deep)', fontSize: 15, cursor: 'pointer', padding: '0 4px', flexShrink: 0 }} title="ลบตัวเลือกนี้">✕</button>
-                    </div>
-                  ))}
-                  <button type="button" className="btn btn-sm" style={{ alignSelf: 'flex-start' }}
-                    onClick={() => setEditingPresets([...rows, { text: '', color: 'navy' }])}>+ เพิ่มตัวเลือก</button>
-                  <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-                    <button type="button" className="btn btn-sm" onClick={() => setEditingPresets(null)}>ยกเลิก</button>
-                    <button type="button" className="btn btn-primary btn-sm" onClick={() => {
-                      const clean = rows.map((r) => ({ text: String(r.text || '').trim(), color: r.color || 'navy' })).filter((r) => r.text);
-                      onSavePresets && onSavePresets(f.type, clean);
-                      setEditingPresets(null);
-                    }}>💾 บันทึกตัวเลือก</button>
-                  </div>
-                </div>
-              );
-            }
-
-            // ── โหมดปกติ: ปุ่ม chips + ปุ่ม ⚙️ แก้ไข ──
-            return (
-              <div style={{ marginTop: 9 }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 6 }}>
-                  <div style={{ fontSize: 11.5, color: 'var(--ink-faint)' }}>
-                    {presetList.length
-                      ? 'แตะเพื่อใส่ในหมายเหตุ — เลือกได้หลายอัน (คั่นด้วย “และ”) · ข้อความ SMS จะตรงกันทุกครั้ง'
-                      : `ประเภท “${f.type}” ยังไม่มีตัวเลือกด่วน — กด ⚙️ เพื่อเพิ่ม`}
-                  </div>
-                  {onSavePresets ? (
-                    <button type="button" className="btn btn-sm" style={{ flexShrink: 0, fontSize: 11.5, padding: '3px 9px', color: 'var(--ink-soft)' }}
-                      onClick={() => setEditingPresets(presetList.map((p) => ({ ...p })))}>
-                      ⚙️ {presetList.length ? 'แก้ไขตัวเลือก' : 'เพิ่มตัวเลือก'}
-                    </button>
-                  ) : null}
-                </div>
-                {presetList.length ? (
-                  <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap' }}>
-                    {presetList.map((p, i) => {
-                      const active = segs.includes(p.text);
-                      const c = PRESET_COLORS[p.color] || PRESET_COLORS.navy;
-                      return (
-                        <button key={i} type="button" onClick={() => toggle(p.text)} style={{
-                          padding: '6px 12px', borderRadius: 'var(--radius-sm)',
-                          border: active ? `2px solid ${c.on}` : `1.5px solid ${c.border}`,
-                          background: active ? c.on : c.offBg,
-                          color: active ? '#fff' : c.text,
-                          fontWeight: active ? 700 : 600, fontSize: 12.5, cursor: 'pointer',
-                        }}>{active ? '✓ ' : ''}{p.text}</button>
-                      );
-                    })}
-                  </div>
-                ) : null}
-              </div>
-            );
-          })()}
-        </Field>
+          <NotePresetField type={f.type} note={f.note}
+            onChange={(v) => setF({ ...f, note: v })}
+            notePresets={notePresets} onSavePresets={onSavePresets} rows={2} />
         </div>
 
         {/* ปุ่มเปิด/ปิดส่ง SMS เตือนอัตโนมัติ — เปิดไว้เป็นหลัก กดแล้วปิด (สีจาง) */}
@@ -745,12 +826,15 @@ function AppointmentsView({ appointments, pets, onAdd, onUpdate, onOpenPet, push
       {smsModal ? (
         <SmsComposerModal
           title={smsModal.appt ? `ส่ง SMS เตือนนัด — ${smsModal.appt.petName}` : 'ส่ง SMS'}
+          appt={smsModal.appt || undefined}
+          notePresets={notePresets} onSavePresets={onSavePresets}
           initPhone={smsModal.appt ? smsModal.appt.phone : ''}
           initMsg={smsModal.appt ? buildReminderMsg(smsModal.appt) : ''}
           onClose={() => setSmsModal(null)}
-          onSend={(phone, msg) => {
+          onSaveAppt={(d) => { onUpdate(d); pushToast && pushToast('บันทึกนัดแล้ว'); }}
+          onSend={(phone, msg, draft) => {
             openSmsApp(phone, msg);
-            if (smsModal.appt) onUpdate({ ...smsModal.appt, reminderSent: true, reminderSentAt: todayISO() });
+            if (smsModal.appt) onUpdate({ ...(draft || smsModal.appt), reminderSent: true, reminderSentAt: todayISO(), reminderVia: 'manual' });
             pushToast && pushToast(phone ? `เปิดส่ง SMS ถึง ${phone} · คัดลอกข้อความแล้ว` : 'คัดลอกข้อความแล้ว');
             setSmsModal(null);
           }}

@@ -127,7 +127,8 @@ window.VetData = (() => {
     { q: 'Q002', hn: '670318', petName: 'ซีโร่', species: 'สุนัข', type: 'ตรวจรักษา', status: 'wait', time: '09:18', cc: 'นัดติดตามอาการขาหลัง' },
     { q: 'Q003', hn: '690012', petName: 'เฮงเฮง', species: 'สุนัข', type: 'ตรวจรักษา', status: 'exam', time: '08:46', cc: 'ซึม ถ่ายเหลว ไม่กินอาหารตั้งแต่เมื่อคืน' },
     { q: 'Q004', hn: '680231', petName: 'มีตังค์', species: 'แมว', type: 'ตรวจรักษา', status: 'cashier', time: '08:30', cc: 'ตาแฉะ น้ำตาไหล', charges: [['ค่าตรวจรักษา', 1, 300], ['ยาหยอดตา Terramycin', 1, 120]] },
-    { q: 'Q005', hn: '680105', petName: 'ถุงทอง', species: 'แมว', type: 'วัคซีน', status: 'done', time: '08:12', cc: 'วัคซีนประจำปี', paid: 480, doneDate: new Date().toISOString().slice(0, 10) },
+    // doneDate แบบ local — ไม่ใช้ toISOString (UTC+7 ช่วง 00:00–07:00 จะได้วันก่อนหน้า)
+    { q: 'Q005', hn: '680105', petName: 'ถุงทอง', species: 'แมว', type: 'วัคซีน', status: 'done', time: '08:12', cc: 'วัคซีนประจำปี', paid: 480, doneDate: ((d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`)(new Date()) },
   ];
 
   return { vets, pets, services, stock, queue };

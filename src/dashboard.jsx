@@ -891,12 +891,15 @@ function Dashboard({ pets, queue, appointments, admitted, receipts = [], onOpenC
       {smsAppt && typeof SmsComposerModal !== 'undefined' ? (
         <SmsComposerModal
           title={`ส่ง SMS เตือนนัด — ${smsAppt.petName}`}
+          appt={smsAppt}
+          notePresets={notePresets} onSavePresets={onSavePresets}
           initPhone={smsAppt.phone || ''}
           initMsg={typeof buildReminderMsg !== 'undefined' ? buildReminderMsg(smsAppt) : ''}
           onClose={() => setSmsAppt(null)}
-          onSend={(phone, msg) => {
+          onSaveAppt={(d) => { onUpdateAppointment && onUpdateAppointment(d); }}
+          onSend={(phone, msg, draft) => {
             typeof openSmsApp !== 'undefined' && openSmsApp(phone, msg);
-            onUpdateAppointment && onUpdateAppointment({ ...smsAppt, reminderSent: true, reminderSentAt: todayISO() });
+            onUpdateAppointment && onUpdateAppointment({ ...(draft || smsAppt), reminderSent: true, reminderSentAt: todayISO(), reminderVia: 'manual' });
             setSmsAppt(null);
           }} />
       ) : null}

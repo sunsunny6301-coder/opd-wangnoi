@@ -27,8 +27,20 @@ function filterVisits(pets, [s, e]) {
   return out;
 }
 
-function calcMetrics(pets, queue, stock, visits) {
-  const opdRevenue = visits.reduce((s, v) => s + (v.items || []).reduce((ss, [, q, p]) => ss + q * p, 0), 0);
+// ตัด "(YYYY-MM-DD)" ท้ายชื่อรายการของเคสแอดมิด (ถูกเติมตอนรวมบิลจำหน่าย) เพื่อจับกลุ่มชื่อสินค้าให้ตรงกัน
+function cleanItemName(n) { return String(n || '').replace(/\s*\(\d{4}-\d{2}-\d{2}\)\s*$/, '').trim(); }
+function receiptItemTuple(it) {
+  return Array.isArray(it)
+    ? [cleanItemName(it[0]), Number(it[1]) || 1, Number(it[2]) || 0]
+    : [cleanItemName(it.name), Number(it.qty) || 1, Number(it.price) || 0];
+}
+
+// รายรับ/ยอดขาย/แยกประเภท คิดจาก "ใบเสร็จจริง" (opdReceipts = ใบเสร็จ OPD ในช่วง ยกเลิกแล้วถูกลบทิ้งไปก่อน)
+// → เป็นแหล่งความจริงเดียวกับหน้า OPD · เคสแอดมิดคิดที่วันจำหน่าย (วันบนใบเสร็จ) · รวม VAT/แก้บิลตามยอด total
+// visits ใช้เฉพาะนับ "เคสตรวจรักษา" (ต้องมีอาการ/วินิจฉัย ซึ่งเป็นข้อมูลคลินิกไม่มีในใบเสร็จ)
+function calcMetrics(pets, queue, stock, visits, opdReceipts) {
+  opdReceipts = opdReceipts || [];
+  const opdRevenue = opdReceipts.reduce((s, r) => s + (Number(r.total) || 0), 0);
   const profit = stock.reduce((s, stk) => {
     const sold = queue
       .filter((qi) => qi.charges)
@@ -38,41 +50,37 @@ function calcMetrics(pets, queue, stock, visits) {
     return s + sold;
   }, Math.round(opdRevenue * 0.4));
   const profitMargin = opdRevenue > 0 ? Math.round(profit / opdRevenue * 100) : 0;
-  const cases = visits.length;
+  const cases = opdReceipts.length;               // จำนวนเคส = จำนวนใบเสร็จ (เคสที่คิดเงินแล้ว)
   const avgRevenuePerCase = cases > 0 ? Math.round(opdRevenue / cases) : 0;
   const treatmentCases = visits.filter((v) => v.cc || v.dx).length;
   const conversionRate = queue.length > 0 ? Math.round(queue.filter((q) => q.status === 'done').length / queue.length * 100) : 0;
 
   const productSales = {};
-  queue.filter((q) => q.charges).forEach((q) =>
-    q.charges.forEach(([name, qty, price]) => {
-      if (!productSales[name]) productSales[name] = { qty: 0, revenue: 0 };
-      productSales[name].qty += qty; productSales[name].revenue += qty * price;
-    }));
+  opdReceipts.forEach((r) => (r.items || []).forEach((it) => {
+    const [name, qty, price] = receiptItemTuple(it);
+    if (!name) return;
+    if (!productSales[name]) productSales[name] = { qty: 0, revenue: 0 };
+    productSales[name].qty += qty; productSales[name].revenue += qty * price;
+  }));
   const topProducts = Object.entries(productSales)
     .sort((a, b) => b[1].revenue - a[1].revenue).slice(0, 5)
     .map(([name, { qty, revenue }]) => ({ name, qty, revenue }));
 
   const dailyRevenue = {};
-  visits.forEach((v) => {
-    if (!dailyRevenue[v.date]) dailyRevenue[v.date] = 0;
-    dailyRevenue[v.date] += (v.items || []).reduce((s, [, q, p]) => s + q * p, 0);
-  });
+  opdReceipts.forEach((r) => { dailyRevenue[r.date] = (dailyRevenue[r.date] || 0) + (Number(r.total) || 0); });
+
   const serviceBreakdown = {};
-  visits.forEach((v) => {
-    const types = [];
-    (v.items || []).forEach(([name]) => {
-      const n = (name || '').toLowerCase();
-      if (n.includes('วัคซีน') || n.includes('vaccine')) types.push('วัคซีน');
-      else if (n.includes('ผ่าตัด') || n.includes('ทำหมัน') || n.includes('surgery')) types.push('ผ่าตัด');
-      else if (n.includes('เลือด') || n.includes('x-ray') || n.includes('cbc') || n.includes('แล็บ') || n.includes('เคมี')) types.push('แล็บ');
-      else if (n.includes('อาบน้ำ') || n.includes('ตัดขน') || n.includes('groom')) types.push('อาบน้ำ/ตัดขน');
-      else types.push('ตรวจรักษา');
-    });
-    const primary = types[0] || 'ตรวจรักษา';
+  opdReceipts.forEach((r) => {
+    const first = (r.items || [])[0];
+    const n = first ? receiptItemTuple(first)[0].toLowerCase() : '';
+    let primary = 'ตรวจรักษา';
+    if (n.includes('วัคซีน') || n.includes('vaccine')) primary = 'วัคซีน';
+    else if (n.includes('ผ่าตัด') || n.includes('ทำหมัน') || n.includes('surgery')) primary = 'ผ่าตัด';
+    else if (n.includes('เลือด') || n.includes('x-ray') || n.includes('cbc') || n.includes('แล็บ') || n.includes('เคมี')) primary = 'แล็บ';
+    else if (n.includes('อาบน้ำ') || n.includes('ตัดขน') || n.includes('groom')) primary = 'อาบน้ำ/ตัดขน';
     serviceBreakdown[primary] = (serviceBreakdown[primary] || 0) + 1;
   });
-  if (visits.length > 0 && Object.keys(serviceBreakdown).length === 0) serviceBreakdown['ตรวจรักษา'] = visits.length;
+  if (cases > 0 && Object.keys(serviceBreakdown).length === 0) serviceBreakdown['ตรวจรักษา'] = cases;
 
   return { opdRevenue, profit, profitMargin, cases, avgRevenuePerCase, treatmentCases, conversionRate, topProducts, dailyRevenue, serviceBreakdown, productSales };
 }
@@ -521,7 +529,12 @@ function ReportsView({ pets, queue, stock, shopStock = [], services = [], receip
     const keys = activeOpdReceiptKeys(receipts);
     return filterVisits(pets, dateRange).filter((v) => keys.has(visitReceiptKey(v.petHn, v)));
   }, [pets, dateRange, receipts]);
-  const m = useMemo(() => calcMetrics(pets, queue, stock, visits), [pets, queue, stock, visits]);
+  // ใบเสร็จ OPD ในช่วง (แหล่งความจริงของยอดเงิน — ตรงกับหน้า OPD · ยกเลิกแล้วถูกลบทิ้งจาก receipts ไปก่อน)
+  const opdReceipts = useMemo(() => {
+    const [s, e] = dateRange;
+    return (receipts || []).filter((r) => (r.type || 'opd') === 'opd' && r.date >= s && r.date <= e);
+  }, [receipts, dateRange]);
+  const m = useMemo(() => calcMetrics(pets, queue, stock, visits, opdReceipts), [pets, queue, stock, visits, opdReceipts]);
 
   const kpiCards = [
     { label: 'รายรับ OPD', value: fmtB(m.opdRevenue), sub: null, cls: 'tint-navy' },
