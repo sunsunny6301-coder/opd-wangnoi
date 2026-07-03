@@ -695,12 +695,14 @@ function CaseView({ pet, queueItem, vets, services, stock, shopStock = [], allPe
                 const vTotal = v.items.reduce((s, [, q, p]) => s + q * p, 0);
                 const isFirst = i === pet.visits.length - 1;
                 return (
-                  <div key={i} style={{ borderLeft: '3px solid #E5C97E', paddingLeft: 13, position: 'relative' }}>
-                    {isFirst && <span className="chip chip-butter" style={{ position: 'absolute', top: -8, left: -12, fontSize: 11 }}>ครั้งแรก</span>}
+                  <div key={i} style={{ borderLeft: '3px solid #E5C97E', paddingLeft: 13 }}>
                     <button onClick={() => setExpandedVisits((prev) => ({ ...prev, [i]: !isExpanded }))}
-                      style={{ width: '100%', textAlign: 'left', background: 'none', border: 'none', cursor: 'pointer', padding: 0, display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: isExpanded ? 6 : 3 }}>
-                      <div style={{ fontWeight: 800, fontSize: 15, color: '#7A5E00' }}>{dateTH(v.date)}</div>
-                      <span style={{ fontSize: 11, color: 'var(--ink-faint)', display: 'inline-block', transition: 'transform .2s', transform: isExpanded ? 'rotate(180deg)' : 'none' }}>▼</span>
+                      style={{ width: '100%', textAlign: 'left', background: 'none', border: 'none', cursor: 'pointer', padding: 0, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, marginBottom: isExpanded ? 6 : 3 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 7, minWidth: 0, flexWrap: 'wrap' }}>
+                        <span style={{ fontWeight: 800, fontSize: 15, color: '#7A5E00' }}>{dateTH(v.date)}</span>
+                        {isFirst && <span className="chip chip-butter" style={{ fontSize: 10.5 }}>ครั้งแรก</span>}
+                      </div>
+                      <span style={{ fontSize: 11, color: 'var(--ink-faint)', display: 'inline-block', flexShrink: 0, transition: 'transform .2s', transform: isExpanded ? 'rotate(180deg)' : 'none' }}>▼</span>
                     </button>
                     {!isExpanded && (
                       <div style={{ fontSize: 12, color: 'var(--ink-soft)', marginBottom: 4, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
@@ -913,11 +915,14 @@ function CaseView({ pet, queueItem, vets, services, stock, shopStock = [], allPe
           initMsg={typeof buildReminderMsg !== 'undefined' ? buildReminderMsg(smsAppt) : ''}
           onClose={() => setSmsAppt(null)}
           onSaveAppt={(d) => { onUpdateAppointment && onUpdateAppointment(d); pushToast && pushToast('บันทึกนัดแล้ว'); }}
-          onSend={(phone, msg, draft) => {
-            typeof openSmsApp !== 'undefined' && openSmsApp(phone, msg);
-            onUpdateAppointment && onUpdateAppointment({ ...(draft || smsAppt), reminderSent: true, reminderSentAt: todayISO(), reminderVia: 'manual' });
-            pushToast && pushToast(phone ? `เปิดส่ง SMS ถึง ${phone} · คัดลอกข้อความแล้ว` : 'คัดลอกข้อความแล้ว');
-            setSmsAppt(null);
+          onSend={(phone, msgList, draft, result) => {
+            if (result && result.ok) {
+              onUpdateAppointment && onUpdateAppointment({ ...(draft || smsAppt), reminderSent: true, reminderSentAt: todayISO(), reminderVia: 'manual' });
+              pushToast && pushToast(`✅ ส่ง SMS สำเร็จ ${result.sent} ข้อความ ถึง ${phone}`);
+              setSmsAppt(null);
+            } else {
+              pushToast && pushToast(`❌ ส่งไม่สำเร็จ: ${(result && result.error) || 'ลองใหม่อีกครั้ง'}`);
+            }
           }}
         />
       ) : null}

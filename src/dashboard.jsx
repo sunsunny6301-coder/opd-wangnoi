@@ -664,7 +664,7 @@ function FgCats() {
   );
 }
 
-function Dashboard({ pets, queue, appointments, admitted, receipts = [], onOpenCase, onOpenPet, onMove, onPay, onWalkIn, onUpdateAppointment, onDischargeAdmitted, onUpdateAdmitted, onOpenAdmittedCase, onCancelQueue, onCancelAdmit, notePresets, onSavePresets }) {
+function Dashboard({ pets, queue, appointments, admitted, receipts = [], onOpenCase, onOpenPet, onMove, onPay, onWalkIn, onUpdateAppointment, onDischargeAdmitted, onUpdateAdmitted, onOpenAdmittedCase, onCancelQueue, onCancelAdmit, notePresets, onSavePresets, pushToast }) {
   const [showWalkIn, setShowWalkIn] = useState(false);
   const [walkInPrefillHn, setWalkInPrefillHn] = useState(null);
   // วันที่ของแผงนัด (เลื่อนดูวันก่อน/ถัดไปได้ด้วยลูกศร) — เริ่มที่วันนี้
@@ -897,10 +897,14 @@ function Dashboard({ pets, queue, appointments, admitted, receipts = [], onOpenC
           initMsg={typeof buildReminderMsg !== 'undefined' ? buildReminderMsg(smsAppt) : ''}
           onClose={() => setSmsAppt(null)}
           onSaveAppt={(d) => { onUpdateAppointment && onUpdateAppointment(d); }}
-          onSend={(phone, msg, draft) => {
-            typeof openSmsApp !== 'undefined' && openSmsApp(phone, msg);
-            onUpdateAppointment && onUpdateAppointment({ ...(draft || smsAppt), reminderSent: true, reminderSentAt: todayISO(), reminderVia: 'manual' });
-            setSmsAppt(null);
+          onSend={(phone, msgList, draft, result) => {
+            if (result && result.ok) {
+              onUpdateAppointment && onUpdateAppointment({ ...(draft || smsAppt), reminderSent: true, reminderSentAt: todayISO(), reminderVia: 'manual' });
+              pushToast && pushToast(`✅ ส่ง SMS สำเร็จ ${result.sent} ข้อความ`);
+              setSmsAppt(null);
+            } else {
+              pushToast && pushToast(`❌ ส่งไม่สำเร็จ: ${(result && result.error) || 'ลองใหม่'}`);
+            }
           }} />
       ) : null}
     </div>);

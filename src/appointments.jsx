@@ -110,40 +110,54 @@ function shortenDetail(detail, tight) {
   return parsed.map((p) => p[1] ? `${p[0]}${sep}${p[1]}` : p[0]).join('และ');
 }
 
-// ข้อความ SMS เตือนนัด — สไตล์อบอุ่น: "น้อง{ชื่อ} ถึงนัด{รายละเอียด} {วันที่} นี้นะครับ"
-// ลำดับ auto-fit: ชื่อเต็ม → ย่อชื่อ(เว้นวรรค) → ย่อชื่อ(ติดกัน) · แต่ละชั้นลอง วันไทย→วันตัวเลข→ตัดท้าย
-function buildReminderMsg(a) {
-  const name = a.petName || '';
-  const isVax = a.type === 'วัคซีน';
-  const detailFull = noteForSms(a.note, isVax);
+// สร้าง 1 ข้อความ — สไตล์อบอุ่น: "น้อง{ชื่อ} ถึงนัด{รายละเอียด} {วันที่} นี้นะครับ"
+// ลำดับ auto-fit: วันไทย→วันตัวเลข→ตัดท้าย · ถ้าวัคซีนยังเกิน ค่อยย่อชื่อวัคซีน(เว้นวรรค→ติดกัน)
+function buildOneMsg(name, isVax, effType, detailFull, date) {
   const detailSpaced = isVax ? shortenDetail(detailFull, false) : detailFull;
   const detailTight = isVax ? shortenDetail(detailFull, true) : detailFull;
   const bodyOf = (detail) => isVax
-    ? 'ฉีด' + (detail || a.type || '')
-    : (a.type && a.type !== 'อื่นๆ') ? a.type + (detail ? ' ' + detail : '') : (detail || '');
+    ? 'ฉีด' + (detail || 'วัคซีน')
+    : (effType && effType !== 'อื่นๆ') ? effType + (detail ? ' ' + detail : '') : (detail || '');
   const mk = (detail, numericDate, withTail) => {
-    let s = `น้อง${name} ถึงนัด${bodyOf(detail)} ${smsDate(a.date, numericDate)}`;
+    let s = `น้อง${name} ถึงนัด${bodyOf(detail)} ${smsDate(date, numericDate)}`;
     if (withTail) s += ' นี้นะครับ';
     return s.replace(/\s+/g, ' ').trim();
   };
   const attempts = [
     mk(detailFull, false, true), mk(detailFull, true, true), mk(detailFull, true, false),       // ชื่อเต็ม
-    mk(detailSpaced, false, true), mk(detailSpaced, true, true), mk(detailSpaced, true, false), // ย่อชื่อ + เว้นวรรค
-    mk(detailTight, true, true), mk(detailTight, true, false),                                  // ย่อชื่อ + ติดกัน
+    mk(detailSpaced, false, true), mk(detailSpaced, true, true), mk(detailSpaced, true, false), // ย่อ + เว้นวรรค
+    mk(detailTight, true, true), mk(detailTight, true, false),                                  // ย่อ + ติดกัน
   ];
   for (const m of attempts) if (m.length <= 70) return m;
   return attempts[attempts.length - 1];
 }
 
-// เปิดแอปส่งข้อความในเครื่อง (มือถือ) + คัดลอกข้อความสำรอง (เดสก์ท็อป)
-function openSmsApp(phone, msg) {
-  try { navigator.clipboard && navigator.clipboard.writeText(msg); } catch (e) {}
-  const clean = String(phone || '').replace(/[^0-9+]/g, '');
-  if (clean) {
-    const link = `sms:${clean}?body=${encodeURIComponent(msg)}`;
-    const el = document.createElement('a'); el.href = link; document.body.appendChild(el); el.click(); el.remove();
+// คืน "อาเรย์ข้อความ" 1–2 ข้อความ — แยกคนละหมวด (ฉีดวัคซีน ↔ ยา/อื่นๆ) = คนละข้อความ
+// วัคซีนหลายตัว (วัคซีนรวม+พิษ) = รวมอยู่ข้อความเดียว · ตัด " + ..." ที่พิมพ์ต่อท้ายวัคซีนทิ้ง
+function buildReminderMsgs(a) {
+  const name = a.petName || '';
+  const isVaxType = a.type === 'วัคซีน';
+  const segs = String(a.note || '').split(' และ ').map((s) => s.trim()).filter(Boolean);
+  const vaxSegs = [], otherSegs = [];
+  for (const seg of segs) {
+    const plus = seg.indexOf(' + ');
+    const core = plus >= 0 ? seg.slice(0, plus).trim() : seg;
+    if (core.indexOf('วัคซีน') === 0) vaxSegs.push(core);      // เป็นวัคซีน → กลุ่มฉีดวัคซีน
+    else otherSegs.push(seg);                                  // อื่นๆ → กลุ่มยา/อื่นๆ
   }
+  const msgs = [];
+  if (vaxSegs.length) msgs.push(buildOneMsg(name, true, 'วัคซีน', vaxSegs.join(' และ '), a.date));
+  if (otherSegs.length) {
+    // หมวดอื่น: ถ้านัดเป็น "วัคซีน" ให้เนื้อหาเป็นหมายเหตุล้วน (อื่นๆ) · ถ้าเป็นประเภทอื่นใช้ประเภทนำหน้า
+    const effType = isVaxType ? 'อื่นๆ' : a.type;
+    msgs.push(buildOneMsg(name, false, effType, otherSegs.join(' และ '), a.date));
+  }
+  if (!msgs.length) msgs.push(buildOneMsg(name, isVaxType, a.type, '', a.date)); // ไม่มีหมายเหตุ → ข้อความเดียวตามประเภท
+  return msgs;
 }
+
+// ข้อความเดียว (รวมทุกข้อความด้วยขึ้นบรรทัดใหม่) — เผื่อที่เดิมที่ต้องการสตริงเดียว
+function buildReminderMsg(a) { return buildReminderMsgs(a).join('\n'); }
 
 // เลื่อนนัด (วันเปลี่ยน) ทั้งที่เคยส่ง SMS แล้ว → ล้างสถานะส่ง ให้ระบบกลับมาเตือนวันนัดใหม่ได้อีกครั้ง
 // (ถ้าไม่ล้าง cron จะข้ามเพราะ reminderSent=true และป้ายยังโชว์ "✓ ส่งแล้ว" ทั้งที่วันใหม่ยังไม่เคยเตือน)
@@ -162,22 +176,51 @@ function SmsComposerModal({ title, initPhone, initMsg, appt, notePresets, onSave
   const editMode = !!appt;
   const [draft, setDraft] = useState(appt ? { ...appt } : null);
   const [phone, setPhone] = useState(initPhone || (appt && appt.phone) || '');
-  const [msg, setMsg] = useState(initMsg || '');
+  // msgs = อาเรย์ข้อความ (นัดที่มีหลายหมวดจะได้หลายข้อความ) · โหมดส่งเอง = ข้อความเดียวแก้เอง
+  const [msgs, setMsgs] = useState(() => editMode ? buildReminderMsgs(appt) : [initMsg || '']);
 
   // โหมดแก้นัด: ข้อความสร้างอัตโนมัติจากรายละเอียดนัด — เปลี่ยนประเภท/หมายเหตุ/วันที่ แล้วอัปเดตทันที
   // (พิมพ์แก้ข้อความเองได้ แต่จะถูกสร้างใหม่เมื่อแก้รายละเอียดนัดอีกครั้ง)
   useEffect(() => {
     if (!editMode) return;
-    setMsg(buildReminderMsg(draft));
+    setMsgs(buildReminderMsgs(draft));
   }, [editMode, draft && draft.type, draft && draft.note, draft && draft.date, draft && draft.petName]);
 
   const clean = phone.replace(/[^0-9+]/g, '');
-  // ไทย: 1 ข้อความ = 70 ตัว · ถ้าต่อหลายท่อนคิด 67 ตัว/ท่อน (คิดเครดิตตามจำนวนท่อน)
-  const len = msg.length;
-  const over = len > 70;
-  const segments = over ? Math.ceil(len / 67) : 1;
-  const pct = Math.min(100, Math.round((len / 70) * 100));
-  const copyMsg = () => { try { navigator.clipboard && navigator.clipboard.writeText(msg); } catch (e) {} };
+  const setMsgAt = (i, v) => setMsgs((prev) => prev.map((m, j) => j === i ? v : m));
+  // นับเครดิต: ไทย 1 ข้อความ = 70 ตัว · เกินคิด 67 ตัว/ท่อน · รวมทุกข้อความ
+  const creditsOf = (m) => m.length > 70 ? Math.ceil(m.length / 67) : 1;
+  const totalCredits = msgs.reduce((s, m) => s + (m.trim() ? creditsOf(m) : 0), 0);
+  const canSend = msgs.some((m) => m.trim());
+  const copyAll = () => { try { navigator.clipboard && navigator.clipboard.writeText(msgs.filter((m) => m.trim()).join('\n\n')); } catch (e) {} };
+  const copyOne = (m) => { try { navigator.clipboard && navigator.clipboard.writeText(m); } catch (e) {} };
+
+  // ── ส่งจริงผ่าน SMS2PRO (server ถือ key) — ยืนยันก่อนเพราะใช้เครดิตจริง ──
+  const [sending, setSending] = useState(false);
+  const doSend = async () => {
+    const list = msgs.map((m) => m.trim()).filter(Boolean);
+    if (!list.length) return;
+    if (!clean) { alert('กรุณากรอกเบอร์โทร'); return; }
+    const credits = list.reduce((s, m) => s + creditsOf(m), 0);
+    if (!window.confirm(`ส่ง SMS ${list.length} ข้อความ (${credits} เครดิต) ไปที่ ${clean} ผ่าน WangNoiVet?`)) return;
+    setSending(true);
+    let result;
+    try {
+      const resp = await fetch('/api/send-sms', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone: clean, messages: list }),
+      });
+      const data = await resp.json().catch(() => ({}));
+      result = resp.ok && data.ok
+        ? { ok: true, sent: data.sent }
+        : { ok: false, error: (data && data.error) || `ส่งไม่สำเร็จ (${resp.status})`, data };
+    } catch (e) {
+      result = { ok: false, error: 'เชื่อมต่อไม่ได้: ' + e.message };
+    } finally {
+      setSending(false);
+    }
+    onSend(clean, list, draft, result);
+  };
 
   const setField = (patch) => setDraft((d) => ({ ...d, ...patch }));
   // ปุ่มนัดเร็ว — นับจากวันนี้แบบ local (ไม่ใช้ toISOString กันวันเพี้ยน UTC+7)
@@ -187,13 +230,16 @@ function SmsComposerModal({ title, initPhone, initMsg, appt, notePresets, onSave
     setField({ date: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}` });
   };
   const quickDateBtn = { padding: '5px 11px', borderRadius: 'var(--radius-sm)', border: '1.5px solid #F0B97D', background: '#FFF1DF', color: '#B5651D', fontWeight: 700, fontSize: 12, cursor: 'pointer' };
+  const multi = msgs.length > 1;
 
   return (
     <Modal title={title || 'ส่ง SMS'} onClose={onClose} footer={<>
       <button className="btn" onClick={onClose}>ปิด</button>
       {editMode && onSaveAppt ? <button className="btn" onClick={() => { onSaveAppt(resetReminderIfMoved(appt, draft)); onClose(); }}>💾 บันทึกนัด</button> : null}
-      <button className="btn" onClick={copyMsg}>📋 คัดลอกข้อความ</button>
-      <button className="btn btn-primary" disabled={!msg.trim()} onClick={() => onSend(clean, msg, draft)}>📱 ส่ง SMS</button>
+      <button className="btn" onClick={copyAll}>📋 คัดลอก{multi ? 'ทั้งหมด' : 'ข้อความ'}</button>
+      <button className="btn btn-primary" disabled={!canSend || sending} onClick={doSend}>
+        {sending ? '⏳ กำลังส่ง...' : `📲 ส่ง SMS${multi ? ` ${msgs.filter((m) => m.trim()).length} ข้อความ` : ''}`}
+      </button>
     </>}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 13 }}>
         <Field label="เบอร์โทร">
@@ -229,19 +275,40 @@ function SmsComposerModal({ title, initPhone, initMsg, appt, notePresets, onSave
           </div>
         ) : null}
 
-        <Field label={editMode ? 'ข้อความ SMS (สร้างอัตโนมัติ · แก้เพิ่มได้)' : 'ข้อความ (แก้ไขได้)'}>
-          <textarea className="textarea" rows={editMode ? '3' : '5'} value={msg} onChange={(e) => setMsg(e.target.value)} placeholder="พิมพ์ข้อความที่จะส่ง..." />
-        </Field>
-        <div>
-          <div style={{ height: 8, borderRadius: 99, background: 'var(--line)', overflow: 'hidden' }}>
-            <div style={{ height: '100%', width: pct + '%', background: over ? 'var(--blush-deep)' : 'var(--mint-deep)', transition: 'width .15s' }} />
+        {multi ? (
+          <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--navy)', background: 'var(--navy-soft)', borderRadius: 'var(--radius-sm)', padding: '7px 11px' }}>
+            📨 นัดนี้มี {msgs.length} หมวด → ส่งแยก {msgs.length} ข้อความ (คนละ 1 เครดิต)
           </div>
-          <div style={{ fontSize: 12.5, fontWeight: 700, marginTop: 5, color: over ? 'var(--blush-deep)' : 'var(--mint-deep)' }}>
-            {len}/70 ตัวอักษร · {over ? `${segments} ข้อความ = ${segments} เครดิต (เกิน 70)` : '1 ข้อความ = 1 เครดิต ✓'}
-          </div>
-        </div>
+        ) : null}
+
+        {msgs.map((m, i) => {
+          const len = m.length, over = len > 70, pct = Math.min(100, Math.round((len / 70) * 100));
+          return (
+            <Field key={i} label={
+              multi ? `ข้อความ ${i + 1}/${msgs.length}` : (editMode ? 'ข้อความ SMS (สร้างอัตโนมัติ · แก้เพิ่มได้)' : 'ข้อความ (แก้ไขได้)')
+            }>
+              <textarea className="textarea" rows={editMode ? '3' : '5'} value={m} onChange={(e) => setMsgAt(i, e.target.value)} placeholder="พิมพ์ข้อความที่จะส่ง..." />
+              <div style={{ marginTop: 6 }}>
+                <div style={{ height: 8, borderRadius: 99, background: 'var(--line)', overflow: 'hidden' }}>
+                  <div style={{ height: '100%', width: pct + '%', background: over ? 'var(--blush-deep)' : 'var(--mint-deep)', transition: 'width .15s' }} />
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 5, gap: 8 }}>
+                  <span style={{ fontSize: 12.5, fontWeight: 700, color: over ? 'var(--blush-deep)' : 'var(--mint-deep)' }}>
+                    {len}/70 ตัวอักษร · {over ? `${creditsOf(m)} ข้อความ = ${creditsOf(m)} เครดิต (เกิน 70)` : '1 เครดิต ✓'}
+                  </span>
+                  {multi ? <button type="button" className="btn btn-sm" style={{ flexShrink: 0, fontSize: 11.5, padding: '2px 8px' }} onClick={() => copyOne(m)}>📋 คัดลอก</button> : null}
+                </div>
+              </div>
+            </Field>
+          );
+        })}
+
+        {multi ? (
+          <div style={{ fontSize: 12.5, fontWeight: 800, color: 'var(--ink)', textAlign: 'right' }}>รวม {totalCredits} เครดิต</div>
+        ) : null}
+
         <div style={{ fontSize: 12, color: 'var(--ink-soft)', background: 'var(--paper)', borderRadius: 'var(--radius-sm)', padding: '8px 11px' }}>
-          💡 บนมือถือจะเปิดแอปข้อความให้พร้อมเบอร์+ข้อความ · บนคอมจะคัดลอกข้อความไว้ให้วาง
+          📲 กด "ส่ง SMS" = ส่งเข้าเบอร์จริงทันทีผ่าน WangNoiVet (ใช้เครดิต) · หรือกด "คัดลอก" ไปส่งเองก็ได้
         </div>
       </div>
     </Modal>
@@ -832,11 +899,14 @@ function AppointmentsView({ appointments, pets, onAdd, onUpdate, onOpenPet, push
           initMsg={smsModal.appt ? buildReminderMsg(smsModal.appt) : ''}
           onClose={() => setSmsModal(null)}
           onSaveAppt={(d) => { onUpdate(d); pushToast && pushToast('บันทึกนัดแล้ว'); }}
-          onSend={(phone, msg, draft) => {
-            openSmsApp(phone, msg);
-            if (smsModal.appt) onUpdate({ ...(draft || smsModal.appt), reminderSent: true, reminderSentAt: todayISO(), reminderVia: 'manual' });
-            pushToast && pushToast(phone ? `เปิดส่ง SMS ถึง ${phone} · คัดลอกข้อความแล้ว` : 'คัดลอกข้อความแล้ว');
-            setSmsModal(null);
+          onSend={(phone, msgList, draft, result) => {
+            if (result && result.ok) {
+              if (smsModal.appt) onUpdate({ ...(draft || smsModal.appt), reminderSent: true, reminderSentAt: todayISO(), reminderVia: 'manual' });
+              pushToast && pushToast(`✅ ส่ง SMS สำเร็จ ${result.sent} ข้อความ ถึง ${phone}`);
+              setSmsModal(null);
+            } else {
+              pushToast && pushToast(`❌ ส่งไม่สำเร็จ: ${(result && result.error) || 'ลองใหม่อีกครั้ง'}`);
+            }
           }}
         />
       ) : null}

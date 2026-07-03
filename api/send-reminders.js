@@ -85,18 +85,15 @@ function shortenDetail(detail, tight) {
   }
   return parsed.map((p) => p[1] ? `${p[0]}${sep}${p[1]}` : p[0]).join('และ');
 }
-// สร้างข้อความเตือน — ชื่อเต็ม → ย่อชื่อ(เว้นวรรค) → ย่อชื่อ(ติดกัน) · แต่ละชั้นลอง วันไทย→ตัวเลข→ตัดท้าย
-function buildReminderMsg(appt) {
-  const name = appt.petName || '';
-  const isVax = appt.type === 'วัคซีน';
-  const detailFull = noteForSms(appt.note, isVax);
+// สร้าง 1 ข้อความ — ชื่อเต็ม → ย่อ(เว้นวรรค) → ย่อ(ติดกัน) · แต่ละชั้นลอง วันไทย→ตัวเลข→ตัดท้าย
+function buildOneMsg(name, isVax, effType, detailFull, date) {
   const detailSpaced = isVax ? shortenDetail(detailFull, false) : detailFull;
   const detailTight = isVax ? shortenDetail(detailFull, true) : detailFull;
   const bodyOf = (detail) => isVax
-    ? 'ฉีด' + (detail || appt.type || '')
-    : (appt.type && appt.type !== 'อื่นๆ') ? appt.type + (detail ? ' ' + detail : '') : (detail || '');
+    ? 'ฉีด' + (detail || 'วัคซีน')
+    : (effType && effType !== 'อื่นๆ') ? effType + (detail ? ' ' + detail : '') : (detail || '');
   const mk = (detail, numericDate, withTail) => {
-    let s = `น้อง${name} ถึงนัด${bodyOf(detail)} ${smsDate(appt.date, numericDate)}`;
+    let s = `น้อง${name} ถึงนัด${bodyOf(detail)} ${smsDate(date, numericDate)}`;
     if (withTail) s += ' นี้นะครับ';
     return s.replace(/\s+/g, ' ').trim();
   };
@@ -107,6 +104,25 @@ function buildReminderMsg(appt) {
   ];
   for (const m of attempts) if (m.length <= 70) return m;
   return attempts[attempts.length - 1];
+}
+
+// คืนอาเรย์ข้อความ 1–2 ข้อความ — คนละหมวด (ฉีดวัคซีน ↔ ยา/อื่นๆ) = คนละข้อความ · วัคซีนหลายตัวรวมข้อความเดียว
+function buildReminderMsgs(appt) {
+  const name = appt.petName || '';
+  const isVaxType = appt.type === 'วัคซีน';
+  const segs = String(appt.note || '').split(' และ ').map((s) => s.trim()).filter(Boolean);
+  const vaxSegs = [], otherSegs = [];
+  for (const seg of segs) {
+    const plus = seg.indexOf(' + ');
+    const core = plus >= 0 ? seg.slice(0, plus).trim() : seg;
+    if (core.indexOf('วัคซีน') === 0) vaxSegs.push(core);
+    else otherSegs.push(seg);
+  }
+  const msgs = [];
+  if (vaxSegs.length) msgs.push(buildOneMsg(name, true, 'วัคซีน', vaxSegs.join(' และ '), appt.date));
+  if (otherSegs.length) msgs.push(buildOneMsg(name, false, isVaxType ? 'อื่นๆ' : appt.type, otherSegs.join(' และ '), appt.date));
+  if (!msgs.length) msgs.push(buildOneMsg(name, isVaxType, appt.type, '', appt.date));
+  return msgs;
 }
 
 // ส่ง SMS ผ่าน SMS2PRO REST API
@@ -211,12 +227,19 @@ module.exports = async function handler(req, res) {
       continue;
     }
 
-    const msg = buildReminderMsg(appt);
+    // นัดที่มีหลายหมวด (ฉีดวัคซีน + ยา/อื่นๆ) → ส่งแยกหลายข้อความ
+    const msgList = buildReminderMsgs(appt);
 
     try {
-      const r = await sendViaSms2Pro(phone, msg, SMS_KEY, SMS_SENDER);
-      results.push({ id: appt.id, petName: appt.petName, phone, msg, ...r });
-      if (r.ok) sentIds.add(appt.id);
+      const perMsg = [];
+      let allOk = true;
+      for (const msg of msgList) {
+        const r = await sendViaSms2Pro(phone, msg, SMS_KEY, SMS_SENDER);
+        perMsg.push({ msg, ...r });
+        if (!r.ok) allOk = false;
+      }
+      results.push({ id: appt.id, petName: appt.petName, phone, count: msgList.length, ok: allOk, messages: perMsg });
+      if (allOk) sentIds.add(appt.id); // มาร์คส่งแล้วเฉพาะเมื่อทุกข้อความสำเร็จ (กันส่งซ้ำ)
     } catch (e) {
       results.push({ id: appt.id, petName: appt.petName, phone, ok: false, error: e.message });
     }

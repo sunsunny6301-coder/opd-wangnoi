@@ -763,7 +763,7 @@ function App() {
           onOpenCase={openCase} onOpenPet={openPet}
           onMove={moveQ} onPay={setPayFor} onWalkIn={walkIn}
           onUpdateAppointment={updateAppointment} onDischargeAdmitted={dischargeAdmitted} onUpdateAdmitted={updateAdmitted} onOpenAdmittedCase={openAdmittedCase} onCancelQueue={cancelQueue} onCancelAdmit={cancelAdmit}
-          notePresets={notePresets} onSavePresets={saveNotePresets} /> :
+          notePresets={notePresets} onSavePresets={saveNotePresets} pushToast={pushToast} /> :
           null}
           {page === 'case' && casePet ?
           <CaseView pet={casePet} queueItem={caseQItem}
