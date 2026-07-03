@@ -125,6 +125,12 @@ function buildReminderMsgs(appt) {
   return msgs;
 }
 
+// ข้อความจริงที่จะส่ง — ถ้ามี smsText (เจ้าหน้าที่แก้เอง) ใช้อันนั้น ไม่งั้นสร้างอัตโนมัติ (ต้องตรงกับ appointments.jsx)
+function messagesForAppt(a) {
+  const custom = a && Array.isArray(a.smsText) ? a.smsText.map((m) => String(m || '').trim()).filter(Boolean) : [];
+  return custom.length ? custom : buildReminderMsgs(a);
+}
+
 // ส่ง SMS ผ่าน SMS2PRO REST API (Send outbound SMS)
 // endpoint: POST https://portal.sms2pro.com/sms-api/message-sms/send
 // auth = Bearer API Key · body JSON: { recipient, sender_name, message }
@@ -233,8 +239,8 @@ module.exports = async function handler(req, res) {
       continue;
     }
 
-    // นัดที่มีหลายหมวด (ฉีดวัคซีน + ยา/อื่นๆ) → ส่งแยกหลายข้อความ
-    const msgList = buildReminderMsgs(appt);
+    // นัดที่มีหลายหมวด (ฉีดวัคซีน + ยา/อื่นๆ) → ส่งแยกหลายข้อความ · เคารพข้อความที่แก้เอง (smsText)
+    const msgList = messagesForAppt(appt);
 
     try {
       const perMsg = [];

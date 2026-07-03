@@ -159,6 +159,50 @@ function buildReminderMsgs(a) {
 // ข้อความเดียว (รวมทุกข้อความด้วยขึ้นบรรทัดใหม่) — เผื่อที่เดิมที่ต้องการสตริงเดียว
 function buildReminderMsg(a) { return buildReminderMsgs(a).join('\n'); }
 
+// ข้อความจริงที่จะส่งของนัด — ถ้ามี smsText (เจ้าหน้าที่แก้เอง) ใช้อันนั้น · ไม่งั้นสร้างอัตโนมัติ
+function messagesForAppt(a) {
+  const custom = a && Array.isArray(a.smsText) ? a.smsText.map((m) => String(m || '').trim()).filter(Boolean) : [];
+  return custom.length ? custom : buildReminderMsgs(a);
+}
+
+// ── ช่องพรีวิว/แก้ข้อความ SMS ในฟอร์มนัด — โชว์ข้อความที่จะส่ง + ตัวนับ 70 · แก้เองเก็บลง smsText ──
+// appt = ออบเจ็กต์นัด (มี petName/type/note/date/smsText) · onChangeSmsText(arr|null) = อัปเดต smsText
+function SmsPreviewField({ appt, onChangeSmsText }) {
+  const auto = useMemo(() => buildReminderMsgs(appt), [appt.petName, appt.type, appt.note, appt.date]);
+  const editing = Array.isArray(appt.smsText) && appt.smsText.filter(Boolean).length > 0;
+  const msgs = editing ? appt.smsText : auto;
+  const multi = msgs.length > 1;
+  const creditsOf = (m) => m.length > 70 ? Math.ceil(m.length / 67) : 1;
+  const total = msgs.reduce((s, m) => s + (m.trim() ? creditsOf(m) : 0), 0);
+  const setMsgAt = (i, v) => { const base = [...msgs]; base[i] = v; onChangeSmsText(base); };
+  return (
+    <Field label="ตัวอย่างข้อความ SMS ที่จะส่ง — แก้ได้">
+      {multi ? <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--navy)', background: 'var(--navy-soft)', borderRadius: 'var(--radius-sm)', padding: '6px 10px', marginBottom: 7 }}>📨 นัดนี้มี {msgs.length} หมวด → ส่งแยก {msgs.length} ข้อความ</div> : null}
+      {msgs.map((m, i) => {
+        const len = m.length, over = len > 70, pct = Math.min(100, Math.round((len / 70) * 100));
+        return (
+          <div key={i} style={{ marginBottom: 9 }}>
+            {multi ? <div style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--ink-soft)', marginBottom: 3 }}>ข้อความ {i + 1}/{msgs.length}</div> : null}
+            <textarea className="textarea" rows="2" value={m} onChange={(e) => setMsgAt(i, e.target.value)} style={{ minHeight: 52 }} />
+            <div style={{ height: 7, borderRadius: 99, background: 'var(--line)', overflow: 'hidden', marginTop: 5 }}>
+              <div style={{ height: '100%', width: pct + '%', background: over ? 'var(--blush-deep)' : 'var(--mint-deep)', transition: 'width .15s' }} />
+            </div>
+            <div style={{ fontSize: 12, fontWeight: 700, marginTop: 3, color: over ? 'var(--blush-deep)' : 'var(--mint-deep)' }}>
+              {len}/70 ตัวอักษร · {over ? `${creditsOf(m)} ข้อความ = ${creditsOf(m)} เครดิต (เกิน 70)` : '1 เครดิต ✓'}
+            </div>
+          </div>
+        );
+      })}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, marginTop: 2 }}>
+        <span style={{ fontSize: 11.5, color: 'var(--ink-faint)' }}>
+          {editing ? '✏️ แก้ข้อความเอง · กด ↺ หรือแก้ประเภท/หมายเหตุ/วันที่ = กลับเป็นอัตโนมัติ' : `สร้างอัตโนมัติจากหมายเหตุ · รวม ${total} เครดิต`}
+        </span>
+        {editing ? <button type="button" className="btn btn-sm" style={{ flexShrink: 0, fontSize: 11.5, padding: '3px 9px' }} onClick={() => onChangeSmsText(null)}>↺ กลับไปอัตโนมัติ</button> : null}
+      </div>
+    </Field>
+  );
+}
+
 // เลื่อนนัด (วันเปลี่ยน) ทั้งที่เคยส่ง SMS แล้ว → ล้างสถานะส่ง ให้ระบบกลับมาเตือนวันนัดใหม่ได้อีกครั้ง
 // (ถ้าไม่ล้าง cron จะข้ามเพราะ reminderSent=true และป้ายยังโชว์ "✓ ส่งแล้ว" ทั้งที่วันใหม่ยังไม่เคยเตือน)
 function resetReminderIfMoved(orig, next) {
@@ -176,18 +220,24 @@ function SmsComposerModal({ title, initPhone, initMsg, appt, notePresets, onSave
   const editMode = !!appt;
   const [draft, setDraft] = useState(appt ? { ...appt } : null);
   const [phone, setPhone] = useState(initPhone || (appt && appt.phone) || '');
-  // msgs = อาเรย์ข้อความ (นัดที่มีหลายหมวดจะได้หลายข้อความ) · โหมดส่งเอง = ข้อความเดียวแก้เอง
-  const [msgs, setMsgs] = useState(() => editMode ? buildReminderMsgs(appt) : [initMsg || '']);
+  // msgs = อาเรย์ข้อความ · เริ่มจากข้อความที่แก้เอง (smsText) ถ้ามี ไม่งั้นสร้างอัตโนมัติ
+  const [msgs, setMsgs] = useState(() => editMode ? messagesForAppt(appt) : [initMsg || '']);
 
-  // โหมดแก้นัด: ข้อความสร้างอัตโนมัติจากรายละเอียดนัด — เปลี่ยนประเภท/หมายเหตุ/วันที่ แล้วอัปเดตทันที
-  // (พิมพ์แก้ข้อความเองได้ แต่จะถูกสร้างใหม่เมื่อแก้รายละเอียดนัดอีกครั้ง)
+  // โหมดแก้นัด: เปลี่ยนประเภท/หมายเหตุ/วันที่ แล้วสร้างข้อความใหม่ — แต่ข้าม mount แรก (คงข้อความที่แก้เองไว้)
+  const mounted = useRef(false);
   useEffect(() => {
     if (!editMode) return;
+    if (!mounted.current) { mounted.current = true; return; }
     setMsgs(buildReminderMsgs(draft));
   }, [editMode, draft && draft.type, draft && draft.note, draft && draft.date, draft && draft.petName]);
 
   const clean = phone.replace(/[^0-9+]/g, '');
-  const setMsgAt = (i, v) => setMsgs((prev) => prev.map((m, j) => j === i ? v : m));
+  // แก้ข้อความในช่อง → อัปเดตพรีวิว + เก็บลง draft.smsText (โหมดแก้นัด) ให้บันทึก/ส่งอัตโนมัติใช้ตาม
+  const setMsgAt = (i, v) => {
+    const next = msgs.map((m, j) => j === i ? v : m);
+    setMsgs(next);
+    if (editMode) setDraft((d) => d ? { ...d, smsText: next } : d);
+  };
   // นับเครดิต: ไทย 1 ข้อความ = 70 ตัว · เกินคิด 67 ตัว/ท่อน · รวมทุกข้อความ
   const creditsOf = (m) => m.length > 70 ? Math.ceil(m.length / 67) : 1;
   const totalCredits = msgs.reduce((s, m) => s + (m.trim() ? creditsOf(m) : 0), 0);
@@ -228,7 +278,8 @@ function SmsComposerModal({ title, initPhone, initMsg, appt, notePresets, onSave
     onSend(clean, list, draft, result);
   };
 
-  const setField = (patch) => setDraft((d) => ({ ...d, ...patch }));
+  // แก้ประเภท/หมายเหตุ/วันที่ → ล้าง smsText เดิม (ให้ข้อความสร้างใหม่ตามฟิลด์ ไม่ค้างข้อความเก่า)
+  const setField = (patch) => setDraft((d) => ({ ...d, ...patch, ...(('type' in patch || 'note' in patch || 'date' in patch) ? { smsText: undefined } : {}) }));
   // ปุ่มนัดเร็ว — นับจากวันนี้แบบ local (ไม่ใช้ toISOString กันวันเพี้ยน UTC+7)
   const setDateFromToday = (addDays, addYears) => {
     const t = new Date();
@@ -598,6 +649,8 @@ function ApptFormModal({ pets, defaultDate, defaultPet, editAppt, onClose, onSav
     time: '09:00', type: 'ติดตามอาการ', note: '', status: 'scheduled', smsAuto: true,
   });
   const smsOn = f.smsAuto !== false; // ค่าเริ่มต้น = เปิด
+  // แก้ประเภท/หมายเหตุ/วันที่ → ล้าง smsText ที่แก้เอง (กันข้อความค้างวันเก่า/เนื้อหาเก่า)
+  const setFClearSms = (patch) => setF((prev) => ({ ...prev, ...patch, smsText: undefined }));
   const [petQ, setPetQ] = useState(initPet ? `${initPet.name} — ${initPet.owner.name}` : '');
   const [petResults, setPetResults] = useState([]);
   const [ptOpen, setPtOpen] = useState(false);
@@ -630,7 +683,7 @@ function ApptFormModal({ pets, defaultDate, defaultPet, editAppt, onClose, onSav
   const setDateFromToday = (addDays, addYears) => {
     const t = new Date();
     const d = new Date(t.getFullYear() + (addYears || 0), t.getMonth(), t.getDate() + (addDays || 0));
-    setF((prev) => ({ ...prev, date: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}` }));
+    setF((prev) => ({ ...prev, date: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`, smsText: undefined }));
   };
   const quickDateBtn = {
     padding: '5px 11px', borderRadius: 'var(--radius-sm)',
@@ -681,7 +734,7 @@ function ApptFormModal({ pets, defaultDate, defaultPet, editAppt, onClose, onSav
 
         <div className="form-grid" style={{ gridTemplateColumns: '1fr 1fr', gap: 13 }}>
           <Field label="วันที่นัด *">
-            <input className="input" type="date" value={f.date} onChange={(e) => setF({ ...f, date: e.target.value })} />
+            <input className="input" type="date" value={f.date} onChange={(e) => setFClearSms({ date: e.target.value })} />
             <div style={{ display: 'flex', gap: 7, marginTop: 8, flexWrap: 'wrap' }}>
               <button type="button" onClick={() => setDateFromToday(28, 0)} style={quickDateBtn}>+ นัด 4 สัปดาห์</button>
               <button type="button" onClick={() => setDateFromToday(0, 1)} style={quickDateBtn}>+ นัด 1 ปี</button>
@@ -697,7 +750,7 @@ function ApptFormModal({ pets, defaultDate, defaultPet, editAppt, onClose, onSav
         <Field label="ประเภทการนัด">
           <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap' }}>
             {APPT_TYPES.map((tp) => (
-              <button key={tp} onClick={() => setF({ ...f, type: tp })} style={{
+              <button key={tp} onClick={() => setFClearSms({ type: tp })} style={{
                 padding: '7px 13px', borderRadius: 'var(--radius-sm)',
                 border: f.type === tp ? '2px solid var(--navy)' : '1.5px solid var(--line)',
                 background: f.type === tp ? 'var(--navy-soft)' : '#fff',
@@ -710,7 +763,7 @@ function ApptFormModal({ pets, defaultDate, defaultPet, editAppt, onClose, onSav
 
         <div className="span2">
           <NotePresetField type={f.type} note={f.note}
-            onChange={(v) => setF({ ...f, note: v })}
+            onChange={(v) => setFClearSms({ note: v })}
             notePresets={notePresets} onSavePresets={onSavePresets} rows={2} />
         </div>
 
@@ -729,10 +782,17 @@ function ApptFormModal({ pets, defaultDate, defaultPet, editAppt, onClose, onSav
             📱 {smsOn ? 'ส่ง SMS เตือนอัตโนมัติ — เปิดอยู่' : 'ปิดส่ง SMS อัตโนมัติ (แตะเพื่อเปิด)'}
           </button>
           <div style={{ fontSize: 11.5, color: 'var(--ink-faint)', marginTop: 6 }}>
-            ระบบจะเตือนลูกค้าก่อนวันนัด 1 วัน · ตอนนี้ส่งจากเมนู “นัดที่กำลังมาถึง” เองก่อน (ระบบส่งอัตโนมัติเต็มรูปแบบจะเปิดในเฟสถัดไป)
+            ระบบจะเตือนลูกค้าก่อนวันนัด 1 วัน เวลา 8 โมงเช้า
           </div>
         </Field>
         </div>
+
+        {/* พรีวิว/แก้ข้อความ SMS — โชว์เมื่อเปิดส่ง SMS · เก็บที่แก้เองลง smsText (ลิงก์ทุกหน้า) */}
+        {smsOn && f.petName ? (
+          <div className="span2">
+            <SmsPreviewField appt={f} onChangeSmsText={(v) => setF({ ...f, smsText: v && v.length ? v : undefined })} />
+          </div>
+        ) : null}
       </div>
     </Modal>
   );
