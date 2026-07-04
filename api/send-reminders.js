@@ -70,11 +70,14 @@ const SHORTEN_BASE = [
 ];
 function splitSuffix(seg) {
   if (seg.endsWith('ประจำปี')) return [seg.slice(0, -('ประจำปี'.length)).trim(), 'ประจำปี'];
-  if (seg.endsWith('เข็มกระตุ้น')) return [seg.slice(0, -('เข็มกระตุ้น'.length)).trim(), '2/2'];
+  if (seg.endsWith('เข็มกระตุ้น')) return [seg.slice(0, -('เข็มกระตุ้น'.length)).trim(), 'เข็มกระตุ้น'];
+  if (seg.endsWith('เข็มแรก')) return [seg.slice(0, -('เข็มแรก'.length)).trim(), 'เข็มแรก'];
   const i = seg.indexOf('เข็ม');
   if (i >= 0) return [seg.slice(0, i).trim(), seg.slice(i + 'เข็ม'.length).trim()];
   return [seg, ''];
 }
+const SUFFIX_NUM = [['เข็มกระตุ้น', '2/2'], ['เข็มแรก', '1/2']];
+function toNumericSuffix(s) { let x = String(s || ''); for (const [a, b] of SUFFIX_NUM) x = x.split(a).join(b); return x; }
 function shortenDetail(detail, tight) {
   if (!detail) return detail;
   const parsed = detail.split(' และ ').map((s) => {
@@ -94,6 +97,7 @@ function shortenDetail(detail, tight) {
 function buildOneMsg(name, isVax, effType, detailFull, date) {
   const detailSpaced = isVax ? shortenDetail(detailFull, false) : detailFull;
   const detailTight = isVax ? shortenDetail(detailFull, true) : detailFull;
+  const detailNum = isVax ? toNumericSuffix(detailTight) : detailFull;
   const bodyOf = (detail) => isVax
     ? 'ฉีด' + (detail || 'วัคซีน')
     : (effType && effType !== 'อื่นๆ') ? effType + (detail ? ' ' + detail : '') : (detail || '');
@@ -106,6 +110,7 @@ function buildOneMsg(name, isVax, effType, detailFull, date) {
     mk(detailFull, false, true), mk(detailFull, true, true), mk(detailFull, true, false),
     mk(detailSpaced, false, true), mk(detailSpaced, true, true), mk(detailSpaced, true, false),
     mk(detailTight, true, true), mk(detailTight, true, false),
+    mk(detailNum, true, true), mk(detailNum, true, false),
   ];
   for (const m of attempts) if (m.length <= 70) return m;
   return attempts[attempts.length - 1];

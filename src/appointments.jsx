@@ -83,14 +83,18 @@ const SHORTEN_BASE = [
   ['วัคซีนรวม 5 โรคสุนัข', 'วัคซีนรวม'],
   ['วัคซีนพิษสุนัขบ้า', 'พิษสุนัขบ้า'],
 ];
-// แยก [ชื่อฐาน, คำท้ายแสดงผล] — "ประจำปี"→ประจำปี · "เข็มกระตุ้น"→2/2 (กระตุ้นทุกวัคซีน=2/2) · "เข็ม X"→X (ตัดคำ "เข็ม")
+// แยก [ชื่อฐาน, คำท้ายแสดงผล] — เก็บคำเต็ม "เข็มแรก"/"เข็มกระตุ้น" ไว้ก่อน · "ประจำปี"→ประจำปี · "เข็ม X"→X
 function splitSuffix(seg) {
   if (seg.endsWith('ประจำปี')) return [seg.slice(0, -('ประจำปี'.length)).trim(), 'ประจำปี'];
-  if (seg.endsWith('เข็มกระตุ้น')) return [seg.slice(0, -('เข็มกระตุ้น'.length)).trim(), '2/2'];
+  if (seg.endsWith('เข็มกระตุ้น')) return [seg.slice(0, -('เข็มกระตุ้น'.length)).trim(), 'เข็มกระตุ้น'];
+  if (seg.endsWith('เข็มแรก')) return [seg.slice(0, -('เข็มแรก'.length)).trim(), 'เข็มแรก'];
   const i = seg.indexOf('เข็ม');
   if (i >= 0) return [seg.slice(0, i).trim(), seg.slice(i + 'เข็ม'.length).trim()];
   return [seg, ''];
 }
+// ขั้นสุดท้ายเมื่อยังเกิน 70: เปลี่ยนคำท้ายเต็มเป็นเลข — เข็มแรก→1/2 · เข็มกระตุ้น→2/2
+const SUFFIX_NUM = [['เข็มกระตุ้น', '2/2'], ['เข็มแรก', '1/2']];
+function toNumericSuffix(s) { let x = String(s || ''); for (const [a, b] of SUFFIX_NUM) x = x.split(a).join(b); return x; }
 // tight = ตัดเว้นวรรคระหว่างชื่อกับเลขชุด (ใช้เมื่อแบบเว้นวรรคยังเกิน 70)
 function shortenDetail(detail, tight) {
   if (!detail) return detail;
@@ -115,6 +119,7 @@ function shortenDetail(detail, tight) {
 function buildOneMsg(name, isVax, effType, detailFull, date) {
   const detailSpaced = isVax ? shortenDetail(detailFull, false) : detailFull;
   const detailTight = isVax ? shortenDetail(detailFull, true) : detailFull;
+  const detailNum = isVax ? toNumericSuffix(detailTight) : detailFull; // ขั้นสุดท้าย: คำท้ายเป็นเลข (เข็มแรก→1/2, กระตุ้น→2/2)
   const bodyOf = (detail) => isVax
     ? 'ฉีด' + (detail || 'วัคซีน')
     : (effType && effType !== 'อื่นๆ') ? effType + (detail ? ' ' + detail : '') : (detail || '');
@@ -124,9 +129,10 @@ function buildOneMsg(name, isVax, effType, detailFull, date) {
     return s.replace(/\s+/g, ' ').trim();
   };
   const attempts = [
-    mk(detailFull, false, true), mk(detailFull, true, true), mk(detailFull, true, false),       // ชื่อเต็ม
-    mk(detailSpaced, false, true), mk(detailSpaced, true, true), mk(detailSpaced, true, false), // ย่อ + เว้นวรรค
-    mk(detailTight, true, true), mk(detailTight, true, false),                                  // ย่อ + ติดกัน
+    mk(detailFull, false, true), mk(detailFull, true, true), mk(detailFull, true, false),       // ชื่อเต็ม + คำเต็ม
+    mk(detailSpaced, false, true), mk(detailSpaced, true, true), mk(detailSpaced, true, false), // ย่อชื่อ + คำเต็ม + เว้นวรรค
+    mk(detailTight, true, true), mk(detailTight, true, false),                                  // ย่อชื่อ + คำเต็ม + ติดกัน
+    mk(detailNum, true, true), mk(detailNum, true, false),                                      // คำท้ายเป็นเลข (เกินจริงๆ)
   ];
   for (const m of attempts) if (m.length <= 70) return m;
   return attempts[attempts.length - 1];
