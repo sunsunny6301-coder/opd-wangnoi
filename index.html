@@ -585,12 +585,21 @@ button, input, select, textarea { font-family: inherit; font-size: inherit; colo
   76% { transform: rotate(-30deg); }   /* เขี่ยซ้ำ */
   86% { transform: rotate(0deg); }
 }
+/* ลูกบอลให้แมวเล่น (กลิ้งด้วย JS physics · แมว/เมาส์เข้าใกล้ = เตะออก · สลับชนิดทุกชั่วโมง) */
+.fg-ball {
+  position: absolute; top: 0; left: 0;
+  width: 34px; height: 34px;
+  font-size: 26px; line-height: 34px; text-align: center;
+  pointer-events: none; z-index: 3; user-select: none; will-change: transform;
+  filter: drop-shadow(0 2px 3px rgba(0, 0, 0, .18));
+}
 @media (prefers-reduced-motion: reduce) {
   .fg-cat, .fg-act, .fg-bob, .fg-cats .cat-paw { animation: none; }
   .fg-cat-a { transform: translate(12vw, 18vh); }
   .fg-cat-b { transform: translate(60vw, 70vh); }
   .fg-cat-c { transform: translate(40vw, 45vh); }
   .fg-cat-d { transform: translate(78vw, 30vh); }
+  .fg-ball { display: none; }   /* ปิดลูกบอลเมื่อผู้ใช้ตั้งลดการเคลื่อนไหว */
 }
 </style>
 </head>
@@ -2245,6 +2254,60 @@ const CAT_TUXEDO = {
     { fill: '#FFFFFF', cx: 47, cy: 22, rx: 3, ry: 5 },
   ],
 };
+// ── ลูกบอลให้แมวเล่น: กลิ้งทั่วจอ · แมว (หรือเมาส์) เข้าใกล้ = เขี่ย/เตะออก · สลับชนิดทุกชั่วโมง ──
+const PLAY_BALLS = ['⚽', '🏀', '🏈', '🏐', '🧶', '🎾']; // บอล/บาส/รักบี้/วอลเลย์/ไหมพรม/เทนนิส
+function PlayBall({ catsRef }) {
+  const ballRef = useRef(null);
+  const [idx, setIdx] = useState(() => new Date().getHours());
+  useEffect(() => { // สลับลูกบอลตามชั่วโมง (เช็คทุกนาที)
+    const id = setInterval(() => setIdx(new Date().getHours()), 60000);
+    return () => clearInterval(id);
+  }, []);
+  useEffect(() => {
+    const R = 17; // รัศมีลูกบอล (px)
+    const st = { x: window.innerWidth * 0.45, y: window.innerHeight * 0.5, vx: 3, vy: 2, rot: 0, cd: 0 };
+    const mouse = { x: -999, y: -999, on: false };
+    const onMove = (e) => { mouse.x = e.clientX; mouse.y = e.clientY; mouse.on = true; };
+    window.addEventListener('pointermove', onMove);
+    const kickFrom = (px, py, power) => { // เตะบอลออกจากจุด (แมว/เมาส์) + แรงสุ่มนิดหน่อย
+      const dx = st.x - px, dy = st.y - py, d = Math.hypot(dx, dy) || 1;
+      st.vx = (dx / d) * power + (Math.random() - 0.5) * 2.5;
+      st.vy = (dy / d) * power + (Math.random() - 0.5) * 2.5;
+      st.cd = 18; // คูลดาวน์ กันเตะรัว
+    };
+    let raf;
+    const step = () => {
+      const W = window.innerWidth, H = window.innerHeight;
+      st.vx *= 0.99; st.vy *= 0.99;                       // แรงเสียดทาน (กลิ้งไปเรื่อยๆ)
+      const sp = Math.hypot(st.vx, st.vy);
+      if (sp < 0.8) { const a = Math.random() * Math.PI * 2; st.vx += Math.cos(a) * 0.4; st.vy += Math.sin(a) * 0.4; } // ช้าลง → เดินเล่นเบาๆ
+      else if (sp > 13) { st.vx *= 0.88; st.vy *= 0.88; } // จำกัดความเร็ว
+      st.x += st.vx; st.y += st.vy;
+      if (st.x < R) { st.x = R; st.vx = Math.abs(st.vx) * 0.9; }          // เด้งขอบจอ
+      if (st.x > W - R) { st.x = W - R; st.vx = -Math.abs(st.vx) * 0.9; }
+      if (st.y < R) { st.y = R; st.vy = Math.abs(st.vy) * 0.9; }
+      if (st.y > H - R) { st.y = H - R; st.vy = -Math.abs(st.vy) * 0.9; }
+      st.rot += st.vx * 3;                                // หมุนตามการกลิ้ง
+      if (st.cd > 0) st.cd--;
+      if (st.cd <= 0) {
+        const cats = catsRef.current ? catsRef.current.querySelectorAll('.fg-cat') : [];
+        cats.forEach((cat) => {
+          const r = cat.getBoundingClientRect();
+          const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+          if (Math.hypot(st.x - cx, st.y - cy) < 52) kickFrom(cx, cy, 8 + Math.random() * 4); // แมวใกล้ = เตะ
+        });
+        if (st.cd <= 0 && mouse.on && Math.hypot(st.x - mouse.x, st.y - mouse.y) < 42) kickFrom(mouse.x, mouse.y, 9); // เมาส์ใกล้ = เตะ
+      }
+      const el = ballRef.current;
+      if (el) el.style.transform = `translate(${(st.x - R).toFixed(1)}px, ${(st.y - R).toFixed(1)}px) rotate(${st.rot.toFixed(0)}deg)`;
+      raf = requestAnimationFrame(step);
+    };
+    raf = requestAnimationFrame(step);
+    return () => { cancelAnimationFrame(raf); window.removeEventListener('pointermove', onMove); };
+  }, []);
+  return <div ref={ballRef} className="fg-ball" aria-hidden="true">{PLAY_BALLS[idx % PLAY_BALLS.length]}</div>;
+}
+
 function FgCats() {
   const ref = useRef(null);
   useEffect(() => {
@@ -2283,6 +2346,7 @@ function FgCats() {
       <span className="fg-cat fg-cat-b"><span className="fg-flee"><span className="fg-act"><span className="fg-bob"><CatColor {...CAT_GRAY} /></span></span></span></span>
       <span className="fg-cat fg-cat-c"><span className="fg-flee"><span className="fg-act"><span className="fg-bob"><CatColor {...CAT_CALICO} /></span></span></span></span>
       <span className="fg-cat fg-cat-d"><span className="fg-flee"><span className="fg-act"><span className="fg-bob"><CatColor {...CAT_TUXEDO} /></span></span></span></span>
+      <PlayBall catsRef={ref} />
     </div>
   );
 }

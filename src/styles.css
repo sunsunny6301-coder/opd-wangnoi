@@ -560,10 +560,19 @@ button, input, select, textarea { font-family: inherit; font-size: inherit; colo
   76% { transform: rotate(-30deg); }   /* เขี่ยซ้ำ */
   86% { transform: rotate(0deg); }
 }
+/* ลูกบอลให้แมวเล่น (กลิ้งด้วย JS physics · แมว/เมาส์เข้าใกล้ = เตะออก · สลับชนิดทุกชั่วโมง) */
+.fg-ball {
+  position: absolute; top: 0; left: 0;
+  width: 34px; height: 34px;
+  font-size: 26px; line-height: 34px; text-align: center;
+  pointer-events: none; z-index: 3; user-select: none; will-change: transform;
+  filter: drop-shadow(0 2px 3px rgba(0, 0, 0, .18));
+}
 @media (prefers-reduced-motion: reduce) {
   .fg-cat, .fg-act, .fg-bob, .fg-cats .cat-paw { animation: none; }
   .fg-cat-a { transform: translate(12vw, 18vh); }
   .fg-cat-b { transform: translate(60vw, 70vh); }
   .fg-cat-c { transform: translate(40vw, 45vh); }
   .fg-cat-d { transform: translate(78vw, 30vh); }
+  .fg-ball { display: none; }   /* ปิดลูกบอลเมื่อผู้ใช้ตั้งลดการเคลื่อนไหว */
 }
