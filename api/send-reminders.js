@@ -20,6 +20,11 @@
 
 const MONTHS_TH = ['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'];
 
+// ค่า Supabase สาธารณะ (เหมือนที่ฝังในเว็บ) — cron ใช้อ่าน/เขียน app_state ได้ด้วย anon key (RLS อนุญาต เหมือนตอนเว็บ upsert)
+// → ไม่ต้องพึ่ง SUPABASE_SERVICE_KEY (ที่ตั้งผิดง่าย) · ถ้ามี service key ที่ถูกต้องใน env จะใช้อันนั้นก่อน
+const SB_URL_DEFAULT = 'https://lvybmnzuzsefsizgszaf.supabase.co';
+const SB_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imx2eWJtbnp1enNlZnNpemdzemFmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODEyMTk1NjAsImV4cCI6MjA5Njc5NTU2MH0.h2lu10nj9z8aZwREVUsU8b5cnooQSScZ_QhbfC2kuTQ';
+
 // คืนค่า { iso: 'YYYY-MM-DD', display: '15 ก.ค. 2569' } ของพรุ่งนี้ (UTC+7)
 function tomorrowThai() {
   const thaiMs = Date.now() + 7 * 3_600_000;
@@ -176,21 +181,15 @@ module.exports = async function handler(req, res) {
   }
 
   // ── ตรวจ env vars ──────────────────────────────────────────────────────────
-  const SB_URL = process.env.SUPABASE_URL;
-  const SB_KEY = process.env.SUPABASE_SERVICE_KEY;
+  const nonAscii = (s) => /[^\x00-\x7F]/.test(String(s || ''));
+  // Supabase: ใช้ env ถ้ามีและถูกต้อง (ASCII) · ไม่งั้น fallback ค่าสาธารณะ (URL + anon key) → cron ทำงานได้โดยไม่ต้องตั้ง env
+  const SB_URL = (process.env.SUPABASE_URL && !nonAscii(process.env.SUPABASE_URL)) ? process.env.SUPABASE_URL : SB_URL_DEFAULT;
+  const SB_KEY = (process.env.SUPABASE_SERVICE_KEY && !nonAscii(process.env.SUPABASE_SERVICE_KEY)) ? process.env.SUPABASE_SERVICE_KEY : SB_ANON_KEY;
   const SMS_KEY = process.env.SMS2PRO_API_KEY;
   const SMS_SENDER = (process.env.SMS2PRO_SENDER || 'WangNoiVet').slice(0, 11);
 
-  if (!SB_URL || !SB_KEY || !SMS_KEY) {
-    const missing = { SUPABASE_URL: !SB_URL, SUPABASE_SERVICE_KEY: !SB_KEY, SMS2PRO_API_KEY: !SMS_KEY };
-    return res.status(500).json({ error: 'ขาด env vars', missing });
-  }
-  // ตรวจว่า key/url เป็น ASCII ล้วน — ถ้ามีอักขระไทย/nอนASCII ปน = ตั้งค่าผิด (header ส่งไม่ได้)
-  const nonAscii = (s) => /[^\x00-\x7F]/.test(String(s || ''));
-  const bad = { SUPABASE_URL: nonAscii(SB_URL), SUPABASE_SERVICE_KEY: nonAscii(SB_KEY), SMS2PRO_API_KEY: nonAscii(SMS_KEY) };
-  if (bad.SUPABASE_URL || bad.SUPABASE_SERVICE_KEY || bad.SMS2PRO_API_KEY) {
-    return res.status(500).json({ error: 'env มีอักขระที่ไม่ใช่ ASCII (คีย์ผิด — น่าจะมีตัวอักษรไทยปน)', badKeys: bad });
-  }
+  if (!SMS_KEY) return res.status(500).json({ error: 'ขาด SMS2PRO_API_KEY' });
+  if (nonAscii(SMS_KEY)) return res.status(500).json({ error: 'SMS2PRO_API_KEY มีอักขระที่ไม่ใช่ ASCII (คีย์ผิด — น่าจะมีตัวอักษรไทยปน)' });
 
   // ── โหลด app state จาก Supabase ───────────────────────────────────────────
   let appState;
