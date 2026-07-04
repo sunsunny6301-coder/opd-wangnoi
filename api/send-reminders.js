@@ -185,6 +185,12 @@ module.exports = async function handler(req, res) {
     const missing = { SUPABASE_URL: !SB_URL, SUPABASE_SERVICE_KEY: !SB_KEY, SMS2PRO_API_KEY: !SMS_KEY };
     return res.status(500).json({ error: 'ขาด env vars', missing });
   }
+  // ตรวจว่า key/url เป็น ASCII ล้วน — ถ้ามีอักขระไทย/nอนASCII ปน = ตั้งค่าผิด (header ส่งไม่ได้)
+  const nonAscii = (s) => /[^\x00-\x7F]/.test(String(s || ''));
+  const bad = { SUPABASE_URL: nonAscii(SB_URL), SUPABASE_SERVICE_KEY: nonAscii(SB_KEY), SMS2PRO_API_KEY: nonAscii(SMS_KEY) };
+  if (bad.SUPABASE_URL || bad.SUPABASE_SERVICE_KEY || bad.SMS2PRO_API_KEY) {
+    return res.status(500).json({ error: 'env มีอักขระที่ไม่ใช่ ASCII (คีย์ผิด — น่าจะมีตัวอักษรไทยปน)', badKeys: bad });
+  }
 
   // ── โหลด app state จาก Supabase ───────────────────────────────────────────
   let appState;
