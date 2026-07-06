@@ -70,6 +70,12 @@ function App() {
     setState((s) => ({ ...s, notePresets: { ...(s.notePresets || {}), [type]: list } }));
     pushToast(`บันทึกตัวเลือกของ “${type}” แล้ว (${list.length} อัน)`);
   };
+  // ข้อความสำเร็จรูปของหน้าส่ง SMS เอง (แก้/เพิ่มได้ · sync คลาวด์)
+  const smsPresets = state.smsPresets;
+  const saveSmsPresets = (list) => {
+    setState((s) => ({ ...s, smsPresets: list }));
+    pushToast(`บันทึกข้อความสำเร็จรูปแล้ว (${list.length} ข้อความ)`);
+  };
   const addAdmitted = (petHn, type, note, qNo) => {
     const p = pets.find((x) => x.hn === petHn);
     setState((s) => ({
@@ -782,7 +788,7 @@ function App() {
           onUpdatePet={updatePet} onUpdateVisit={updateVisit} onAddService={addService} onDeleteService={deleteService} onUpdateService={updateService} onSaveDraft={saveDraft} previewReceiptNo={nextReceiptNo().no}
           notePresets={notePresets} onSavePresets={saveNotePresets} /> :
           null}
-          {page === 'appointments' ? <AppointmentsView appointments={appointments} pets={pets} onAdd={addAppointment} onUpdate={updateAppointment} onDelete={deleteAppointment} onOpenPet={openPet} pushToast={pushToast} notePresets={notePresets} onSavePresets={saveNotePresets} /> : null}
+          {page === 'appointments' ? <AppointmentsView appointments={appointments} pets={pets} onAdd={addAppointment} onUpdate={updateAppointment} onDelete={deleteAppointment} onOpenPet={openPet} pushToast={pushToast} notePresets={notePresets} onSavePresets={saveNotePresets} smsPresets={smsPresets} onSaveSmsPresets={saveSmsPresets} /> : null}
           {page === 'shop' ? <PetShop stock={shopStock} onCheckout={shopCheckout} previewReceiptNo={nextReceiptNo().no} onDeleteItem={deleteShopItem} onAddItem={addShopItem} onImportStock={importShopItems} onUpdateItem={updateShopItem} /> : null}
           {page === 'stock' ? <StockView stock={stock} onAdjust={adjustStock} onAddItem={addStockItem} onImportStock={importStockItems} onDeleteItem={deleteStockItem} onClearAll={clearStock} onUpdateItem={updateStockItem} /> : null}
           {page === 'reports' ? <ReportsView pets={pets} queue={queue} stock={stock} shopStock={shopStock} services={services} receipts={receipts} onCancelReceipt={cancelReceipt} onUpdateReceipt={updateReceipt} onOpenPet={openPet} /> : null}

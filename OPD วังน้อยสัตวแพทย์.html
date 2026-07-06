@@ -5388,10 +5388,65 @@ function resetReminderIfMoved(orig, next) {
   return next;
 }
 
+// ── ข้อความสำเร็จรูป (template) สำหรับหน้าส่ง SMS เอง — แตะเพื่อใส่ + แก้/เพิ่มเองได้ (sync คลาวด์) ──
+const DEFAULT_SMS_PRESETS = [
+  'ยาของน้องพร้อมแล้ว แวะรับได้เลยนะครับ',
+  'ผลตรวจออกแล้ว ติดต่อกลับคลินิกได้เลยครับ',
+  'ถึงกำหนดนัดของน้องแล้วนะครับ',
+  'ขอบคุณที่ใช้บริการวังน้อยสัตวแพทย์ครับ',
+];
+function SmsTemplateField({ presets, onPick, onSavePresets }) {
+  const list = (presets || []).map((p) => typeof p === 'string' ? p : (p && p.text) || '').filter(Boolean);
+  const [editing, setEditing] = useState(null); // null=ปิด | array=กำลังแก้
+  const miniBtn = { padding: '0 6px', height: 16, lineHeight: '14px', fontSize: 9, border: '1px solid var(--line)', borderRadius: 4, background: '#fff', cursor: 'pointer', color: 'var(--ink-soft)' };
+  if (editing) {
+    const rows = editing;
+    const setRow = (i, v) => setEditing(rows.map((r, j) => j === i ? v : r));
+    const move = (i, d) => { const j = i + d; if (j < 0 || j >= rows.length) return; const n = [...rows]; const t = n[i]; n[i] = n[j]; n[j] = t; setEditing(n); };
+    return (
+      <Field label="แก้ไขข้อความสำเร็จรูป">
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, border: '1.5px dashed var(--navy)', borderRadius: 'var(--radius-sm)', padding: '11px 13px', background: 'var(--paper)' }}>
+          {rows.map((r, i) => (
+            <div key={i} style={{ display: 'flex', gap: 7, alignItems: 'flex-start' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 2, flexShrink: 0, paddingTop: 3 }}>
+                <button type="button" disabled={i === 0} onClick={() => move(i, -1)} style={{ ...miniBtn, opacity: i === 0 ? .35 : 1 }}>▲</button>
+                <button type="button" disabled={i === rows.length - 1} onClick={() => move(i, 1)} style={{ ...miniBtn, opacity: i === rows.length - 1 ? .35 : 1 }}>▼</button>
+              </div>
+              <textarea className="textarea" style={{ flex: 1, minHeight: 44, fontSize: 13 }} value={r} onChange={(e) => setRow(i, e.target.value)} placeholder="พิมพ์ข้อความสำเร็จรูป..." />
+              <button type="button" onClick={() => setEditing(rows.filter((_, j) => j !== i))} style={{ background: 'none', border: 'none', color: 'var(--blush-deep)', fontSize: 15, cursor: 'pointer', padding: '3px 4px', flexShrink: 0 }} title="ลบ">✕</button>
+            </div>
+          ))}
+          <button type="button" className="btn btn-sm" style={{ alignSelf: 'flex-start' }} onClick={() => setEditing([...rows, ''])}>+ เพิ่มข้อความ</button>
+          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+            <button type="button" className="btn btn-sm" onClick={() => setEditing(null)}>ยกเลิก</button>
+            <button type="button" className="btn btn-primary btn-sm" onClick={() => { const clean = rows.map((r) => String(r || '').trim()).filter(Boolean); onSavePresets && onSavePresets(clean); setEditing(null); }}>💾 บันทึก</button>
+          </div>
+        </div>
+      </Field>
+    );
+  }
+  return (
+    <Field label="ข้อความสำเร็จรูป — แตะเพื่อใส่">
+      <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap', alignItems: 'center' }}>
+        {list.map((t, i) => (
+          <button key={i} type="button" onClick={() => onPick(t)} title={t}
+            style={{ padding: '6px 12px', borderRadius: 'var(--radius-sm)', border: '1.5px solid var(--powder-deep)', background: 'var(--powder-soft)', color: 'var(--powder-deep)', fontWeight: 600, fontSize: 12.5, cursor: 'pointer' }}>
+            {t.length > 30 ? t.slice(0, 30) + '…' : t}
+          </button>
+        ))}
+        {onSavePresets ? (
+          <button type="button" className="btn btn-sm" style={{ fontSize: 11.5, padding: '3px 9px', color: 'var(--ink-soft)' }}
+            onClick={() => setEditing(list.length ? [...list] : [''])}>⚙️ แก้ไข</button>
+        ) : null}
+      </div>
+    </Field>
+  );
+}
+
 // ── Modal ส่ง SMS: แก้เบอร์/ข้อความได้ก่อนส่ง (ใช้ทั้งเตือนนัด และส่งเอง) ──
 // ถ้าส่ง appt เข้ามา → โหมดแก้นัด: แก้ประเภท/หมายเหตุ/วันที่ได้ในนี้เลย ข้อความ SMS สร้างใหม่อัตโนมัติ
 //   · onSaveAppt(draft) = บันทึกนัด (ลิงก์ทั้งนัดหมาย + OPD) · onSend(phone,msg,draft) = ส่ง (บันทึกนัดด้วย)
-function SmsComposerModal({ title, initPhone, initMsg, appt, notePresets, onSavePresets, onSaveAppt, onClose, onSend }) {
+function SmsComposerModal({ title, initPhone, initMsg, appt, notePresets, onSavePresets, onSaveAppt, smsPresets, onSaveSmsPresets, onClose, onSend }) {
   const editMode = !!appt;
   const [draft, setDraft] = useState(appt ? { ...appt } : null);
   const [phone, setPhone] = useState(initPhone || (appt && appt.phone) || '');
@@ -5505,6 +5560,14 @@ function SmsComposerModal({ title, initPhone, initMsg, appt, notePresets, onSave
               onChange={(v) => setField({ note: v })}
               notePresets={notePresets} onSavePresets={onSavePresets} rows={2} />
           </div>
+        ) : null}
+
+        {/* หน้าส่งเอง: ข้อความสำเร็จรูป แตะแล้วใส่ในช่องข้อความ (ไม่ต้องพิมใหม่) */}
+        {!editMode ? (
+          <SmsTemplateField
+            presets={smsPresets && smsPresets.length ? smsPresets : DEFAULT_SMS_PRESETS}
+            onPick={(t) => setMsgs([t])}
+            onSavePresets={onSaveSmsPresets} />
         ) : null}
 
         {multi ? (
@@ -6007,7 +6070,7 @@ function SmsCreditBadge() {
   );
 }
 
-function AppointmentsView({ appointments, pets, onAdd, onUpdate, onDelete, onOpenPet, pushToast, notePresets, onSavePresets }) {
+function AppointmentsView({ appointments, pets, onAdd, onUpdate, onDelete, onOpenPet, pushToast, notePresets, onSavePresets, smsPresets, onSaveSmsPresets }) {
   const todayStr = todayISO();
   const [selectedDay, setSelectedDay] = useState(todayStr);
   const [showForm, setShowForm] = useState(false);
@@ -6172,6 +6235,7 @@ function AppointmentsView({ appointments, pets, onAdd, onUpdate, onDelete, onOpe
           title={smsModal.appt ? `ส่ง SMS เตือนนัด — ${smsModal.appt.petName}` : 'ส่ง SMS'}
           appt={smsModal.appt || undefined}
           notePresets={notePresets} onSavePresets={onSavePresets}
+          smsPresets={smsPresets} onSaveSmsPresets={onSaveSmsPresets}
           initPhone={smsModal.appt ? smsModal.appt.phone : ''}
           initMsg={smsModal.appt ? buildReminderMsg(smsModal.appt) : ''}
           onClose={() => setSmsModal(null)}
@@ -7335,6 +7399,12 @@ function App() {
     setState((s) => ({ ...s, notePresets: { ...(s.notePresets || {}), [type]: list } }));
     pushToast(`บันทึกตัวเลือกของ “${type}” แล้ว (${list.length} อัน)`);
   };
+  // ข้อความสำเร็จรูปของหน้าส่ง SMS เอง (แก้/เพิ่มได้ · sync คลาวด์)
+  const smsPresets = state.smsPresets;
+  const saveSmsPresets = (list) => {
+    setState((s) => ({ ...s, smsPresets: list }));
+    pushToast(`บันทึกข้อความสำเร็จรูปแล้ว (${list.length} ข้อความ)`);
+  };
   const addAdmitted = (petHn, type, note, qNo) => {
     const p = pets.find((x) => x.hn === petHn);
     setState((s) => ({
@@ -8047,7 +8117,7 @@ function App() {
           onUpdatePet={updatePet} onUpdateVisit={updateVisit} onAddService={addService} onDeleteService={deleteService} onUpdateService={updateService} onSaveDraft={saveDraft} previewReceiptNo={nextReceiptNo().no}
           notePresets={notePresets} onSavePresets={saveNotePresets} /> :
           null}
-          {page === 'appointments' ? <AppointmentsView appointments={appointments} pets={pets} onAdd={addAppointment} onUpdate={updateAppointment} onDelete={deleteAppointment} onOpenPet={openPet} pushToast={pushToast} notePresets={notePresets} onSavePresets={saveNotePresets} /> : null}
+          {page === 'appointments' ? <AppointmentsView appointments={appointments} pets={pets} onAdd={addAppointment} onUpdate={updateAppointment} onDelete={deleteAppointment} onOpenPet={openPet} pushToast={pushToast} notePresets={notePresets} onSavePresets={saveNotePresets} smsPresets={smsPresets} onSaveSmsPresets={saveSmsPresets} /> : null}
           {page === 'shop' ? <PetShop stock={shopStock} onCheckout={shopCheckout} previewReceiptNo={nextReceiptNo().no} onDeleteItem={deleteShopItem} onAddItem={addShopItem} onImportStock={importShopItems} onUpdateItem={updateShopItem} /> : null}
           {page === 'stock' ? <StockView stock={stock} onAdjust={adjustStock} onAddItem={addStockItem} onImportStock={importStockItems} onDeleteItem={deleteStockItem} onClearAll={clearStock} onUpdateItem={updateStockItem} /> : null}
           {page === 'reports' ? <ReportsView pets={pets} queue={queue} stock={stock} shopStock={shopStock} services={services} receipts={receipts} onCancelReceipt={cancelReceipt} onUpdateReceipt={updateReceipt} onOpenPet={openPet} /> : null}
