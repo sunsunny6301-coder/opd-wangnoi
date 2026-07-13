@@ -2724,6 +2724,27 @@ function MediaUpload({ media, onChange }) {
 }
 
 const SVC_CATS = ['บริการ','ยา','เวชภัณฑ์','อาหาร','ของใช้','แล็บ','วัคซีน','ผ่าตัด','ทั่วไป'];
+// เลือกหมวด หรือพิมพ์หมวดใหม่เอง (กด "➕ เพิ่มหมวดใหม่..." → พิมพ์ชื่อได้ · กด ▼ กลับไปเลือกจากรายการ)
+function CatSelect({ value, cats, onChange, style }) {
+  const [adding, setAdding] = useState(false);
+  const inList = cats.includes(value);
+  if (adding || (value && !inList)) {
+    return (
+      <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+        <input className="input" value={value} onChange={(e) => onChange(e.target.value)} placeholder="ชื่อหมวดใหม่..." style={style} autoFocus />
+        <button type="button" className="btn btn-sm" style={{ fontSize: 11, padding: '3px 6px', flexShrink: 0 }} title="เลือกจากรายการ"
+          onClick={() => { setAdding(false); onChange(cats[0] || 'บริการ'); }}>▼</button>
+      </div>
+    );
+  }
+  return (
+    <select className="select" value={value} style={style}
+      onChange={(e) => { if (e.target.value === '__new__') { setAdding(true); onChange(''); } else onChange(e.target.value); }}>
+      {cats.map((c) => <option key={c} value={c}>{c}</option>)}
+      <option value="__new__">➕ เพิ่มหมวดใหม่...</option>
+    </select>
+  );
+}
 
 // ── Service Manager Modal ──
 function ServiceManagerModal({ services, stock, onAdd, onSaveService, onDeleteService, onUpdateService, onClose }) {
@@ -2740,6 +2761,12 @@ function ServiceManagerModal({ services, stock, onAdd, onSaveService, onDeleteSe
   const categories = useMemo(() => {
     const cats = new Set(all.map(s => s.cat));
     return ['ทั้งหมด', ...Array.from(cats).sort()];
+  }, [all]);
+  // หมวดให้เลือกใน dropdown = หมวดตั้งต้น + หมวดที่เคยเพิ่มเองในข้อมูลจริง (โผล่ให้เลือกครั้งต่อไป)
+  const svcCats = useMemo(() => {
+    const set = new Set(SVC_CATS);
+    all.forEach((s) => { if (s.cat) set.add(s.cat); });
+    return Array.from(set);
   }, [all]);
   const filtered = all.filter((s) => {
     const matchCat = catFilter === 'ทั้งหมด' || s.cat === catFilter;
@@ -2770,9 +2797,7 @@ function ServiceManagerModal({ services, stock, onAdd, onSaveService, onDeleteSe
                     <tr key={s.id} style={{ background: 'var(--powder-soft, #f0f4ff)' }}>
                       <td><input className="input" value={editForm.name} onChange={(e) => setEditForm({ ...editForm, name: e.target.value })} style={{ fontSize: 13, padding: '4px 8px' }} /></td>
                       <td>
-                        <select className="select" value={editForm.cat} onChange={(e) => setEditForm({ ...editForm, cat: e.target.value })} style={{ fontSize: 12, padding: '4px 6px' }}>
-                          {SVC_CATS.map((c) => <option key={c}>{c}</option>)}
-                        </select>
+                        <CatSelect value={editForm.cat} cats={svcCats} onChange={(v) => setEditForm({ ...editForm, cat: v })} style={{ fontSize: 12, padding: '4px 6px' }} />
                       </td>
                       <td className="num"><input className="input" type="number" value={editForm.price} onChange={(e) => setEditForm({ ...editForm, price: e.target.value })} style={{ width: 72, fontSize: 13, padding: '4px 8px', textAlign: 'right' }} /></td>
                       <td></td>
@@ -2834,9 +2859,7 @@ function ServiceManagerModal({ services, stock, onAdd, onSaveService, onDeleteSe
             </div>
             <div style={{ width: 140, display: 'flex', flexDirection: 'column', gap: 4 }}>
               <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink-soft)' }}>หมวด</label>
-              <select className="select" value={newItem.cat} onChange={(e) => setNewItem({ ...newItem, cat: e.target.value })}>
-                {SVC_CATS.map((c) => <option key={c}>{c}</option>)}
-              </select>
+              <CatSelect value={newItem.cat} cats={svcCats} onChange={(v) => setNewItem({ ...newItem, cat: v })} />
             </div>
             <div style={{ width: 100, display: 'flex', flexDirection: 'column', gap: 4 }}>
               <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink-soft)' }}>ราคา (฿)</label>
