@@ -337,9 +337,15 @@ function exportToExcel(visits, receipts, rangeLabel, stock = [], dateRange = nul
     const st = (stockId != null && stockById[stockId]) || allStock.find((x) => x && x.name === name);
     return !!(st && /อาหาร/.test(st.cat || ''));
   };
+  // อาบน้ำ/ตัดขน — จับจากชื่อรายการที่มีคำว่า "อาบน้ำ" (หรือหมวด "อาบน้ำ")
+  const isGroom = (name, stockId) => {
+    if (/อาบน้ำ/.test(String(name || ''))) return true;
+    const st = (stockId != null && stockById[stockId]) || allStock.find((x) => x && x.name === name);
+    return !!(st && /อาบน้ำ/.test(st.cat || ''));
+  };
   const cell = (n) => (n ? n : '');  // ช่องว่างเมื่อเป็น 0 ให้อ่านง่าย
-  const header = ['วันที่', 'HN', 'ชื่อสัตว์', 'ชนิด', 'เจ้าของ', 'เบอร์โทร', 'CC', 'Dx', 'รายการ', 'เลขที่ใบเสร็จ', 'วิธีการชำระเงิน', 'จำนวน', 'ราคารักษา', 'ราคาอาหารสัตว์', 'รวม'];
-  let sumTreat = 0, sumFood = 0;
+  const header = ['วันที่', 'HN', 'ชื่อสัตว์', 'ชนิด', 'เจ้าของ', 'เบอร์โทร', 'CC', 'Dx', 'รายการ', 'เลขที่ใบเสร็จ', 'วิธีการชำระเงิน', 'จำนวน', 'ราคารักษา', 'ราคาอาหารสัตว์', 'ราคาอาบน้ำตัดขน', 'รวม'];
+  let sumTreat = 0, sumFood = 0, sumGroom = 0;
   const [rs, re] = dateRange || ['', '￿'];
   // ข้อมูลคลินิก (CC/Dx/ชนิด/เบอร์) จาก visits ไว้เติมให้แถว — จับคู่ด้วย HN|คิว|วันที่ และ fallback ด้วย HN
   const visitByKey = {}, petInfoByHn = {};
@@ -353,19 +359,21 @@ function exportToExcel(visits, receipts, rangeLabel, stock = [], dateRange = nul
     .map((r) => {
       const v = visitByKey[`${r.hn}|${r.q || ''}|${r.date}`] || petInfoByHn[r.hn] || {};
       const items = (r.items || []).map((it) => Array.isArray(it) ? it : [it.name, it.qty, it.price]);
-      let treat = 0, food = 0, qtyTotal = 0;
+      let treat = 0, food = 0, groom = 0, qtyTotal = 0;
       const names = [];
       items.forEach(([name, qty, price, stockId]) => {
         const q = Number(qty) || 1, line = q * (Number(price) || 0);
         qtyTotal += q;
         if (name) names.push(name);
-        if (isFood(name, stockId)) food += line; else treat += line;
+        if (isGroom(name, stockId)) groom += line;       // อาบน้ำตัดขน
+        else if (isFood(name, stockId)) food += line;    // อาหารสัตว์
+        else treat += line;                              // รักษา
       });
-      sumTreat += treat; sumFood += food;
+      sumTreat += treat; sumFood += food; sumGroom += groom;
       return [
         r.date, r.hn || '', (r.petName && r.petName !== '-' ? r.petName : (v.petName || '')), v.petSpecies || '',
         (r.ownerName && r.ownerName !== '-' ? r.ownerName : (v.owner?.name || '')), v.owner?.phone || '', v.cc || '', v.dx || '',
-        names.join(', '), r.no || '', r.method || '', qtyTotal, cell(treat), cell(food), treat + food,
+        names.join(', '), r.no || '', r.method || '', qtyTotal, cell(treat), cell(food), cell(groom), treat + food + groom,
       ];
     });
   const visitRows = opdRows;
@@ -385,9 +393,9 @@ function exportToExcel(visits, receipts, rangeLabel, stock = [], dateRange = nul
       food = food || Number(r.total) || 0;
       sumFood += food;
       const owner = r.ownerName && r.ownerName !== '-' ? r.ownerName : '';
-      return [r.date, '', '', '', owner, '', '', '', names.join(', '), r.no || '', r.method || '', qtyTotal, '', food, food];
+      return [r.date, '', '', '', owner, '', '', '', names.join(', '), r.no || '', r.method || '', qtyTotal, '', food, '', food];
     });
-  const rows = [header, ...visitRows, ...shopRows, [], ['สรุปรายรับทั้งสิ้น', '', '', '', '', '', '', '', '', '', '', '', sumTreat, sumFood, sumTreat + sumFood]];
+  const rows = [header, ...visitRows, ...shopRows, [], ['สรุปรายรับทั้งสิ้น', '', '', '', '', '', '', '', '', '', '', '', sumTreat, sumFood, sumGroom, sumTreat + sumFood + sumGroom]];
   const csv = '\ufeff' + rows.map((r) => r.map((c) => `"${String(c ?? '').replace(/"/g, '""')}"`).join(',')).join('\n');
   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
   const url = URL.createObjectURL(blob);
