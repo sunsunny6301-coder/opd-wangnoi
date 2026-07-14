@@ -146,17 +146,24 @@ function calcMetrics(pets, queue, stock, visits, opdReceipts, extra) {
   opdReceipts.forEach((r) => { dailyRevenue[r.date] = (dailyRevenue[r.date] || 0) + (Number(r.total) || 0); });
 
   // เคสแยกตามประเภท: ใช้ "บริการ" ที่เลือกตอนรับเคส (svcOfReceipt: svcType → queue → เดาชื่อ) — 1 เคส 1 บริการชัดเจน
+  // casesByService: เก็บรายชื่อเคสในแต่ละบริการด้วย (ไว้กดดูรายละเอียด/เปิด OPD จากโดนัท)
   const serviceBreakdown = {};
+  const casesByService = {};
   opdReceipts.forEach((r) => {
     const primary = svcOfReceipt(r);
     serviceBreakdown[primary] = (serviceBreakdown[primary] || 0) + 1;
+    (casesByService[primary] = casesByService[primary] || []).push({
+      no: r.no, hn: r.hn, petName: r.petName, ownerName: r.ownerName,
+      species: (petByHn[r.hn] && petByHn[r.hn].species) || '', date: r.date, total: Number(r.total) || 0,
+    });
   });
   if (cases > 0 && Object.keys(serviceBreakdown).length === 0) serviceBreakdown['ตรวจรักษา'] = cases;
+  Object.values(casesByService).forEach((list) => list.sort((a, b) => (a.date < b.date ? 1 : -1)));
 
   return {
     opdRevenue, profit, profitMargin, cases, avgRevenuePerCase, treatmentCases,
     casesPerDay, revenueChangePct, prevRevenue: prevRevenue || 0,
-    topProducts, dailyRevenue, serviceBreakdown, productSales,
+    topProducts, dailyRevenue, serviceBreakdown, casesByService, productSales,
     revenueByCategory, byMethod, speciesBreakdown, newCust, returningCust,
     busyHours, topCustomers, showRate, apptArrived, apptNoShow,
   };
@@ -364,7 +371,7 @@ function BarChart({ data }) {
 
 // ── SVG Donut Chart ──
 const DONUT_COLORS = ['#3A8F6A','#3A3F8F','#C9A227','#C0685C','#5E8A93','#9E8ABF','#7A5E00'];
-function DonutChart({ data, size = 160 }) {
+function DonutChart({ data, size = 160, onSelect, selected }) {
   const total = data.reduce((s, d) => s + d.v, 0);
   if (total === 0) return <div style={{ color: 'var(--ink-faint)', fontSize: 13, textAlign: 'center', padding: 20 }}>ยังไม่มีข้อมูล</div>;
   const cx = size / 2, cy = size / 2, r = size * 0.42, ir = size * 0.26;
@@ -381,16 +388,27 @@ function DonutChart({ data, size = 160 }) {
     const path = `M${x1},${y1} A${r},${r} 0 ${la} 1 ${x2},${y2} L${ix1},${iy1} A${ir},${ir} 0 ${la} 0 ${ix2},${iy2}Z`;
     return { path, color: DONUT_COLORS[i % DONUT_COLORS.length], label: d.label, v: d.v, pct: Math.round(d.v / total * 100) };
   });
+  const click = onSelect ? (label) => onSelect(label) : null;
+  const dim = (label) => selected && selected !== label ? 0.28 : 1;
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
       <svg width={size} height={size} style={{ flexShrink: 0 }}>
-        {slices.map((s, i) => <path key={i} d={s.path} fill={s.color} stroke="#fff" strokeWidth={2} />)}
+        {slices.map((s, i) => (
+          <path key={i} d={s.path} fill={s.color} stroke="#fff" strokeWidth={2}
+            opacity={dim(s.label)} style={{ cursor: click ? 'pointer' : 'default', transition: 'opacity .15s' }}
+            onClick={click ? () => click(s.label) : undefined}>
+            <title>{s.label} · {s.v} เคส ({s.pct}%)</title>
+          </path>
+        ))}
         <text x={cx} y={cy - 6} textAnchor="middle" dominantBaseline="middle" fontSize={20} fontWeight={800} fill="var(--ink)">{total}</text>
         <text x={cx} y={cy + 14} textAnchor="middle" fontSize={11} fill="var(--ink-faint)">เคสทั้งหมด</text>
       </svg>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
         {slices.map((s, i) => (
-          <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 12.5 }}>
+          <div key={i} onClick={click ? () => click(s.label) : undefined}
+            style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 12.5, opacity: dim(s.label),
+              cursor: click ? 'pointer' : 'default', padding: '1px 4px', borderRadius: 5,
+              background: selected === s.label ? 'var(--line-soft)' : 'transparent' }}>
             <span style={{ width: 12, height: 12, borderRadius: 3, background: s.color, flexShrink: 0 }} />
             <span style={{ flex: 1 }}>{s.label}</span>
             <b>{s.v}</b>
@@ -398,7 +416,51 @@ function DonutChart({ data, size = 160 }) {
           </div>
         ))}
       </div>
+      {click ? <div style={{ width: '100%', fontSize: 11.5, color: 'var(--ink-faint)', textAlign: 'center', marginTop: 2 }}>👆 กดที่ประเภทเพื่อดูรายชื่อเคส</div> : null}
     </div>
+  );
+}
+
+// ── ป๊อปอัพ: กดโดนัท → ซ้ายวงกลม · ขวารายชื่อเคสในบริการนั้น (กดเปิด OPD ได้) ──
+function ServiceCasesModal({ donutData, cases, selected, onSelectCat, onOpenPet, onClose }) {
+  const list = cases[selected] || [];
+  const SP_EMOJI = { 'สุนัข': '🐶', 'แมว': '🐱', 'กระต่าย': '🐰', 'นก': '🐦' };
+  return (
+    <Modal title={`🩺 เคสแยกตามประเภท — ${selected}`} onClose={onClose} wide>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.2fr', gap: 18, alignItems: 'start' }}>
+        {/* ซ้าย: โดนัท (กดสลับบริการได้) */}
+        <div>
+          <DonutChart data={donutData} size={170} onSelect={onSelectCat} selected={selected} />
+        </div>
+        {/* ขวา: รายชื่อเคสในบริการที่เลือก */}
+        <div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 8 }}>
+            <span style={{ fontWeight: 800, fontSize: 15 }}>{selected}</span>
+            <span className="chip chip-navy">{list.length} เคส</span>
+          </div>
+          <div style={{ maxHeight: 380, overflowY: 'auto', border: '1px solid var(--line-soft)', borderRadius: 'var(--radius-sm)' }}>
+            {list.length === 0 ? <div className="queue-empty">ยังไม่มีเคส</div>
+              : list.map((c, i) => (
+                <div key={(c.no || '') + '_' + i}
+                  onClick={() => onOpenPet && c.hn && c.hn !== '?' && (onClose(), onOpenPet(c.hn))}
+                  style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8,
+                    padding: '9px 12px', borderBottom: '1px solid var(--line-soft)', fontSize: 13.5,
+                    cursor: onOpenPet && c.hn && c.hn !== '?' ? 'pointer' : 'default' }}>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      {SP_EMOJI[c.species] || '🐾'} {c.petName || '-'}
+                      {c.hn ? <span style={{ color: 'var(--ink-faint)', fontSize: 11.5, fontWeight: 500 }}> · HN {c.hn}</span> : null}
+                    </div>
+                    <div style={{ color: 'var(--ink-faint)', fontSize: 11.5 }}>{c.ownerName || ''} · {dateTH(c.date)} · {c.no || ''}</div>
+                  </div>
+                  <span style={{ fontWeight: 700, color: 'var(--mint-deep)', flexShrink: 0 }}>{fmtB(c.total)}</span>
+                </div>
+              ))}
+          </div>
+          {onOpenPet ? <div style={{ fontSize: 11.5, color: 'var(--ink-faint)', marginTop: 6 }}>👆 กดที่เคสเพื่อเปิดประวัติ/OPD</div> : null}
+        </div>
+      </div>
+    </Modal>
   );
 }
 
@@ -594,6 +656,7 @@ function ReportsView({ pets, queue, stock, shopStock = [], services = [], receip
   const [showExport, setShowExport] = useState(false);
   const [editReceipt, setEditReceipt] = useState(null);
   const [rcSearch, setRcSearch] = useState('');
+  const [donutSel, setDonutSel] = useState(null); // บริการที่กดในโดนัท → เปิดป๊อปอัพรายชื่อเคส
   // ปีที่เลือกได้ = ปีที่มีใบเสร็จ + ปีนี้
   const years = useMemo(() => {
     const ys = new Set((receipts || []).map((r) => parseInt((r.date || '').slice(0, 4))).filter(Boolean));
@@ -800,7 +863,7 @@ function ReportsView({ pets, queue, stock, shopStock = [], services = [], receip
             <span className="chip">{m.cases} เคส</span>
           </div>
           <div className="card-pad">
-            <DonutChart data={donutData} size={150} />
+            <DonutChart data={donutData} size={150} onSelect={setDonutSel} />
           </div>
         </div>
       </div>
@@ -960,6 +1023,13 @@ function ReportsView({ pets, queue, stock, shopStock = [], services = [], receip
           </div>
         </div>
       </div>
+
+      {donutSel ? (
+        <ServiceCasesModal
+          donutData={donutData} cases={m.casesByService} selected={donutSel}
+          onSelectCat={setDonutSel} onOpenPet={onOpenPet} onClose={() => setDonutSel(null)}
+        />
+      ) : null}
 
       {showExport ? <ReceiptExportModal receipts={receipts} onClose={() => setShowExport(false)} /> : null}
       {editReceipt ? (
