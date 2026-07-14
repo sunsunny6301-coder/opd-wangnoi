@@ -4425,13 +4425,18 @@ function receiptItemTuple(it) {
 // รายรับ/ยอดขาย/แยกประเภท คิดจาก "ใบเสร็จจริง" (opdReceipts = ใบเสร็จ OPD ในช่วง ยกเลิกแล้วถูกลบทิ้งไปก่อน)
 // → เป็นแหล่งความจริงเดียวกับหน้า OPD · เคสแอดมิดคิดที่วันจำหน่าย (วันบนใบเสร็จ) · รวม VAT/แก้บิลตามยอด total
 // visits ใช้เฉพาะนับ "เคสตรวจรักษา" (ต้องมีอาการ/วินิจฉัย ซึ่งเป็นข้อมูลคลินิกไม่มีในใบเสร็จ)
-function calcMetrics(pets, queue, stock, visits, opdReceipts) {
+function calcMetrics(pets, queue, stock, visits, opdReceipts, extra) {
+  extra = extra || {};
+  const dateRange = extra.dateRange || null;
+  const appointments = extra.appointments || [];
+  const prevRevenue = extra.prevRevenue;
   opdReceipts = opdReceipts || [];
+  const [rs, re] = dateRange || ['', '￿'];
+
   const opdRevenue = opdReceipts.reduce((s, r) => s + (Number(r.total) || 0), 0);
+  // กำไร "ประมาณการ": 40% ของรายรับ + ส่วนต่างต้นทุนสินค้าที่ขายจากคิว (ยังไม่ใช่กำไรจริงหักต้นทุนเต็มระบบ)
   const profit = stock.reduce((s, stk) => {
-    const sold = queue
-      .filter((qi) => qi.charges)
-      .flatMap((qi) => qi.charges)
+    const sold = queue.filter((qi) => qi.charges).flatMap((qi) => qi.charges)
       .filter(([name]) => name === stk.name)
       .reduce((ss, [, qty, price]) => ss + qty * (price - (stk.cost || price * 0.5)), 0);
     return s + sold;
@@ -4440,18 +4445,78 @@ function calcMetrics(pets, queue, stock, visits, opdReceipts) {
   const cases = opdReceipts.length;               // จำนวนเคส = จำนวนใบเสร็จ (เคสที่คิดเงินแล้ว)
   const avgRevenuePerCase = cases > 0 ? Math.round(opdRevenue / cases) : 0;
   const treatmentCases = visits.filter((v) => v.cc || v.dx).length;
-  const conversionRate = queue.length > 0 ? Math.round(queue.filter((q) => q.status === 'done').length / queue.length * 100) : 0;
 
+  // จำนวนวันในช่วง → เฉลี่ยเคส/วัน (แทน Conversion Rate เดิม)
+  let days = 1;
+  if (rs && re && re !== '￿') { const dd = Math.round((new Date(re) - new Date(rs)) / 86400000) + 1; if (dd > 0) days = dd; }
+  const casesPerDay = Math.round(cases / days * 10) / 10;
+  // เทียบช่วงก่อนหน้า (%)
+  const revenueChangePct = (prevRevenue != null && prevRevenue > 0) ? Math.round((opdRevenue - prevRevenue) / prevRevenue * 100) : null;
+
+  // หมวดของรายการ (สำหรับแยกรายรับ): วัคซีน / อาบน้ำ / อาหาร / รักษา
+  const stockById = {}; (stock || []).forEach((st) => { if (st && st.id != null) stockById[st.id] = st; });
+  const catOf = (name, stockId) => {
+    const n = String(name || '');
+    if (/วัคซีน|vaccine/i.test(n)) return 'วัคซีน';
+    if (/อาบน้ำ|ตัดขน|groom/i.test(n)) return 'อาบน้ำ';
+    const st = (stockId != null && stockById[stockId]) || (stock || []).find((x) => x && x.name === n);
+    if (st && /อาหาร/.test(st.cat || '')) return 'อาหาร';
+    return 'รักษา';
+  };
+  const revenueByCategory = { 'รักษา': 0, 'อาหาร': 0, 'อาบน้ำ': 0, 'วัคซีน': 0 };
+  const byMethod = {};
+  const petByHn = {}; (pets || []).forEach((p) => { petByHn[p.hn] = p; });
+  const speciesBreakdown = {};
+  const custSpend = {};
   const productSales = {};
-  opdReceipts.forEach((r) => (r.items || []).forEach((it) => {
-    const [name, qty, price] = receiptItemTuple(it);
-    if (!name) return;
-    if (!productSales[name]) productSales[name] = { qty: 0, revenue: 0 };
-    productSales[name].qty += qty; productSales[name].revenue += qty * price;
-  }));
-  const topProducts = Object.entries(productSales)
-    .sort((a, b) => b[1].revenue - a[1].revenue).slice(0, 5)
-    .map(([name, { qty, revenue }]) => ({ name, qty, revenue }));
+  opdReceipts.forEach((r) => {
+    (r.items || []).forEach((it) => {
+      const name = cleanItemName(Array.isArray(it) ? it[0] : it.name);
+      const qty = Number(Array.isArray(it) ? it[1] : it.qty) || 1;
+      const price = Number(Array.isArray(it) ? it[2] : it.price) || 0;
+      const stockId = Array.isArray(it) ? it[3] : it.stockId;
+      if (!name) return;
+      const line = qty * price;
+      revenueByCategory[catOf(name, stockId)] += line;
+      if (!productSales[name]) productSales[name] = { qty: 0, revenue: 0 };
+      productSales[name].qty += qty; productSales[name].revenue += line;
+    });
+    const m = r.method || 'อื่นๆ';
+    if (!byMethod[m]) byMethod[m] = { count: 0, revenue: 0 };
+    byMethod[m].count++; byMethod[m].revenue += Number(r.total) || 0;
+    const sp = (petByHn[r.hn] && petByHn[r.hn].species) || 'อื่นๆ';
+    speciesBreakdown[sp] = (speciesBreakdown[sp] || 0) + 1;
+    const hn = r.hn || '?';
+    if (!custSpend[hn]) custSpend[hn] = { hn, name: r.petName || (petByHn[hn] && petByHn[hn].name) || '-', owner: (petByHn[hn] && petByHn[hn].owner && petByHn[hn].owner.name) || r.ownerName || '', spend: 0, count: 0 };
+    custSpend[hn].spend += Number(r.total) || 0; custSpend[hn].count++;
+  });
+  const topProducts = Object.entries(productSales).sort((a, b) => b[1].revenue - a[1].revenue).slice(0, 5).map(([name, v]) => ({ name, qty: v.qty, revenue: v.revenue }));
+  const topCustomers = Object.values(custSpend).sort((a, b) => b.spend - a.spend).slice(0, 5);
+
+  // ลูกค้าใหม่ vs เก่า — นับจาก "วันแรกที่เคยมี visit" ของสัตว์ (อยู่ในช่วง = ใหม่)
+  const firstSeen = {}; (pets || []).forEach((p) => { const ds = (p.visits || []).map((v) => v.date).filter(Boolean).sort(); if (ds.length) firstSeen[p.hn] = ds[0]; });
+  let newCust = 0, returningCust = 0;
+  new Set(opdReceipts.map((r) => r.hn).filter(Boolean)).forEach((hn) => { const f = firstSeen[hn]; if (f && f >= rs && f <= re) newCust++; else returningCust++; });
+
+  // ช่วงเวลาที่คนเยอะ — จากคิว (doneDate ในช่วง, จัดกลุ่มตามชั่วโมงเช็คอิน)
+  const busyHours = {};
+  (queue || []).forEach((q) => {
+    if (!q.time) return;
+    if (dateRange && (!q.doneDate || q.doneDate < rs || q.doneDate > re)) return;
+    const h = parseInt(String(q.time).split(':')[0]);
+    if (!isNaN(h)) busyHours[h] = (busyHours[h] || 0) + 1;
+  });
+
+  // อัตรามาตามนัด — นัดในช่วง: มาแล้ว vs ไม่มา (เลยวันแล้วไม่ได้มาร์คมา) · ไม่นับที่ยกเลิก/ยังไม่ถึงวัน
+  const today = todayISO();
+  let apptArrived = 0, apptNoShow = 0;
+  (appointments || []).forEach((a) => {
+    if (dateRange && (a.date < rs || a.date > re)) return;
+    if (a.status === 'cancelled') return;
+    if (a.status === 'arrived') apptArrived++;
+    else if (a.date < today) apptNoShow++;
+  });
+  const showRate = (apptArrived + apptNoShow) > 0 ? Math.round(apptArrived / (apptArrived + apptNoShow) * 100) : null;
 
   const dailyRevenue = {};
   opdReceipts.forEach((r) => { dailyRevenue[r.date] = (dailyRevenue[r.date] || 0) + (Number(r.total) || 0); });
@@ -4459,7 +4524,7 @@ function calcMetrics(pets, queue, stock, visits, opdReceipts) {
   const serviceBreakdown = {};
   opdReceipts.forEach((r) => {
     const first = (r.items || [])[0];
-    const n = first ? receiptItemTuple(first)[0].toLowerCase() : '';
+    const n = first ? cleanItemName(Array.isArray(first) ? first[0] : first.name).toLowerCase() : '';
     let primary = 'ตรวจรักษา';
     if (n.includes('วัคซีน') || n.includes('vaccine')) primary = 'วัคซีน';
     else if (n.includes('ผ่าตัด') || n.includes('ทำหมัน') || n.includes('surgery')) primary = 'ผ่าตัด';
@@ -4469,7 +4534,13 @@ function calcMetrics(pets, queue, stock, visits, opdReceipts) {
   });
   if (cases > 0 && Object.keys(serviceBreakdown).length === 0) serviceBreakdown['ตรวจรักษา'] = cases;
 
-  return { opdRevenue, profit, profitMargin, cases, avgRevenuePerCase, treatmentCases, conversionRate, topProducts, dailyRevenue, serviceBreakdown, productSales };
+  return {
+    opdRevenue, profit, profitMargin, cases, avgRevenuePerCase, treatmentCases,
+    casesPerDay, revenueChangePct, prevRevenue: prevRevenue || 0,
+    topProducts, dailyRevenue, serviceBreakdown, productSales,
+    revenueByCategory, byMethod, speciesBreakdown, newCust, returningCust,
+    busyHours, topCustomers, showRate, apptArrived, apptNoShow,
+  };
 }
 
 // ── Receipt Export ──
@@ -4894,7 +4965,7 @@ function ReceiptEditModal({ receipt, onClose, onSave, onOpenPet, services = [], 
   );
 }
 
-function ReportsView({ pets, queue, stock, shopStock = [], services = [], receipts = [], onCancelReceipt, onUpdateReceipt, onOpenPet }) {
+function ReportsView({ pets, queue, stock, shopStock = [], services = [], receipts = [], appointments = [], onCancelReceipt, onUpdateReceipt, onOpenPet }) {
   const now = new Date();
   const [range, setRange] = useState('week');
   const [pickYear, setPickYear] = useState(now.getFullYear());
@@ -4929,23 +5000,47 @@ function ReportsView({ pets, queue, stock, shopStock = [], services = [], receip
     const [s, e] = dateRange;
     return (receipts || []).filter((r) => (r.type || 'opd') === 'opd' && r.date >= s && r.date <= e);
   }, [receipts, dateRange]);
-  const m = useMemo(() => calcMetrics(pets, queue, stock, visits, opdReceipts), [pets, queue, stock, visits, opdReceipts]);
+  // ช่วงก่อนหน้า (ยาวเท่ากัน วางก่อนช่วงปัจจุบัน) — ไว้เทียบ % รายรับ
+  const prevRevenue = useMemo(() => {
+    const [s, e] = dateRange;
+    const start = new Date(s + 'T00:00:00'), end = new Date(e + 'T00:00:00');
+    const lenDays = Math.round((end - start) / 86400000) + 1;
+    const pe = new Date(start.getTime() - 86400000);
+    const ps = new Date(pe.getTime() - (lenDays - 1) * 86400000);
+    const [pss, pee] = [fmtLocalDate(ps), fmtLocalDate(pe)];
+    return (receipts || []).filter((r) => (r.type || 'opd') === 'opd' && r.date >= pss && r.date <= pee).reduce((a, r) => a + (Number(r.total) || 0), 0);
+  }, [receipts, dateRange]);
+  const m = useMemo(() => calcMetrics(pets, queue, stock, visits, opdReceipts, { dateRange, appointments, prevRevenue }),
+    [pets, queue, stock, visits, opdReceipts, dateRange, appointments, prevRevenue]);
 
+  const chg = m.revenueChangePct;
   const kpiCards = [
-    { label: 'รายรับ OPD', value: fmtB(m.opdRevenue), sub: null, cls: 'tint-navy' },
-    { label: 'กำไร/เงินสุทธิ', value: fmtB(m.profit), sub: `(${m.profitMargin}%)`, cls: 'tint-mint' },
+    { label: 'รายรับ OPD', value: fmtB(m.opdRevenue),
+      sub: chg == null ? 'เทียบช่วงก่อน —' : `${chg >= 0 ? '▲' : '▼'} ${Math.abs(chg)}% เทียบช่วงก่อน`,
+      subColor: chg == null ? undefined : (chg >= 0 ? 'var(--mint-deep)' : 'var(--blush-deep)'), cls: 'tint-navy' },
+    { label: 'กำไร (ประมาณ)', value: fmtB(m.profit), sub: `≈ ${m.profitMargin}% ของรายรับ`, cls: 'tint-mint' },
     { label: 'จำนวนเคส', value: m.cases, sub: null, cls: 'tint-powder' },
     { label: 'เฉลี่ยรายรับ/เคส', value: fmtB(m.avgRevenuePerCase), sub: null, cls: 'tint-butter' },
     { label: 'เคสตรวจรักษา', value: m.treatmentCases, sub: null, cls: 'tint-powder' },
-    { label: 'Conversion Rate', value: m.conversionRate + '%', sub: 'รอตรวจ→เสร็จ', cls: 'tint-mint' },
+    { label: 'เฉลี่ยเคส/วัน', value: m.casesPerDay, sub: 'ในช่วงที่เลือก', cls: 'tint-mint' },
     { label: 'ใบเสร็จทั้งหมด', value: receipts.length, sub: null, cls: 'tint-blush' },
-    { label: 'กำไร Margin', value: m.profitMargin + '%', sub: null, cls: 'tint-navy' },
+    { label: 'กำไร Margin (ประมาณ)', value: m.profitMargin + '%', sub: null, cls: 'tint-navy' },
   ];
 
   const topRevDays = Object.entries(m.dailyRevenue).sort((a, b) => b[1] - a[1]).slice(0, 5);
   const maxRev = topRevDays[0]?.[1] || 1;
   const topProds = m.topProducts.slice(0, 5);
   const maxProd = topProds[0]?.revenue || 1;
+  // รายรับตามหมวด / วิธีชำระ / Top ลูกค้า / ช่วงเวลาคนเยอะ
+  const catColors = { 'รักษา': 'var(--navy)', 'อาหาร': 'var(--butter-deep)', 'อาบน้ำ': 'var(--powder-deep)', 'วัคซีน': 'var(--mint-deep)' };
+  const catEntries = Object.entries(m.revenueByCategory).filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1]);
+  const maxCat = catEntries[0]?.[1] || 1;
+  const methodEntries = Object.entries(m.byMethod).sort((a, b) => b[1].revenue - a[1].revenue);
+  const maxMethod = methodEntries[0]?.[1].revenue || 1;
+  const topCust = m.topCustomers;
+  const busyBar = [];
+  for (let h = 7; h <= 20; h++) busyBar.push({ label: h, full: `${h}:00`, v: m.busyHours[h] || 0 });
+  const maxBusy = Math.max(1, ...busyBar.map((b) => b.v));
 
   // bar chart — รายวันถ้าช่วงสั้น, รวมเป็นรายเดือนถ้าช่วงยาว (>62 วัน เช่น 1 ปี)
   const barData = useMemo(() => {
@@ -5060,7 +5155,7 @@ function ReportsView({ pets, queue, stock, shopStock = [], services = [], receip
           <div key={i} className={'stat-tile ' + c.cls}>
             <div className="v">{c.value}</div>
             <div className="l">{c.label}</div>
-            {c.sub ? <div style={{ fontSize: 12, opacity: .75, marginTop: 2 }}>{c.sub}</div> : null}
+            {c.sub ? <div style={{ fontSize: 12, opacity: c.subColor ? 1 : .75, marginTop: 2, color: c.subColor || undefined, fontWeight: c.subColor ? 700 : 400 }}>{c.sub}</div> : null}
           </div>
         ))}
       </div>
@@ -5087,6 +5182,75 @@ function ReportsView({ pets, queue, stock, shopStock = [], services = [], receip
           </div>
           <div className="card-pad">
             <DonutChart data={donutData} size={150} />
+          </div>
+        </div>
+      </div>
+
+      {/* ── รายรับตามหมวด + วิธีชำระเงิน ── */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, marginBottom: 14 }}>
+        <div className="card">
+          <div className="card-head"><span style={{ fontWeight: 800 }}>💰 รายรับตามหมวด</span></div>
+          <div className="card-pad">
+            {catEntries.length === 0 ? <div className="queue-empty">ยังไม่มีข้อมูล</div>
+              : catEntries.map(([k, v]) => <SimpleBar key={k} label={k} value={v} max={maxCat} color={catColors[k] || 'var(--navy)'} />)}
+          </div>
+        </div>
+        <div className="card">
+          <div className="card-head"><span style={{ fontWeight: 800 }}>💳 วิธีชำระเงิน</span></div>
+          <div className="card-pad">
+            {methodEntries.length === 0 ? <div className="queue-empty">ยังไม่มีข้อมูล</div>
+              : methodEntries.map(([k, v]) => (
+                <div key={k} style={{ marginBottom: 11 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, marginBottom: 3 }}>
+                    <span style={{ fontWeight: 600 }}>{k} <span style={{ color: 'var(--ink-faint)', fontSize: 11.5 }}>({v.count} ใบ)</span></span>
+                    <span style={{ fontWeight: 700 }}>{fmtB(v.revenue)}</span>
+                  </div>
+                  <div style={{ height: 8, background: 'var(--line)', borderRadius: 99, overflow: 'hidden' }}>
+                    <div style={{ height: '100%', width: Math.round(v.revenue / maxMethod * 100) + '%', background: k === 'เงินสด' ? 'var(--mint-deep)' : 'var(--navy)' }} />
+                  </div>
+                </div>
+              ))}
+          </div>
+        </div>
+      </div>
+
+      {/* ── ตัวเลขลูกค้า / ชนิดสัตว์ / มาตามนัด ── */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12, marginBottom: 14 }}>
+        <div className="stat-tile tint-mint"><div className="v">{m.newCust}</div><div className="l">ลูกค้าใหม่</div></div>
+        <div className="stat-tile tint-powder"><div className="v">{m.returningCust}</div><div className="l">ลูกค้าเก่า (กลับมา)</div></div>
+        <div className="stat-tile tint-butter"><div className="v">🐱 {m.speciesBreakdown['แมว'] || 0}</div><div className="l">เคสแมว</div></div>
+        <div className="stat-tile tint-powder"><div className="v">🐶 {m.speciesBreakdown['สุนัข'] || 0}</div><div className="l">เคสสุนัข</div></div>
+        <div className="stat-tile tint-blush"><div className="v">{m.showRate == null ? '—' : m.showRate + '%'}</div><div className="l">มาตามนัด ({m.apptArrived}/{m.apptArrived + m.apptNoShow})</div></div>
+      </div>
+
+      {/* ── ช่วงเวลาคนเยอะ + Top ลูกค้า ── */}
+      <div style={{ display: 'grid', gridTemplateColumns: '3fr 2fr', gap: 14, marginBottom: 14 }}>
+        <div className="card">
+          <div className="card-head"><span style={{ fontWeight: 800 }}>⏰ ช่วงเวลาที่คนเยอะ</span><span className="chip">เวลาเช็คอิน</span></div>
+          <div className="card-pad">
+            {busyBar.every((b) => b.v === 0) ? <div className="queue-empty">ยังไม่มีข้อมูล</div>
+              : <div style={{ display: 'flex', alignItems: 'flex-end', gap: 4, height: 130 }}>
+                  {busyBar.map((b) => (
+                    <div key={b.label} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3, justifyContent: 'flex-end' }} title={`${b.full} · ${b.v} เคส`}>
+                      <div style={{ fontSize: 10, color: 'var(--ink-faint)', height: 12 }}>{b.v || ''}</div>
+                      <div style={{ width: '100%', height: Math.round((b.v / maxBusy) * 90) + 'px', minHeight: b.v ? 3 : 0, background: 'var(--powder-deep)', borderRadius: '3px 3px 0 0' }} />
+                      <div style={{ fontSize: 10, color: 'var(--ink-soft)' }}>{b.label}</div>
+                    </div>
+                  ))}
+                </div>}
+          </div>
+        </div>
+        <div className="card">
+          <div className="card-head"><span style={{ fontWeight: 800 }}>👑 Top 5 ลูกค้า</span><span className="chip">จ่ายเยอะสุด</span></div>
+          <div className="card-pad">
+            {topCust.length === 0 ? <div className="queue-empty">ยังไม่มีข้อมูล</div>
+              : topCust.map((c, i) => (
+                <div key={c.hn + '_' + i} onClick={() => onOpenPet && c.hn && c.hn !== '?' && onOpenPet(c.hn)}
+                  style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '7px 0', borderBottom: '1px solid var(--line-soft)', fontSize: 13.5, cursor: onOpenPet ? 'pointer' : 'default' }}>
+                  <span><b>{i + 1}. {c.name}</b>{c.owner ? <span style={{ color: 'var(--ink-faint)', fontSize: 12 }}> · {c.owner}</span> : null} <span style={{ color: 'var(--ink-faint)', fontSize: 11.5 }}>({c.count} ครั้ง)</span></span>
+                  <span style={{ fontWeight: 700, color: 'var(--mint-deep)', flexShrink: 0 }}>{fmtB(c.spend)}</span>
+                </div>
+              ))}
           </div>
         </div>
       </div>
@@ -8151,7 +8315,7 @@ function App() {
           {page === 'appointments' ? <AppointmentsView appointments={appointments} pets={pets} onAdd={addAppointment} onUpdate={updateAppointment} onDelete={deleteAppointment} onOpenPet={openPet} pushToast={pushToast} notePresets={notePresets} onSavePresets={saveNotePresets} smsPresets={smsPresets} onSaveSmsPresets={saveSmsPresets} /> : null}
           {page === 'shop' ? <PetShop stock={shopStock} onCheckout={shopCheckout} previewReceiptNo={nextReceiptNo().no} onDeleteItem={deleteShopItem} onAddItem={addShopItem} onImportStock={importShopItems} onUpdateItem={updateShopItem} /> : null}
           {page === 'stock' ? <StockView stock={stock} onAdjust={adjustStock} onAddItem={addStockItem} onImportStock={importStockItems} onDeleteItem={deleteStockItem} onClearAll={clearStock} onUpdateItem={updateStockItem} /> : null}
-          {page === 'reports' ? <ReportsView pets={pets} queue={queue} stock={stock} shopStock={shopStock} services={services} receipts={receipts} onCancelReceipt={cancelReceipt} onUpdateReceipt={updateReceipt} onOpenPet={openPet} /> : null}
+          {page === 'reports' ? <ReportsView pets={pets} queue={queue} stock={stock} shopStock={shopStock} services={services} receipts={receipts} appointments={appointments} onCancelReceipt={cancelReceipt} onUpdateReceipt={updateReceipt} onOpenPet={openPet} /> : null}
           {page === 'history' ? <HistoryView pets={pets} onOpenPet={openPet} /> : null}
           {page === 'tax' ? <TaxView pets={pets} receipts={receipts} /> : null}
         </main>
