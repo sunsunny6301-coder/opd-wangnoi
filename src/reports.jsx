@@ -66,31 +66,42 @@ function calcMetrics(pets, queue, stock, visits, opdReceipts, extra) {
   // เทียบช่วงก่อนหน้า (%)
   const revenueChangePct = (prevRevenue != null && prevRevenue > 0) ? Math.round((opdRevenue - prevRevenue) / prevRevenue * 100) : null;
 
-  // หมวดของรายการ (สำหรับแยกรายรับ): วัคซีน / อาบน้ำ / อาหาร / รักษา
-  const stockById = {}; (stock || []).forEach((st) => { if (st && st.id != null) stockById[st.id] = st; });
-  const catOf = (name, stockId) => {
-    const n = String(name || '');
-    if (/วัคซีน|vaccine/i.test(n)) return 'วัคซีน';
-    if (/อาบน้ำ|ตัดขน|groom/i.test(n)) return 'อาบน้ำ';
-    const st = (stockId != null && stockById[stockId]) || (stock || []).find((x) => x && x.name === n);
-    if (st && /อาหาร/.test(st.cat || '')) return 'อาหาร';
-    return 'รักษา';
+  // ── บริการของใบเสร็จ (แยกเคส/รายรับตามบริการ) ──
+  // ใช้ svcType ที่บันทึกไว้ตอนออกใบเสร็จ → ถ้าไม่มี (บิลเก่า) ย้อนไปดูบริการที่เลือกใน queue ตามเลข q (backfill)
+  //   → ถ้ายังไม่มี (บิลเก่ามากไม่มี q) เดาจากชื่อรายการแรกในบิลเป็นทางสุดท้าย
+  const queueByQ = {}; (queue || []).forEach((q) => { if (q && q.q) queueByQ[q.q] = q; });
+  const svcOfReceipt = (r) => {
+    let t = r.svcType || (r.q && queueByQ[r.q] && queueByQ[r.q].type) || null;
+    if (t) return t;
+    const first = (r.items || [])[0];
+    const n = first ? cleanItemName(Array.isArray(first) ? first[0] : first.name).toLowerCase() : '';
+    if (n.includes('วัคซีน') || n.includes('vaccine')) return 'วัคซีน';
+    if (n.includes('ผ่าตัด') || n.includes('ทำหมัน') || n.includes('surgery')) return 'ผ่าตัด';
+    if (n.includes('อาบน้ำ') || n.includes('ตัดขน') || n.includes('groom')) return 'อาบน้ำตัดขน';
+    return 'ตรวจรักษา';
   };
-  const revenueByCategory = { 'รักษา': 0, 'อาหาร': 0, 'อาบน้ำ': 0, 'วัคซีน': 0 };
+  // บริการ → หมวดรายรับ (รวมบริการที่ใกล้เคียงเข้าหมวดเดียว)
+  const SVC_TO_CAT = { 'ตรวจรักษา': 'รักษา', 'ติดตามอาการ': 'รักษา', 'อื่นๆ': 'รักษา', 'ผ่าตัด': 'ผ่าตัด', 'วัคซีน': 'วัคซีน', 'อาบน้ำตัดขน': 'อาบน้ำ', 'ซื้อสินค้า': 'ซื้อสินค้า' };
+  const svcCat = (svc) => SVC_TO_CAT[svc] || 'รักษา';
+
+  const revenueByCategory = {};
   const byMethod = {};
   const petByHn = {}; (pets || []).forEach((p) => { petByHn[p.hn] = p; });
   const speciesBreakdown = {};
   const custSpend = {};
   const productSales = {};
   opdReceipts.forEach((r) => {
+    // หมวดรายรับ = บริการที่เลือก · ยกเว้นรายการที่คีย์จากเพ็ทช้อป (POS, origin='shop') ดึงออกเป็นหมวด "เพ็ทช้อป"
+    const cat = svcCat(svcOfReceipt(r));
     (r.items || []).forEach((it) => {
       const name = cleanItemName(Array.isArray(it) ? it[0] : it.name);
       const qty = Number(Array.isArray(it) ? it[1] : it.qty) || 1;
       const price = Number(Array.isArray(it) ? it[2] : it.price) || 0;
-      const stockId = Array.isArray(it) ? it[3] : it.stockId;
+      const origin = Array.isArray(it) ? it[4] : it.origin;
       if (!name) return;
       const line = qty * price;
-      revenueByCategory[catOf(name, stockId)] += line;
+      const bucket = origin === 'shop' ? 'เพ็ทช้อป' : cat;
+      revenueByCategory[bucket] = (revenueByCategory[bucket] || 0) + line;
       if (!productSales[name]) productSales[name] = { qty: 0, revenue: 0 };
       productSales[name].qty += qty; productSales[name].revenue += line;
     });
@@ -134,20 +145,10 @@ function calcMetrics(pets, queue, stock, visits, opdReceipts, extra) {
   const dailyRevenue = {};
   opdReceipts.forEach((r) => { dailyRevenue[r.date] = (dailyRevenue[r.date] || 0) + (Number(r.total) || 0); });
 
-  // เคสแยกตามประเภท: ใช้ "บริการ" ที่เลือกตอนรับเคส (svcType) เป็นหลัก — 1 เคสมีบริการเดียวชัดเจน ไม่ต้องเดา
-  // ใบเสร็จเก่าก่อนมี svcType field → fallback ไปเดาจากชื่อรายการแรกในบิล (พฤติกรรมเดิม)
+  // เคสแยกตามประเภท: ใช้ "บริการ" ที่เลือกตอนรับเคส (svcOfReceipt: svcType → queue → เดาชื่อ) — 1 เคส 1 บริการชัดเจน
   const serviceBreakdown = {};
   opdReceipts.forEach((r) => {
-    let primary = r.svcType || null;
-    if (!primary) {
-      const first = (r.items || [])[0];
-      const n = first ? cleanItemName(Array.isArray(first) ? first[0] : first.name).toLowerCase() : '';
-      primary = 'ตรวจรักษา';
-      if (n.includes('วัคซีน') || n.includes('vaccine')) primary = 'วัคซีน';
-      else if (n.includes('ผ่าตัด') || n.includes('ทำหมัน') || n.includes('surgery')) primary = 'ผ่าตัด';
-      else if (n.includes('เลือด') || n.includes('x-ray') || n.includes('cbc') || n.includes('แล็บ') || n.includes('เคมี')) primary = 'แล็บ';
-      else if (n.includes('อาบน้ำ') || n.includes('ตัดขน') || n.includes('groom')) primary = 'อาบน้ำ/ตัดขน';
-    }
+    const primary = svcOfReceipt(r);
     serviceBreakdown[primary] = (serviceBreakdown[primary] || 0) + 1;
   });
   if (cases > 0 && Object.keys(serviceBreakdown).length === 0) serviceBreakdown['ตรวจรักษา'] = cases;
@@ -650,7 +651,7 @@ function ReportsView({ pets, queue, stock, shopStock = [], services = [], receip
   const topProds = m.topProducts.slice(0, 5);
   const maxProd = topProds[0]?.revenue || 1;
   // รายรับตามหมวด / วิธีชำระ / Top ลูกค้า / ช่วงเวลาคนเยอะ
-  const catColors = { 'รักษา': 'var(--navy)', 'อาหาร': 'var(--butter-deep)', 'อาบน้ำ': 'var(--powder-deep)', 'วัคซีน': 'var(--mint-deep)' };
+  const catColors = { 'รักษา': 'var(--navy)', 'ผ่าตัด': 'var(--blush-deep)', 'วัคซีน': 'var(--mint-deep)', 'อาบน้ำ': 'var(--powder-deep)', 'ซื้อสินค้า': 'var(--butter-deep)', 'เพ็ทช้อป': 'var(--butter)' };
   const catEntries = Object.entries(m.revenueByCategory).filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1]);
   const maxCat = catEntries[0]?.[1] || 1;
   const methodEntries = Object.entries(m.byMethod).sort((a, b) => b[1].revenue - a[1].revenue);
