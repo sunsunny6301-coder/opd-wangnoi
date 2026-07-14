@@ -130,7 +130,7 @@ function App() {
         pets: s.pets.map((p) => p.hn === adm.hn ? { ...p, visits: [...newVisits, ...p.visits] } : p),
         admitted: (s.admitted || []).filter((a) => a.id !== admId),
         queue: adm.q ? (s.queue || []).map((x) => x.q === adm.q ? { ...x, status: 'done', paid: total, doneDate: todayISO() } : x) : (s.queue || []),
-        receipts: receipt ? [...(s.receipts || []), applyBillEdits({ no: receipt.no, date: todayISO(), type: 'opd', petName: adm.petName, ownerName: adm.owner?.name || '-', hn: adm.hn, q: adm.q || '', items: allItems, method: method || 'เงินสด', total, noVat: noVatAmt }, billEdits)] : (s.receipts || []),
+        receipts: receipt ? [...(s.receipts || []), applyBillEdits({ no: receipt.no, date: todayISO(), type: 'opd', svcType: adm.type || null, petName: adm.petName, ownerName: adm.owner?.name || '-', hn: adm.hn, q: adm.q || '', items: allItems, method: method || 'เงินสด', total, noVat: noVatAmt }, billEdits)] : (s.receipts || []),
         receiptSeq: con.receiptSeq,
         receiptVoids: con.receiptVoids,
       };
@@ -533,7 +533,7 @@ function App() {
       let con = { receiptSeq: s.receiptSeq || {}, receiptVoids: s.receiptVoids || {} };
       if (status === 'paid') {
         con = consumeReceipt(receipt, s);
-        newReceipts = [...newReceipts, applyBillEdits({ no: receipt.no, date: todayISO(), type: 'opd', petName: updatedPet.name, ownerName: updatedPet.owner.name, hn: updatedPet.hn, q: queueItem?.q || '', items: receiptItems, method: payMethod || 'เงินสด', total, noVat: noVatAmt }, billEdits)];
+        newReceipts = [...newReceipts, applyBillEdits({ no: receipt.no, date: todayISO(), type: 'opd', svcType: queueItem?.type || null, petName: updatedPet.name, ownerName: updatedPet.owner.name, hn: updatedPet.hn, q: queueItem?.q || '', items: receiptItems, method: payMethod || 'เงินสด', total, noVat: noVatAmt }, billEdits)];
         newQueue = queueItem?.q ? newQueue.map((x) => x.q === queueItem.q ? { ...x, status: 'done', paid: total, doneDate: todayISO() } : x) : newQueue;
         // ตัดสต็อก: รายการเพ็ทช้อป (origin='shop') ตัดจากคลังเพ็ทช้อป, ที่เหลือตัดจากคลังคลินิก
         [newStock] = deductStock(newStock, charges.filter((c) => c[3] && c[4] !== 'shop').map((c) => ({ stockId: c[3], qty: c[1] })));

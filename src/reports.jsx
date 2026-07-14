@@ -134,15 +134,20 @@ function calcMetrics(pets, queue, stock, visits, opdReceipts, extra) {
   const dailyRevenue = {};
   opdReceipts.forEach((r) => { dailyRevenue[r.date] = (dailyRevenue[r.date] || 0) + (Number(r.total) || 0); });
 
+  // เคสแยกตามประเภท: ใช้ "บริการ" ที่เลือกตอนรับเคส (svcType) เป็นหลัก — 1 เคสมีบริการเดียวชัดเจน ไม่ต้องเดา
+  // ใบเสร็จเก่าก่อนมี svcType field → fallback ไปเดาจากชื่อรายการแรกในบิล (พฤติกรรมเดิม)
   const serviceBreakdown = {};
   opdReceipts.forEach((r) => {
-    const first = (r.items || [])[0];
-    const n = first ? cleanItemName(Array.isArray(first) ? first[0] : first.name).toLowerCase() : '';
-    let primary = 'ตรวจรักษา';
-    if (n.includes('วัคซีน') || n.includes('vaccine')) primary = 'วัคซีน';
-    else if (n.includes('ผ่าตัด') || n.includes('ทำหมัน') || n.includes('surgery')) primary = 'ผ่าตัด';
-    else if (n.includes('เลือด') || n.includes('x-ray') || n.includes('cbc') || n.includes('แล็บ') || n.includes('เคมี')) primary = 'แล็บ';
-    else if (n.includes('อาบน้ำ') || n.includes('ตัดขน') || n.includes('groom')) primary = 'อาบน้ำ/ตัดขน';
+    let primary = r.svcType || null;
+    if (!primary) {
+      const first = (r.items || [])[0];
+      const n = first ? cleanItemName(Array.isArray(first) ? first[0] : first.name).toLowerCase() : '';
+      primary = 'ตรวจรักษา';
+      if (n.includes('วัคซีน') || n.includes('vaccine')) primary = 'วัคซีน';
+      else if (n.includes('ผ่าตัด') || n.includes('ทำหมัน') || n.includes('surgery')) primary = 'ผ่าตัด';
+      else if (n.includes('เลือด') || n.includes('x-ray') || n.includes('cbc') || n.includes('แล็บ') || n.includes('เคมี')) primary = 'แล็บ';
+      else if (n.includes('อาบน้ำ') || n.includes('ตัดขน') || n.includes('groom')) primary = 'อาบน้ำ/ตัดขน';
+    }
     serviceBreakdown[primary] = (serviceBreakdown[primary] || 0) + 1;
   });
   if (cases > 0 && Object.keys(serviceBreakdown).length === 0) serviceBreakdown['ตรวจรักษา'] = cases;
