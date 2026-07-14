@@ -47,9 +47,21 @@ function calcMetrics(pets, queue, stock, visits, opdReceipts, extra) {
   const [rs, re] = dateRange || ['', '￿'];
 
   const opdRevenue = opdReceipts.reduce((s, r) => s + (Number(r.total) || 0), 0);
-  // กำไร "ประมาณการ" = 40% ของรายรับในช่วง (ตัวเลขประมาณ ยังไม่ได้หักต้นทุนจริงทั้งระบบ)
-  // (เดิมบวกส่วนต่างต้นทุนจาก queue.charges ทั้งระบบ ทำให้ทุกช่วงถูกลบค่าคงที่เท่ากัน — เป็นบั๊ก จึงตัดออก)
-  const profit = Math.round(opdRevenue * 0.4);
+  // กำไรขั้นต้น = รายรับ − ต้นทุนสินค้าจริง (COGS) ของรายการที่มี stockId+cost
+  // ค่าบริการ/ตรวจ (ไม่มี stockId) = กำไรเต็ม (ไม่มีต้นทุนสินค้า · ยังไม่หักค่าแรง/ค่าโสหุ้ย)
+  // ดึงต้นทุนจากทั้งคลังคลินิก (stock) และคลังเพ็ทช้อป (extra.shopStock)
+  const costById = {};
+  [stock || [], extra.shopStock || []].forEach((arr) => arr.forEach((st) => {
+    if (st && st.id != null && costById[st.id] == null && Number(st.cost) > 0) costById[st.id] = Number(st.cost);
+  }));
+  let cogs = 0;
+  opdReceipts.forEach((r) => (r.items || []).forEach((it) => {
+    const stockId = Array.isArray(it) ? it[3] : it.stockId;
+    const qty = Number(Array.isArray(it) ? it[1] : it.qty) || 1;
+    if (stockId != null && costById[stockId] != null) cogs += qty * costById[stockId];
+  }));
+  cogs = Math.round(cogs);
+  const profit = opdRevenue - cogs;                 // กำไรขั้นต้น
   const profitMargin = opdRevenue > 0 ? Math.round(profit / opdRevenue * 100) : 0;
   const cases = opdReceipts.length;               // จำนวนเคส = จำนวนใบเสร็จ (เคสที่คิดเงินแล้ว)
   const avgRevenuePerCase = cases > 0 ? Math.round(opdRevenue / cases) : 0;
@@ -157,7 +169,7 @@ function calcMetrics(pets, queue, stock, visits, opdReceipts, extra) {
   Object.values(casesByService).forEach((list) => list.sort((a, b) => (a.date < b.date ? 1 : -1)));
 
   return {
-    opdRevenue, profit, profitMargin, cases, avgRevenuePerCase, treatmentCases,
+    opdRevenue, profit, profitMargin, cogs, cases, avgRevenuePerCase, treatmentCases,
     casesPerDay, revenueChangePct, prevRevenue: prevRevenue || 0,
     topProducts, dailyRevenue, serviceBreakdown, casesByService, productSales,
     revenueByCategory, byMethod, speciesBreakdown, newCust, returningCust,
@@ -693,21 +705,21 @@ function ReportsView({ pets, queue, stock, shopStock = [], services = [], receip
     const [pss, pee] = [fmtLocalDate(ps), fmtLocalDate(pe)];
     return (receipts || []).filter((r) => (r.type || 'opd') === 'opd' && r.date >= pss && r.date <= pee).reduce((a, r) => a + (Number(r.total) || 0), 0);
   }, [receipts, dateRange]);
-  const m = useMemo(() => calcMetrics(pets, queue, stock, visits, opdReceipts, { dateRange, appointments, prevRevenue }),
-    [pets, queue, stock, visits, opdReceipts, dateRange, appointments, prevRevenue]);
+  const m = useMemo(() => calcMetrics(pets, queue, stock, visits, opdReceipts, { dateRange, appointments, prevRevenue, shopStock }),
+    [pets, queue, stock, visits, opdReceipts, dateRange, appointments, prevRevenue, shopStock]);
 
   const chg = m.revenueChangePct;
   const kpiCards = [
     { label: 'รายรับ OPD', value: fmtB(m.opdRevenue),
       sub: chg == null ? 'เทียบช่วงก่อน —' : `${chg >= 0 ? '▲' : '▼'} ${Math.abs(chg)}% เทียบช่วงก่อน`,
       subColor: chg == null ? undefined : (chg >= 0 ? 'var(--mint-deep)' : 'var(--blush-deep)'), cls: 'tint-navy' },
-    { label: 'กำไร (ประมาณ)', value: fmtB(m.profit), sub: `≈ ${m.profitMargin}% ของรายรับ`, cls: 'tint-mint' },
+    { label: 'กำไรขั้นต้น', value: fmtB(m.profit), sub: `หักต้นทุนสินค้า ${fmtB(m.cogs)}`, cls: 'tint-mint' },
     { label: 'จำนวนเคส', value: m.cases, sub: null, cls: 'tint-powder' },
     { label: 'เฉลี่ยรายรับ/เคส', value: fmtB(m.avgRevenuePerCase), sub: null, cls: 'tint-butter' },
     { label: 'เคสตรวจรักษา', value: m.treatmentCases, sub: null, cls: 'tint-powder' },
     { label: 'เฉลี่ยเคส/วัน', value: m.casesPerDay, sub: 'ในช่วงที่เลือก', cls: 'tint-mint' },
     { label: 'ใบเสร็จในช่วง', value: receiptsInRange, sub: `ทั้งระบบ ${receipts.length} ใบ`, cls: 'tint-blush' },
-    { label: 'กำไร Margin (ประมาณ)', value: m.profitMargin + '%', sub: null, cls: 'tint-navy' },
+    { label: 'กำไรขั้นต้น Margin', value: m.profitMargin + '%', sub: 'ยังไม่หักค่าแรง/โสหุ้ย', cls: 'tint-navy' },
   ];
 
   const topRevDays = Object.entries(m.dailyRevenue).sort((a, b) => b[1] - a[1]).slice(0, 5);
