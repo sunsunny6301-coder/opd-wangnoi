@@ -4434,13 +4434,9 @@ function calcMetrics(pets, queue, stock, visits, opdReceipts, extra) {
   const [rs, re] = dateRange || ['', '￿'];
 
   const opdRevenue = opdReceipts.reduce((s, r) => s + (Number(r.total) || 0), 0);
-  // กำไร "ประมาณการ": 40% ของรายรับ + ส่วนต่างต้นทุนสินค้าที่ขายจากคิว (ยังไม่ใช่กำไรจริงหักต้นทุนเต็มระบบ)
-  const profit = stock.reduce((s, stk) => {
-    const sold = queue.filter((qi) => qi.charges).flatMap((qi) => qi.charges)
-      .filter(([name]) => name === stk.name)
-      .reduce((ss, [, qty, price]) => ss + qty * (price - (stk.cost || price * 0.5)), 0);
-    return s + sold;
-  }, Math.round(opdRevenue * 0.4));
+  // กำไร "ประมาณการ" = 40% ของรายรับในช่วง (ตัวเลขประมาณ ยังไม่ได้หักต้นทุนจริงทั้งระบบ)
+  // (เดิมบวกส่วนต่างต้นทุนจาก queue.charges ทั้งระบบ ทำให้ทุกช่วงถูกลบค่าคงที่เท่ากัน — เป็นบั๊ก จึงตัดออก)
+  const profit = Math.round(opdRevenue * 0.4);
   const profitMargin = opdRevenue > 0 ? Math.round(profit / opdRevenue * 100) : 0;
   const cases = opdReceipts.length;               // จำนวนเคส = จำนวนใบเสร็จ (เคสที่คิดเงินแล้ว)
   const avgRevenuePerCase = cases > 0 ? Math.round(opdRevenue / cases) : 0;
@@ -5069,6 +5065,11 @@ function ReportsView({ pets, queue, stock, shopStock = [], services = [], receip
     const [s, e] = dateRange;
     return (receipts || []).filter((r) => (r.type || 'opd') === 'opd' && r.date >= s && r.date <= e);
   }, [receipts, dateRange]);
+  // ใบเสร็จทั้งหมดในช่วง (OPD + เพ็ทช้อป) — ให้ตัวนับสอดคล้องกับช่วงที่เลือก ไม่ใช่ทั้งระบบ
+  const receiptsInRange = useMemo(() => {
+    const [s, e] = dateRange;
+    return (receipts || []).filter((r) => r.date >= s && r.date <= e).length;
+  }, [receipts, dateRange]);
   // ช่วงก่อนหน้า (ยาวเท่ากัน วางก่อนช่วงปัจจุบัน) — ไว้เทียบ % รายรับ
   const prevRevenue = useMemo(() => {
     const [s, e] = dateRange;
@@ -5092,7 +5093,7 @@ function ReportsView({ pets, queue, stock, shopStock = [], services = [], receip
     { label: 'เฉลี่ยรายรับ/เคส', value: fmtB(m.avgRevenuePerCase), sub: null, cls: 'tint-butter' },
     { label: 'เคสตรวจรักษา', value: m.treatmentCases, sub: null, cls: 'tint-powder' },
     { label: 'เฉลี่ยเคส/วัน', value: m.casesPerDay, sub: 'ในช่วงที่เลือก', cls: 'tint-mint' },
-    { label: 'ใบเสร็จทั้งหมด', value: receipts.length, sub: null, cls: 'tint-blush' },
+    { label: 'ใบเสร็จในช่วง', value: receiptsInRange, sub: `ทั้งระบบ ${receipts.length} ใบ`, cls: 'tint-blush' },
     { label: 'กำไร Margin (ประมาณ)', value: m.profitMargin + '%', sub: null, cls: 'tint-navy' },
   ];
 
