@@ -4445,7 +4445,13 @@ function calcMetrics(pets, queue, stock, visits, opdReceipts, extra) {
   opdReceipts.forEach((r) => (r.items || []).forEach((it) => {
     const stockId = Array.isArray(it) ? it[3] : it.stockId;
     const qty = Number(Array.isArray(it) ? it[1] : it.qty) || 1;
-    if (stockId != null && costById[stockId] != null) cogs += qty * costById[stockId];
+    const unitPrice = Number(Array.isArray(it) ? it[2] : it.price) || 0;
+    const c = stockId != null ? costById[stockId] : null;
+    if (c == null) return;
+    // กันทุนผิดหน่วย: บางตัวใส่ทุน "ต่อแพ็ค/ต่อขวด" แต่ขาย "ต่อเม็ด/ต่อโดส" (เช่น Onsior ทุน 535/กล่อง 30 เม็ด ขาย 40/เม็ด)
+    // ถ้าทุนต่อหน่วยสูงกว่าราคาขายในบิล = ทุนเชื่อถือไม่ได้ → ข้าม (ไปแก้ทุนต่อหน่วยในหน้าสต็อกแล้วจะถูกนับอัตโนมัติ)
+    if (c > unitPrice) return;
+    cogs += qty * c;
   }));
   cogs = Math.round(cogs);
   const profit = opdRevenue - cogs;                 // กำไรขั้นต้น
