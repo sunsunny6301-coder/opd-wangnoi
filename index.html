@@ -307,6 +307,53 @@ button, input, select, textarea { font-family: inherit; font-size: inherit; colo
   .anim-pop { animation: none; opacity: 1; transform: none; }
   .anim-wiggle { animation: none; }
 }
+
+/* การ์ดเพิ่งย้ายโซน → เรืองแสง + สไลด์เข้าสั้นๆ */
+@keyframes movedGlow {
+  0%   { box-shadow: 0 0 0 0 var(--glow, rgba(62,125,92,.55)); transform: translateX(-8px); }
+  30%  { box-shadow: 0 0 0 4px var(--glow, rgba(62,125,92,.35)); transform: translateX(0); }
+  100% { box-shadow: 0 0 0 0 rgba(0,0,0,0); }
+}
+.q-card.just-moved { animation: movedGlow 1.1s ease-out; }
+
+/* ป้าย "ถึงเวลานัด" กะพริบ + จุดสถานะเต้น */
+@keyframes softBlink { 0%,100% { opacity: 1; } 50% { opacity: .45; } }
+.due-badge { display: inline-flex; align-items: center; gap: 3px; font-size: 11px; font-weight: 800; color: #fff; background: var(--blush-deep); padding: 2px 8px; border-radius: 99px; animation: softBlink 1.3s ease-in-out infinite; }
+
+/* ตัวเลขเด้ง (นับนัด/คิว เปลี่ยน) */
+@keyframes countBounce { 0% { transform: scale(1); } 40% { transform: scale(1.35); } 100% { transform: scale(1); } }
+.count-bounce { animation: countBounce .45s cubic-bezier(.34,1.56,.64,1); display: inline-flex; }
+
+/* แมวนอน (คิวว่าง) */
+@keyframes zzzFloat { 0% { opacity: 0; transform: translateY(0) scale(.8); } 30% { opacity: 1; } 100% { opacity: 0; transform: translateY(-22px) scale(1.1); } }
+@keyframes catBreath { 0%,100% { transform: scale(1); } 50% { transform: scale(1.06); } }
+.sleep-cat { text-align: center; padding: 26px 10px; color: var(--ink-faint); }
+.sleep-cat .cat { font-size: 46px; display: inline-block; animation: catBreath 3.2s ease-in-out infinite; }
+.sleep-cat .zzz { position: relative; display: inline-block; }
+.sleep-cat .zzz span { position: absolute; font-weight: 800; color: var(--powder-deep); animation: zzzFloat 2.6s ease-in-out infinite; }
+.sleep-cat .zzz span:nth-child(1) { font-size: 13px; left: 2px; animation-delay: 0s; }
+.sleep-cat .zzz span:nth-child(2) { font-size: 16px; left: 12px; top: -6px; animation-delay: .8s; }
+.sleep-cat .zzz span:nth-child(3) { font-size: 20px; left: 24px; top: -12px; animation-delay: 1.6s; }
+
+/* ยอดวันนี้ถึง/เกินค่าเฉลี่ย → การ์ดเรืองทอง */
+@keyframes goalShimmer { 0% { background-position: -200% 0; } 100% { background-position: 200% 0; } }
+.stat-tile.goal-hit { position: relative; overflow: hidden; border-color: #E7C860; }
+.stat-tile.goal-hit::after { content: ""; position: absolute; inset: 0; background: linear-gradient(105deg, transparent 35%, rgba(255,225,140,.45) 50%, transparent 65%); background-size: 220% 100%; animation: goalShimmer 3.2s ease-in-out infinite; pointer-events: none; }
+.goal-badge { position: absolute; top: 8px; right: 10px; font-size: 15px; animation: catBreath 1.6s ease-in-out infinite; }
+
+/* เทศกาล: อีโมจิลอยขึ้นช้าๆ */
+@keyframes festDrift { 0% { transform: translateY(102vh) rotate(0); opacity: 0; } 8% { opacity: .55; } 92% { opacity: .55; } 100% { transform: translateY(-12vh) rotate(30deg); opacity: 0; } }
+.festival-drift { position: absolute; bottom: 0; opacity: .5; animation: festDrift linear infinite; will-change: transform; }
+
+/* skeleton shimmer (โหลดข้อมูลจากคลาวด์) */
+@keyframes skelSweep { 0% { background-position: -200% 0; } 100% { background-position: 200% 0; } }
+.skeleton { border-radius: var(--radius-sm); background: linear-gradient(100deg, var(--line-soft) 30%, var(--line) 45%, var(--line-soft) 60%); background-size: 220% 100%; animation: skelSweep 1.3s ease-in-out infinite; color: transparent !important; }
+.skeleton * { visibility: hidden; }
+
+@media (prefers-reduced-motion: reduce) {
+  .q-card.just-moved, .due-badge, .count-bounce, .sleep-cat .cat, .sleep-cat .zzz span,
+  .stat-tile.goal-hit::after, .goal-badge, .festival-drift, .skeleton { animation: none; }
+}
 .modal-head {
   display: flex; align-items: center; justify-content: space-between;
   padding: 16px 20px; border-bottom: 1px solid var(--line-soft);
@@ -1277,7 +1324,97 @@ function CountUp({ value, format, dur = 900 }) {
   return <>{format ? format(disp) : Math.round(disp).toLocaleString('th-TH')}</>;
 }
 
-Object.assign(window, { Icon, Modal, useToasts, Field, SPECIES_EMOJI, TYPE_CHIP, fmtB, todayTH, dateTH, timeNow, calcAge, todayISO, imageToDataURL, CountUp });
+// ── ฉลอง: confetti + เสียงติ๊ง (ลูกเล่นตอนปิดเคส/ทำยอดถึงเป้า) ──────────
+let _actx = null;
+function playDing() {
+  try {
+    _actx = _actx || new (window.AudioContext || window.webkitAudioContext)();
+    if (_actx.state === 'suspended') _actx.resume();
+    const t = _actx.currentTime;
+    [784, 1175].forEach((f, i) => {           // โน้ตนุ่มๆ 2 ตัว (G5→D6)
+      const o = _actx.createOscillator(), g = _actx.createGain();
+      o.type = 'sine'; o.frequency.value = f;
+      const s = t + i * 0.09;
+      g.gain.setValueAtTime(0, s);
+      g.gain.linearRampToValueAtTime(0.10, s + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001, s + 0.33);
+      o.connect(g); g.connect(_actx.destination); o.start(s); o.stop(s + 0.34);
+    });
+  } catch (e) {}
+}
+// เรียกฉลอง: celebrate() หรือ celebrate({ big:true, x, y, sound:false })
+function celebrate(detail) {
+  try { window.dispatchEvent(new CustomEvent('opd-celebrate', { detail: detail || {} })); } catch (e) {}
+}
+function ConfettiLayer() {
+  const ref = useRef(null);
+  useEffect(() => {
+    const reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const canvas = ref.current; if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    const colors = ['#C0685C', '#3E7D5C', '#2D4B72', '#C9A227', '#5E8A93', '#E0A96D', '#D98880'];
+    let parts = [], raf = 0, running = false;
+    const resize = () => { canvas.width = window.innerWidth; canvas.height = window.innerHeight; };
+    resize(); window.addEventListener('resize', resize);
+    function burst(n, o) {
+      o = o || {};
+      const cx = o.x != null ? o.x : window.innerWidth / 2;
+      const cy = o.y != null ? o.y : window.innerHeight * 0.34;
+      for (let i = 0; i < n; i++) {
+        const a = Math.random() * Math.PI * 2, sp = 4 + Math.random() * 8;
+        parts.push({ x: cx, y: cy, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 5,
+          g: 0.16 + Math.random() * 0.12, life: 1, rot: Math.random() * 6, vr: (Math.random() - .5) * 0.5,
+          size: 7 + Math.random() * 8, color: colors[i % colors.length], em: Math.random() < 0.22 ? '🐾' : null });
+      }
+      if (!running) { running = true; raf = requestAnimationFrame(loop); }
+    }
+    function loop() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      parts.forEach((p) => { p.vy += p.g; p.x += p.vx; p.y += p.vy; p.rot += p.vr; p.life -= 0.011; });
+      parts = parts.filter((p) => p.life > 0 && p.y < canvas.height + 50);
+      parts.forEach((p) => {
+        ctx.save(); ctx.globalAlpha = Math.max(0, p.life); ctx.translate(p.x, p.y); ctx.rotate(p.rot);
+        if (p.em) { ctx.font = (p.size * 1.7) + 'px serif'; ctx.textAlign = 'center'; ctx.fillText(p.em, 0, 0); }
+        else { ctx.fillStyle = p.color; ctx.fillRect(-p.size / 2, -p.size / 2, p.size, p.size * 0.62); }
+        ctx.restore();
+      });
+      if (parts.length) raf = requestAnimationFrame(loop);
+      else { running = false; ctx.clearRect(0, 0, canvas.width, canvas.height); }
+    }
+    const onCel = (e) => { if (reduce) return; const d = (e && e.detail) || {}; burst(d.big ? 80 : 44, d); if (d.sound !== false) playDing(); };
+    window.addEventListener('opd-celebrate', onCel);
+    return () => { window.removeEventListener('opd-celebrate', onCel); window.removeEventListener('resize', resize); cancelAnimationFrame(raf); };
+  }, []);
+  return <canvas ref={ref} aria-hidden="true" style={{ position: 'fixed', inset: 0, width: '100%', height: '100%', pointerEvents: 'none', zIndex: 9999 }} />;
+}
+
+// ── โหมดเทศกาล: สลับอีโมจิ/สีตามวันที่โดยอัตโนมัติ ──────────────────────
+function getFestival(d) {
+  d = d || new Date();
+  const m = d.getMonth() + 1, day = d.getDate();
+  if ((m === 12 && day >= 24) || (m === 1 && day <= 3)) return { key: 'newyear', label: 'สวัสดีปีใหม่', emojis: ['🎄', '🎁', '⛄', '✨', '🔔'], accent: '#C0685C' };
+  if (m === 2 && day >= 13 && day <= 15) return { key: 'valentine', label: 'วาเลนไทน์', emojis: ['💕', '💖', '🌹', '💝'], accent: '#C0685C' };
+  if (m === 4 && day >= 11 && day <= 16) return { key: 'songkran', label: 'สงกรานต์', emojis: ['💦', '🌊', '🐘', '🌸'], accent: '#5E8A93' };
+  if (m === 10 && day >= 25) return { key: 'halloween', label: 'ฮาโลวีน', emojis: ['🎃', '👻', '🦇', '🕸️'], accent: '#A87B2F' };
+  if (m === 11 && day >= 10 && day <= 20) return { key: 'loykrathong', label: 'ลอยกระทง', emojis: ['🪷', '🌕', '🕯️', '✨'], accent: '#A87B2F' };
+  return null;
+}
+function FestivalFloat({ override }) {
+  const fes = override || getFestival();
+  if (!fes) return null;
+  const reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const items = [];
+  for (let i = 0; i < 7; i++) items.push({ e: fes.emojis[i % fes.emojis.length], left: (8 + i * 13) + '%', dur: (9 + (i % 4) * 3), delay: (i * 1.3), size: 15 + (i % 3) * 6 });
+  return (
+    <div aria-hidden="true" style={{ position: 'fixed', inset: 0, pointerEvents: 'none', zIndex: 6, overflow: 'hidden' }}>
+      {!reduce && items.map((it, i) => (
+        <span key={i} className="festival-drift" style={{ left: it.left, fontSize: it.size, animationDuration: it.dur + 's', animationDelay: it.delay + 's' }}>{it.e}</span>
+      ))}
+    </div>
+  );
+}
+
+Object.assign(window, { Icon, Modal, useToasts, Field, SPECIES_EMOJI, TYPE_CHIP, fmtB, todayTH, dateTH, timeNow, calcAge, todayISO, imageToDataURL, CountUp, celebrate, playDing, ConfettiLayer, getFestival, FestivalFloat });
 
 </script>
 
@@ -2414,7 +2551,7 @@ function FgCats() {
   );
 }
 
-function Dashboard({ pets, queue, appointments, admitted, receipts = [], onOpenCase, onOpenPet, onMove, onPay, onWalkIn, onUpdateAppointment, onDischargeAdmitted, onUpdateAdmitted, onOpenAdmittedCase, onCancelQueue, onCancelAdmit, notePresets, onSavePresets, pushToast }) {
+function Dashboard({ pets, queue, appointments, admitted, receipts = [], loading = false, onOpenCase, onOpenPet, onMove, onPay, onWalkIn, onUpdateAppointment, onDischargeAdmitted, onUpdateAdmitted, onOpenAdmittedCase, onCancelQueue, onCancelAdmit, notePresets, onSavePresets, pushToast }) {
   const [showWalkIn, setShowWalkIn] = useState(false);
   const [walkInPrefillHn, setWalkInPrefillHn] = useState(null);
   // วันที่ของแผงนัด (เลื่อนดูวันก่อน/ถัดไปได้ด้วยลูกศร) — เริ่มที่วันนี้
@@ -2451,13 +2588,47 @@ function Dashboard({ pets, queue, appointments, admitted, receipts = [], onOpenC
   filter((a) => a.date === apptDay && a.status !== 'cancelled').
   sort((a, b) => (a.time || '').localeCompare(b.time || ''));
 
+  // เป้าวันนี้ = ค่าเฉลี่ยรายรับต่อวันที่ผ่านมา (เฉพาะวันที่เปิดทำการ) — ถึง/เกินเป้าแล้วการ์ดเรืองทอง + ฉลอง
+  const goalAvg = useMemo(() => {
+    const byDay = {};
+    (receipts || []).forEach((r) => { if ((r.type || 'opd') === 'opd' && r.date && r.date < todayStr) byDay[r.date] = (byDay[r.date] || 0) + (Number(r.total) || 0); });
+    const days = Object.keys(byDay).sort().slice(-30).map((d) => byDay[d]);
+    return days.length ? Math.round(days.reduce((a, b) => a + b, 0) / days.length) : 0;
+  }, [receipts, todayStr]);
+  const goalHit = goalAvg > 0 && revenue >= goalAvg;
+  const goalFired = useRef(false);
+  useEffect(() => {
+    if (goalHit && revenue > 0 && !goalFired.current) { goalFired.current = true; celebrate({ big: true }); }
+    if (!goalHit) goalFired.current = false;
+  }, [goalHit, revenue]);
+
+  const activeCount = byStatus('wait').length + byStatus('exam').length + byStatus('cashier').length;
+  const nowHM = (typeof timeNow !== 'undefined' ? timeNow() : new Date().toTimeString().slice(0, 5));
+
   const stats = [
   { num: byStatus('wait').length, l: 'รอตรวจ', cls: 'tint-butter' },
   { num: byStatus('exam').length, l: 'กำลังตรวจ', cls: 'tint-powder' },
   { num: byStatus('cashier').length, l: 'รอชำระเงิน', cls: 'tint-blush' },
   { num: byStatus('done').length, l: 'เสร็จแล้ววันนี้', cls: 'tint-mint' },
-  { num: revenue, fmt: fmtB, l: 'รายรับวันนี้ (OPD)', cls: 'tint-navy' }];
+  { num: revenue, fmt: fmtB, l: 'รายรับวันนี้ (OPD)', cls: 'tint-navy', goal: goalHit,
+    sub: goalAvg > 0 ? (goalHit ? '🎉 เกินค่าเฉลี่ย!' : `เป้า ~${fmtB(goalAvg)}`) : null }];
 
+
+  if (loading) {
+    return (
+      <div className="dash-root">
+        <div className="stats-row" style={{ marginBottom: 14 }}>
+          {[0, 1, 2, 3, 4].map((i) => (
+            <div key={i} className="stat-tile skeleton" style={{ height: 74 }}><div className="v">000</div><div className="l">loading</div></div>
+          ))}
+        </div>
+        <div className="queue-board">
+          {[0, 1, 2, 3].map((i) => <div key={i} className="skeleton" style={{ height: 220, borderRadius: 'var(--radius)' }} />)}
+        </div>
+        <div style={{ textAlign: 'center', marginTop: 18, color: 'var(--ink-faint)', fontSize: 13 }}>🐾 กำลังโหลดข้อมูลจากคลาวด์…</div>
+      </div>
+    );
+  }
 
   return (
     <div className="dash-root">
@@ -2482,7 +2653,7 @@ function Dashboard({ pets, queue, appointments, admitted, receipts = [], onOpenC
               </span>
               {apptDay === todayStr ? 'นัดวันนี้' : 'นัด'}
             </span>
-            <span style={{ minWidth: 22, height: 22, borderRadius: 99, background: '#3A3F8F', color: '#fff', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 800 }}>
+            <span key={dayAppts.length} className="count-bounce" style={{ minWidth: 22, height: 22, borderRadius: 99, background: '#3A3F8F', color: '#fff', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 800 }}>
               {dayAppts.length}
             </span>
           </div>
@@ -2515,6 +2686,7 @@ function Dashboard({ pets, queue, appointments, admitted, receipts = [], onOpenC
                   <div style={{ display: 'flex', gap: 5, marginTop: 5, alignItems: 'center', flexWrap: 'wrap' }}>
                     <span className={`chip ${APPT_CHIP && APPT_CHIP[a.type] ? APPT_CHIP[a.type] : ''}`} style={{ fontSize: 11 }}>{a.type}</span>
                     {arrived ? <span className="chip chip-mint" style={{ fontSize: 11 }}>มาแล้ว</span> : null}
+                    {!arrived && apptDay === todayStr && a.time && a.time <= nowHM ? <span className="due-badge">⏰ ถึงเวลา</span> : null}
                     {typeof ApptSmsStatus !== 'undefined' ? <ApptSmsStatus a={a} past={apptDay < todayStr} onToggle={() => onUpdateAppointment && onUpdateAppointment({ ...a, smsAuto: a.smsAuto === false })} /> : null}
                   </div>
                   {a.note ? <div style={{ fontSize: 12, color: 'var(--ink-soft)', marginTop: 4 }}>{a.note}</div> : null}
@@ -2556,12 +2728,23 @@ function Dashboard({ pets, queue, appointments, admitted, receipts = [], onOpenC
         <div>
           <div className="stats-row" style={{ marginBottom: 14 }}>
             {stats.map((s, i) =>
-            <div key={i} className={'stat-tile anim-pop ' + s.cls} style={{ '--i': i }}>
+            <div key={i} className={'stat-tile anim-pop ' + s.cls + (s.goal ? ' goal-hit' : '')} style={{ '--i': i }}>
+                {s.goal ? <span className="goal-badge" title="วันนี้ทำได้เกินค่าเฉลี่ย 🎉">🎉</span> : null}
                 <div className="v"><CountUp value={s.num} format={s.fmt ? (n) => s.fmt(Math.round(n)) : undefined} /></div>
                 <div className="l">{s.l}</div>
+                {s.sub ? <div style={{ fontSize: 11.5, marginTop: 2, opacity: .8, fontWeight: 600 }}>{s.sub}</div> : null}
               </div>
             )}
           </div>
+
+          {activeCount === 0 ? (
+            <div className="card sleep-cat" style={{ marginBottom: 14 }}>
+              <div className="cat">😴</div>
+              <span className="zzz"><span>z</span><span>Z</span><span>Z</span></span>
+              <div style={{ fontWeight: 700, marginTop: 6, fontSize: 14 }}>คิวว่าง — งีบก่อนนะ 🐾</div>
+              <div style={{ fontSize: 12.5, marginTop: 2 }}>กด “รับเคสใหม่ / Walk-in” เพื่อเริ่มคิวถัดไป</div>
+            </div>
+          ) : null}
 
           <div className="queue-board">
         {Object.entries(STATUS_META).map(([st, meta]) => {
@@ -7717,6 +7900,7 @@ function App() {
   const [caseCtx, setCaseCtx] = useState(null);
   const [payFor, setPayFor] = useState(null);
   const [showBackup, setShowBackup] = useState(false);
+  const [booted, setBooted] = useState(false);   // โหลดคลาวด์ครั้งแรกเสร็จหรือยัง (ใช้โชว์ skeleton ตอนเครื่องใหม่)
   const [pushToast, toastRack] = useToasts();
 
   const { pets, queue, stock } = state;
@@ -7819,6 +8003,7 @@ function App() {
       };
     });
     pushToast((total > 0 ? `จำหน่าย ${adm.petName} — รับชำระ ${fmtB(total)}` : `จำหน่าย ${adm.petName} แล้ว`) + (deducted > 0 ? ` · ตัดสต็อก ${deducted} รายการ` : ''));
+    if (total > 0) celebrate({ big: total >= 3000 });
   };
   const updatePet = (updated) => {
     setState((s) => ({ ...s, pets: s.pets.map((p) => p.hn === updated.hn ? updated : p) }));
@@ -7861,7 +8046,7 @@ function App() {
 
   // sync Supabase → local on first load
   useEffect(() => {
-    if (!supa) { console.warn('[SB] supabase client not available'); hydrated.current = true; return; }
+    if (!supa) { console.warn('[SB] supabase client not available'); hydrated.current = true; setBooted(true); return; }
     console.log('[SB] loading from Supabase...');
     supa.from('app_state').select('data, updated_at').eq('id', 'main').maybeSingle().then(({ data, error }) => {
       if (error) {
@@ -7869,6 +8054,7 @@ function App() {
         // โหลดไม่ได้: ถ้าเครื่องนี้มีข้อมูลจริงอยู่แล้ว → save ได้ (กันงานค้าง)
         // แต่ถ้าเป็นเครื่องใหม่ (มีแต่ seed) → ห้าม save เพื่อไม่ให้ทับข้อมูลจริงบนคลาวด์
         if (hadLocal.current) hydrated.current = true;
+        setBooted(true);
         return;
       }
       if (data?.data?.pets && data?.data?.queue) {
@@ -7880,6 +8066,7 @@ function App() {
         console.log('[SB] no data in Supabase yet, using localStorage');
       }
       hydrated.current = true; // โหลดเสร็จแล้ว (มี/ไม่มีข้อมูลก็ตาม) → เริ่ม save ขึ้นคลาวด์ได้
+      setBooted(true);
     });
   }, []);
 
@@ -8231,6 +8418,7 @@ function App() {
     pushToast(status === 'paid'
       ? `รับชำระ ${fmtB(total)} แล้ว` + (deducted > 0 ? ` · ตัดสต็อก ${deducted} รายการ` : '')
       : `บันทึกเรียบร้อย`);
+    if (status === 'paid') celebrate({ big: total >= 3000 });
   };
 
   const payFromBoard = (method, total, billEdits) => {
@@ -8268,6 +8456,7 @@ function App() {
       };
     });
     pushToast(`รับชำระ ${fmtB(total)} (${method}) — ${payFor.petName}` + (deducted > 0 ? ` · ตัดสต็อก ${deducted} รายการ` : ''));
+    celebrate({ big: total >= 3000 });
     setPayFor(null);
   };
 
@@ -8290,6 +8479,7 @@ function App() {
       };
     });
     pushToast(`ขายสินค้า ${fmtB(total)} (${method}) · ตัดสต็อก ${deducted} รายการ`);
+    celebrate({ big: total >= 3000 });
   };
 
   const adjustStock = (id, d) =>
@@ -8455,6 +8645,7 @@ function App() {
         <main className="main-body" data-screen-label={titles[page]}>
           {page === 'dashboard' ?
           <Dashboard pets={pets} queue={queue} appointments={appointments} admitted={admitted} receipts={receipts}
+          loading={!booted && (pets || []).length === 0}
           onOpenCase={openCase} onOpenPet={openPet}
           onMove={moveQ} onPay={setPayFor} onWalkIn={walkIn}
           onUpdateAppointment={updateAppointment} onDischargeAdmitted={dischargeAdmitted} onUpdateAdmitted={updateAdmitted} onOpenAdmittedCase={openAdmittedCase} onCancelQueue={cancelQueue} onCancelAdmit={cancelAdmit}
@@ -8499,6 +8690,8 @@ function App() {
       ) : null}
 
       {toastRack}
+      <ConfettiLayer />
+      <FestivalFloat />
     </div>);
 
 }

@@ -150,4 +150,94 @@ function CountUp({ value, format, dur = 900 }) {
   return <>{format ? format(disp) : Math.round(disp).toLocaleString('th-TH')}</>;
 }
 
-Object.assign(window, { Icon, Modal, useToasts, Field, SPECIES_EMOJI, TYPE_CHIP, fmtB, todayTH, dateTH, timeNow, calcAge, todayISO, imageToDataURL, CountUp });
+// ── ฉลอง: confetti + เสียงติ๊ง (ลูกเล่นตอนปิดเคส/ทำยอดถึงเป้า) ──────────
+let _actx = null;
+function playDing() {
+  try {
+    _actx = _actx || new (window.AudioContext || window.webkitAudioContext)();
+    if (_actx.state === 'suspended') _actx.resume();
+    const t = _actx.currentTime;
+    [784, 1175].forEach((f, i) => {           // โน้ตนุ่มๆ 2 ตัว (G5→D6)
+      const o = _actx.createOscillator(), g = _actx.createGain();
+      o.type = 'sine'; o.frequency.value = f;
+      const s = t + i * 0.09;
+      g.gain.setValueAtTime(0, s);
+      g.gain.linearRampToValueAtTime(0.10, s + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001, s + 0.33);
+      o.connect(g); g.connect(_actx.destination); o.start(s); o.stop(s + 0.34);
+    });
+  } catch (e) {}
+}
+// เรียกฉลอง: celebrate() หรือ celebrate({ big:true, x, y, sound:false })
+function celebrate(detail) {
+  try { window.dispatchEvent(new CustomEvent('opd-celebrate', { detail: detail || {} })); } catch (e) {}
+}
+function ConfettiLayer() {
+  const ref = useRef(null);
+  useEffect(() => {
+    const reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const canvas = ref.current; if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    const colors = ['#C0685C', '#3E7D5C', '#2D4B72', '#C9A227', '#5E8A93', '#E0A96D', '#D98880'];
+    let parts = [], raf = 0, running = false;
+    const resize = () => { canvas.width = window.innerWidth; canvas.height = window.innerHeight; };
+    resize(); window.addEventListener('resize', resize);
+    function burst(n, o) {
+      o = o || {};
+      const cx = o.x != null ? o.x : window.innerWidth / 2;
+      const cy = o.y != null ? o.y : window.innerHeight * 0.34;
+      for (let i = 0; i < n; i++) {
+        const a = Math.random() * Math.PI * 2, sp = 4 + Math.random() * 8;
+        parts.push({ x: cx, y: cy, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 5,
+          g: 0.16 + Math.random() * 0.12, life: 1, rot: Math.random() * 6, vr: (Math.random() - .5) * 0.5,
+          size: 7 + Math.random() * 8, color: colors[i % colors.length], em: Math.random() < 0.22 ? '🐾' : null });
+      }
+      if (!running) { running = true; raf = requestAnimationFrame(loop); }
+    }
+    function loop() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      parts.forEach((p) => { p.vy += p.g; p.x += p.vx; p.y += p.vy; p.rot += p.vr; p.life -= 0.011; });
+      parts = parts.filter((p) => p.life > 0 && p.y < canvas.height + 50);
+      parts.forEach((p) => {
+        ctx.save(); ctx.globalAlpha = Math.max(0, p.life); ctx.translate(p.x, p.y); ctx.rotate(p.rot);
+        if (p.em) { ctx.font = (p.size * 1.7) + 'px serif'; ctx.textAlign = 'center'; ctx.fillText(p.em, 0, 0); }
+        else { ctx.fillStyle = p.color; ctx.fillRect(-p.size / 2, -p.size / 2, p.size, p.size * 0.62); }
+        ctx.restore();
+      });
+      if (parts.length) raf = requestAnimationFrame(loop);
+      else { running = false; ctx.clearRect(0, 0, canvas.width, canvas.height); }
+    }
+    const onCel = (e) => { if (reduce) return; const d = (e && e.detail) || {}; burst(d.big ? 80 : 44, d); if (d.sound !== false) playDing(); };
+    window.addEventListener('opd-celebrate', onCel);
+    return () => { window.removeEventListener('opd-celebrate', onCel); window.removeEventListener('resize', resize); cancelAnimationFrame(raf); };
+  }, []);
+  return <canvas ref={ref} aria-hidden="true" style={{ position: 'fixed', inset: 0, width: '100%', height: '100%', pointerEvents: 'none', zIndex: 9999 }} />;
+}
+
+// ── โหมดเทศกาล: สลับอีโมจิ/สีตามวันที่โดยอัตโนมัติ ──────────────────────
+function getFestival(d) {
+  d = d || new Date();
+  const m = d.getMonth() + 1, day = d.getDate();
+  if ((m === 12 && day >= 24) || (m === 1 && day <= 3)) return { key: 'newyear', label: 'สวัสดีปีใหม่', emojis: ['🎄', '🎁', '⛄', '✨', '🔔'], accent: '#C0685C' };
+  if (m === 2 && day >= 13 && day <= 15) return { key: 'valentine', label: 'วาเลนไทน์', emojis: ['💕', '💖', '🌹', '💝'], accent: '#C0685C' };
+  if (m === 4 && day >= 11 && day <= 16) return { key: 'songkran', label: 'สงกรานต์', emojis: ['💦', '🌊', '🐘', '🌸'], accent: '#5E8A93' };
+  if (m === 10 && day >= 25) return { key: 'halloween', label: 'ฮาโลวีน', emojis: ['🎃', '👻', '🦇', '🕸️'], accent: '#A87B2F' };
+  if (m === 11 && day >= 10 && day <= 20) return { key: 'loykrathong', label: 'ลอยกระทง', emojis: ['🪷', '🌕', '🕯️', '✨'], accent: '#A87B2F' };
+  return null;
+}
+function FestivalFloat({ override }) {
+  const fes = override || getFestival();
+  if (!fes) return null;
+  const reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const items = [];
+  for (let i = 0; i < 7; i++) items.push({ e: fes.emojis[i % fes.emojis.length], left: (8 + i * 13) + '%', dur: (9 + (i % 4) * 3), delay: (i * 1.3), size: 15 + (i % 3) * 6 });
+  return (
+    <div aria-hidden="true" style={{ position: 'fixed', inset: 0, pointerEvents: 'none', zIndex: 6, overflow: 'hidden' }}>
+      {!reduce && items.map((it, i) => (
+        <span key={i} className="festival-drift" style={{ left: it.left, fontSize: it.size, animationDuration: it.dur + 's', animationDelay: it.delay + 's' }}>{it.e}</span>
+      ))}
+    </div>
+  );
+}
+
+Object.assign(window, { Icon, Modal, useToasts, Field, SPECIES_EMOJI, TYPE_CHIP, fmtB, todayTH, dateTH, timeNow, calcAge, todayISO, imageToDataURL, CountUp, celebrate, playDing, ConfettiLayer, getFestival, FestivalFloat });

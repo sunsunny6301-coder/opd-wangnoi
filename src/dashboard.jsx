@@ -719,7 +719,7 @@ function FgCats() {
   );
 }
 
-function Dashboard({ pets, queue, appointments, admitted, receipts = [], onOpenCase, onOpenPet, onMove, onPay, onWalkIn, onUpdateAppointment, onDischargeAdmitted, onUpdateAdmitted, onOpenAdmittedCase, onCancelQueue, onCancelAdmit, notePresets, onSavePresets, pushToast }) {
+function Dashboard({ pets, queue, appointments, admitted, receipts = [], loading = false, onOpenCase, onOpenPet, onMove, onPay, onWalkIn, onUpdateAppointment, onDischargeAdmitted, onUpdateAdmitted, onOpenAdmittedCase, onCancelQueue, onCancelAdmit, notePresets, onSavePresets, pushToast }) {
   const [showWalkIn, setShowWalkIn] = useState(false);
   const [walkInPrefillHn, setWalkInPrefillHn] = useState(null);
   // วันที่ของแผงนัด (เลื่อนดูวันก่อน/ถัดไปได้ด้วยลูกศร) — เริ่มที่วันนี้
@@ -756,13 +756,47 @@ function Dashboard({ pets, queue, appointments, admitted, receipts = [], onOpenC
   filter((a) => a.date === apptDay && a.status !== 'cancelled').
   sort((a, b) => (a.time || '').localeCompare(b.time || ''));
 
+  // เป้าวันนี้ = ค่าเฉลี่ยรายรับต่อวันที่ผ่านมา (เฉพาะวันที่เปิดทำการ) — ถึง/เกินเป้าแล้วการ์ดเรืองทอง + ฉลอง
+  const goalAvg = useMemo(() => {
+    const byDay = {};
+    (receipts || []).forEach((r) => { if ((r.type || 'opd') === 'opd' && r.date && r.date < todayStr) byDay[r.date] = (byDay[r.date] || 0) + (Number(r.total) || 0); });
+    const days = Object.keys(byDay).sort().slice(-30).map((d) => byDay[d]);
+    return days.length ? Math.round(days.reduce((a, b) => a + b, 0) / days.length) : 0;
+  }, [receipts, todayStr]);
+  const goalHit = goalAvg > 0 && revenue >= goalAvg;
+  const goalFired = useRef(false);
+  useEffect(() => {
+    if (goalHit && revenue > 0 && !goalFired.current) { goalFired.current = true; celebrate({ big: true }); }
+    if (!goalHit) goalFired.current = false;
+  }, [goalHit, revenue]);
+
+  const activeCount = byStatus('wait').length + byStatus('exam').length + byStatus('cashier').length;
+  const nowHM = (typeof timeNow !== 'undefined' ? timeNow() : new Date().toTimeString().slice(0, 5));
+
   const stats = [
   { num: byStatus('wait').length, l: 'รอตรวจ', cls: 'tint-butter' },
   { num: byStatus('exam').length, l: 'กำลังตรวจ', cls: 'tint-powder' },
   { num: byStatus('cashier').length, l: 'รอชำระเงิน', cls: 'tint-blush' },
   { num: byStatus('done').length, l: 'เสร็จแล้ววันนี้', cls: 'tint-mint' },
-  { num: revenue, fmt: fmtB, l: 'รายรับวันนี้ (OPD)', cls: 'tint-navy' }];
+  { num: revenue, fmt: fmtB, l: 'รายรับวันนี้ (OPD)', cls: 'tint-navy', goal: goalHit,
+    sub: goalAvg > 0 ? (goalHit ? '🎉 เกินค่าเฉลี่ย!' : `เป้า ~${fmtB(goalAvg)}`) : null }];
 
+
+  if (loading) {
+    return (
+      <div className="dash-root">
+        <div className="stats-row" style={{ marginBottom: 14 }}>
+          {[0, 1, 2, 3, 4].map((i) => (
+            <div key={i} className="stat-tile skeleton" style={{ height: 74 }}><div className="v">000</div><div className="l">loading</div></div>
+          ))}
+        </div>
+        <div className="queue-board">
+          {[0, 1, 2, 3].map((i) => <div key={i} className="skeleton" style={{ height: 220, borderRadius: 'var(--radius)' }} />)}
+        </div>
+        <div style={{ textAlign: 'center', marginTop: 18, color: 'var(--ink-faint)', fontSize: 13 }}>🐾 กำลังโหลดข้อมูลจากคลาวด์…</div>
+      </div>
+    );
+  }
 
   return (
     <div className="dash-root">
@@ -787,7 +821,7 @@ function Dashboard({ pets, queue, appointments, admitted, receipts = [], onOpenC
               </span>
               {apptDay === todayStr ? 'นัดวันนี้' : 'นัด'}
             </span>
-            <span style={{ minWidth: 22, height: 22, borderRadius: 99, background: '#3A3F8F', color: '#fff', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 800 }}>
+            <span key={dayAppts.length} className="count-bounce" style={{ minWidth: 22, height: 22, borderRadius: 99, background: '#3A3F8F', color: '#fff', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 800 }}>
               {dayAppts.length}
             </span>
           </div>
@@ -820,6 +854,7 @@ function Dashboard({ pets, queue, appointments, admitted, receipts = [], onOpenC
                   <div style={{ display: 'flex', gap: 5, marginTop: 5, alignItems: 'center', flexWrap: 'wrap' }}>
                     <span className={`chip ${APPT_CHIP && APPT_CHIP[a.type] ? APPT_CHIP[a.type] : ''}`} style={{ fontSize: 11 }}>{a.type}</span>
                     {arrived ? <span className="chip chip-mint" style={{ fontSize: 11 }}>มาแล้ว</span> : null}
+                    {!arrived && apptDay === todayStr && a.time && a.time <= nowHM ? <span className="due-badge">⏰ ถึงเวลา</span> : null}
                     {typeof ApptSmsStatus !== 'undefined' ? <ApptSmsStatus a={a} past={apptDay < todayStr} onToggle={() => onUpdateAppointment && onUpdateAppointment({ ...a, smsAuto: a.smsAuto === false })} /> : null}
                   </div>
                   {a.note ? <div style={{ fontSize: 12, color: 'var(--ink-soft)', marginTop: 4 }}>{a.note}</div> : null}
@@ -861,12 +896,23 @@ function Dashboard({ pets, queue, appointments, admitted, receipts = [], onOpenC
         <div>
           <div className="stats-row" style={{ marginBottom: 14 }}>
             {stats.map((s, i) =>
-            <div key={i} className={'stat-tile anim-pop ' + s.cls} style={{ '--i': i }}>
+            <div key={i} className={'stat-tile anim-pop ' + s.cls + (s.goal ? ' goal-hit' : '')} style={{ '--i': i }}>
+                {s.goal ? <span className="goal-badge" title="วันนี้ทำได้เกินค่าเฉลี่ย 🎉">🎉</span> : null}
                 <div className="v"><CountUp value={s.num} format={s.fmt ? (n) => s.fmt(Math.round(n)) : undefined} /></div>
                 <div className="l">{s.l}</div>
+                {s.sub ? <div style={{ fontSize: 11.5, marginTop: 2, opacity: .8, fontWeight: 600 }}>{s.sub}</div> : null}
               </div>
             )}
           </div>
+
+          {activeCount === 0 ? (
+            <div className="card sleep-cat" style={{ marginBottom: 14 }}>
+              <div className="cat">😴</div>
+              <span className="zzz"><span>z</span><span>Z</span><span>Z</span></span>
+              <div style={{ fontWeight: 700, marginTop: 6, fontSize: 14 }}>คิวว่าง — งีบก่อนนะ 🐾</div>
+              <div style={{ fontSize: 12.5, marginTop: 2 }}>กด “รับเคสใหม่ / Walk-in” เพื่อเริ่มคิวถัดไป</div>
+            </div>
+          ) : null}
 
           <div className="queue-board">
         {Object.entries(STATUS_META).map(([st, meta]) => {

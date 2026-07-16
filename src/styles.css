@@ -282,6 +282,53 @@ button, input, select, textarea { font-family: inherit; font-size: inherit; colo
   .anim-pop { animation: none; opacity: 1; transform: none; }
   .anim-wiggle { animation: none; }
 }
+
+/* การ์ดเพิ่งย้ายโซน → เรืองแสง + สไลด์เข้าสั้นๆ */
+@keyframes movedGlow {
+  0%   { box-shadow: 0 0 0 0 var(--glow, rgba(62,125,92,.55)); transform: translateX(-8px); }
+  30%  { box-shadow: 0 0 0 4px var(--glow, rgba(62,125,92,.35)); transform: translateX(0); }
+  100% { box-shadow: 0 0 0 0 rgba(0,0,0,0); }
+}
+.q-card.just-moved { animation: movedGlow 1.1s ease-out; }
+
+/* ป้าย "ถึงเวลานัด" กะพริบ + จุดสถานะเต้น */
+@keyframes softBlink { 0%,100% { opacity: 1; } 50% { opacity: .45; } }
+.due-badge { display: inline-flex; align-items: center; gap: 3px; font-size: 11px; font-weight: 800; color: #fff; background: var(--blush-deep); padding: 2px 8px; border-radius: 99px; animation: softBlink 1.3s ease-in-out infinite; }
+
+/* ตัวเลขเด้ง (นับนัด/คิว เปลี่ยน) */
+@keyframes countBounce { 0% { transform: scale(1); } 40% { transform: scale(1.35); } 100% { transform: scale(1); } }
+.count-bounce { animation: countBounce .45s cubic-bezier(.34,1.56,.64,1); display: inline-flex; }
+
+/* แมวนอน (คิวว่าง) */
+@keyframes zzzFloat { 0% { opacity: 0; transform: translateY(0) scale(.8); } 30% { opacity: 1; } 100% { opacity: 0; transform: translateY(-22px) scale(1.1); } }
+@keyframes catBreath { 0%,100% { transform: scale(1); } 50% { transform: scale(1.06); } }
+.sleep-cat { text-align: center; padding: 26px 10px; color: var(--ink-faint); }
+.sleep-cat .cat { font-size: 46px; display: inline-block; animation: catBreath 3.2s ease-in-out infinite; }
+.sleep-cat .zzz { position: relative; display: inline-block; }
+.sleep-cat .zzz span { position: absolute; font-weight: 800; color: var(--powder-deep); animation: zzzFloat 2.6s ease-in-out infinite; }
+.sleep-cat .zzz span:nth-child(1) { font-size: 13px; left: 2px; animation-delay: 0s; }
+.sleep-cat .zzz span:nth-child(2) { font-size: 16px; left: 12px; top: -6px; animation-delay: .8s; }
+.sleep-cat .zzz span:nth-child(3) { font-size: 20px; left: 24px; top: -12px; animation-delay: 1.6s; }
+
+/* ยอดวันนี้ถึง/เกินค่าเฉลี่ย → การ์ดเรืองทอง */
+@keyframes goalShimmer { 0% { background-position: -200% 0; } 100% { background-position: 200% 0; } }
+.stat-tile.goal-hit { position: relative; overflow: hidden; border-color: #E7C860; }
+.stat-tile.goal-hit::after { content: ""; position: absolute; inset: 0; background: linear-gradient(105deg, transparent 35%, rgba(255,225,140,.45) 50%, transparent 65%); background-size: 220% 100%; animation: goalShimmer 3.2s ease-in-out infinite; pointer-events: none; }
+.goal-badge { position: absolute; top: 8px; right: 10px; font-size: 15px; animation: catBreath 1.6s ease-in-out infinite; }
+
+/* เทศกาล: อีโมจิลอยขึ้นช้าๆ */
+@keyframes festDrift { 0% { transform: translateY(102vh) rotate(0); opacity: 0; } 8% { opacity: .55; } 92% { opacity: .55; } 100% { transform: translateY(-12vh) rotate(30deg); opacity: 0; } }
+.festival-drift { position: absolute; bottom: 0; opacity: .5; animation: festDrift linear infinite; will-change: transform; }
+
+/* skeleton shimmer (โหลดข้อมูลจากคลาวด์) */
+@keyframes skelSweep { 0% { background-position: -200% 0; } 100% { background-position: 200% 0; } }
+.skeleton { border-radius: var(--radius-sm); background: linear-gradient(100deg, var(--line-soft) 30%, var(--line) 45%, var(--line-soft) 60%); background-size: 220% 100%; animation: skelSweep 1.3s ease-in-out infinite; color: transparent !important; }
+.skeleton * { visibility: hidden; }
+
+@media (prefers-reduced-motion: reduce) {
+  .q-card.just-moved, .due-badge, .count-bounce, .sleep-cat .cat, .sleep-cat .zzz span,
+  .stat-tile.goal-hit::after, .goal-badge, .festival-drift, .skeleton { animation: none; }
+}
 .modal-head {
   display: flex; align-items: center; justify-content: space-between;
   padding: 16px 20px; border-bottom: 1px solid var(--line-soft);

@@ -34,6 +34,7 @@ function App() {
   const [caseCtx, setCaseCtx] = useState(null);
   const [payFor, setPayFor] = useState(null);
   const [showBackup, setShowBackup] = useState(false);
+  const [booted, setBooted] = useState(false);   // โหลดคลาวด์ครั้งแรกเสร็จหรือยัง (ใช้โชว์ skeleton ตอนเครื่องใหม่)
   const [pushToast, toastRack] = useToasts();
 
   const { pets, queue, stock } = state;
@@ -136,6 +137,7 @@ function App() {
       };
     });
     pushToast((total > 0 ? `จำหน่าย ${adm.petName} — รับชำระ ${fmtB(total)}` : `จำหน่าย ${adm.petName} แล้ว`) + (deducted > 0 ? ` · ตัดสต็อก ${deducted} รายการ` : ''));
+    if (total > 0) celebrate({ big: total >= 3000 });
   };
   const updatePet = (updated) => {
     setState((s) => ({ ...s, pets: s.pets.map((p) => p.hn === updated.hn ? updated : p) }));
@@ -178,7 +180,7 @@ function App() {
 
   // sync Supabase → local on first load
   useEffect(() => {
-    if (!supa) { console.warn('[SB] supabase client not available'); hydrated.current = true; return; }
+    if (!supa) { console.warn('[SB] supabase client not available'); hydrated.current = true; setBooted(true); return; }
     console.log('[SB] loading from Supabase...');
     supa.from('app_state').select('data, updated_at').eq('id', 'main').maybeSingle().then(({ data, error }) => {
       if (error) {
@@ -186,6 +188,7 @@ function App() {
         // โหลดไม่ได้: ถ้าเครื่องนี้มีข้อมูลจริงอยู่แล้ว → save ได้ (กันงานค้าง)
         // แต่ถ้าเป็นเครื่องใหม่ (มีแต่ seed) → ห้าม save เพื่อไม่ให้ทับข้อมูลจริงบนคลาวด์
         if (hadLocal.current) hydrated.current = true;
+        setBooted(true);
         return;
       }
       if (data?.data?.pets && data?.data?.queue) {
@@ -197,6 +200,7 @@ function App() {
         console.log('[SB] no data in Supabase yet, using localStorage');
       }
       hydrated.current = true; // โหลดเสร็จแล้ว (มี/ไม่มีข้อมูลก็ตาม) → เริ่ม save ขึ้นคลาวด์ได้
+      setBooted(true);
     });
   }, []);
 
@@ -548,6 +552,7 @@ function App() {
     pushToast(status === 'paid'
       ? `รับชำระ ${fmtB(total)} แล้ว` + (deducted > 0 ? ` · ตัดสต็อก ${deducted} รายการ` : '')
       : `บันทึกเรียบร้อย`);
+    if (status === 'paid') celebrate({ big: total >= 3000 });
   };
 
   const payFromBoard = (method, total, billEdits) => {
@@ -585,6 +590,7 @@ function App() {
       };
     });
     pushToast(`รับชำระ ${fmtB(total)} (${method}) — ${payFor.petName}` + (deducted > 0 ? ` · ตัดสต็อก ${deducted} รายการ` : ''));
+    celebrate({ big: total >= 3000 });
     setPayFor(null);
   };
 
@@ -607,6 +613,7 @@ function App() {
       };
     });
     pushToast(`ขายสินค้า ${fmtB(total)} (${method}) · ตัดสต็อก ${deducted} รายการ`);
+    celebrate({ big: total >= 3000 });
   };
 
   const adjustStock = (id, d) =>
@@ -772,6 +779,7 @@ function App() {
         <main className="main-body" data-screen-label={titles[page]}>
           {page === 'dashboard' ?
           <Dashboard pets={pets} queue={queue} appointments={appointments} admitted={admitted} receipts={receipts}
+          loading={!booted && (pets || []).length === 0}
           onOpenCase={openCase} onOpenPet={openPet}
           onMove={moveQ} onPay={setPayFor} onWalkIn={walkIn}
           onUpdateAppointment={updateAppointment} onDischargeAdmitted={dischargeAdmitted} onUpdateAdmitted={updateAdmitted} onOpenAdmittedCase={openAdmittedCase} onCancelQueue={cancelQueue} onCancelAdmit={cancelAdmit}
@@ -816,6 +824,8 @@ function App() {
       ) : null}
 
       {toastRack}
+      <ConfettiLayer />
+      <FestivalFloat />
     </div>);
 
 }
