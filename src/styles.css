@@ -302,13 +302,15 @@ button, input, select, textarea { font-family: inherit; font-size: inherit; colo
 /* แมวนอน (คิวว่าง) */
 @keyframes zzzFloat { 0% { opacity: 0; transform: translateY(0) scale(.8); } 30% { opacity: 1; } 100% { opacity: 0; transform: translateY(-22px) scale(1.1); } }
 @keyframes catBreath { 0%,100% { transform: scale(1); } 50% { transform: scale(1.06); } }
-.sleep-cat { text-align: center; padding: 26px 10px; color: var(--ink-faint); }
-.sleep-cat .cat { font-size: 46px; display: inline-block; animation: catBreath 3.2s ease-in-out infinite; }
-.sleep-cat .zzz { position: relative; display: inline-block; }
-.sleep-cat .zzz span { position: absolute; font-weight: 800; color: var(--powder-deep); animation: zzzFloat 2.6s ease-in-out infinite; }
-.sleep-cat .zzz span:nth-child(1) { font-size: 13px; left: 2px; animation-delay: 0s; }
-.sleep-cat .zzz span:nth-child(2) { font-size: 16px; left: 12px; top: -6px; animation-delay: .8s; }
-.sleep-cat .zzz span:nth-child(3) { font-size: 20px; left: 24px; top: -12px; animation-delay: 1.6s; }
+.sleep-corner { position: fixed; bottom: 12px; z-index: 5; display: inline-flex; align-items: flex-start; pointer-events: none; opacity: .85; }
+.sleep-corner.left { left: 14px; }
+.sleep-corner.right { right: 14px; }
+.sleep-corner .cat { font-size: 30px; display: inline-block; animation: catBreath 3.2s ease-in-out infinite; }
+.sleep-corner .zzz { position: relative; width: 30px; height: 28px; }
+.sleep-corner .zzz span { position: absolute; font-weight: 800; color: var(--powder-deep); animation: zzzFloat 2.6s ease-in-out infinite; }
+.sleep-corner .zzz span:nth-child(1) { font-size: 11px; left: 0; top: 8px; animation-delay: 0s; }
+.sleep-corner .zzz span:nth-child(2) { font-size: 14px; left: 8px; top: 1px; animation-delay: .8s; }
+.sleep-corner .zzz span:nth-child(3) { font-size: 18px; left: 18px; top: -7px; animation-delay: 1.6s; }
 
 /* ยอดวันนี้ถึง/เกินค่าเฉลี่ย → การ์ดเรืองทอง */
 @keyframes goalShimmer { 0% { background-position: -200% 0; } 100% { background-position: 200% 0; } }
@@ -326,7 +328,7 @@ button, input, select, textarea { font-family: inherit; font-size: inherit; colo
 .skeleton * { visibility: hidden; }
 
 @media (prefers-reduced-motion: reduce) {
-  .q-card.just-moved, .due-badge, .count-bounce, .sleep-cat .cat, .sleep-cat .zzz span,
+  .q-card.just-moved, .due-badge, .count-bounce, .sleep-corner .cat, .sleep-corner .zzz span,
   .stat-tile.goal-hit::after, .goal-badge, .festival-drift, .skeleton { animation: none; }
 }
 .modal-head {

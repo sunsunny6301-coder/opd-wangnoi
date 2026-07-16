@@ -906,12 +906,16 @@ function Dashboard({ pets, queue, appointments, admitted, receipts = [], loading
           </div>
 
           {activeCount === 0 ? (
-            <div className="card sleep-cat" style={{ marginBottom: 14 }}>
-              <div className="cat">😴</div>
-              <span className="zzz"><span>z</span><span>Z</span><span>Z</span></span>
-              <div style={{ fontWeight: 700, marginTop: 6, fontSize: 14 }}>คิวว่าง — งีบก่อนนะ 🐾</div>
-              <div style={{ fontSize: 12.5, marginTop: 2 }}>กด “รับเคสใหม่ / Walk-in” เพื่อเริ่มคิวถัดไป</div>
-            </div>
+            <>
+              <div className="sleep-corner left" aria-hidden="true" title="คิวว่าง — งีบก่อนนะ">
+                <span className="cat">😴</span>
+                <span className="zzz"><span>z</span><span>Z</span><span>Z</span></span>
+              </div>
+              <div className="sleep-corner right" aria-hidden="true" title="คิวว่าง — งีบก่อนนะ">
+                <span className="zzz"><span>z</span><span>Z</span><span>Z</span></span>
+                <span className="cat">😴</span>
+              </div>
+            </>
           ) : null}
 
           <div className="queue-board">
