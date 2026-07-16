@@ -276,14 +276,14 @@ function QueueCard({ item, pet, onOpen, onOpenCase, onMove, onPay, onCancel, zon
   const total = (item.charges || []).reduce((s, [, q, p]) => s + q * p, 0);
   const [confirmCancel, setConfirmCancel] = useState(false);
   return (
-    <div className={'q-card ' + meta.tone}
+    <div className={'q-card anim-pop ' + meta.tone}
     style={{ borderTop: 'none', borderLeft: `4px solid ${zoneBorder || meta.dot}`, cursor: 'pointer' }}
     onClick={() => onOpen(item)}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
         <span className="q-no">{item.q}</span>
         <span style={{ fontSize: 12, color: 'var(--ink-faint)', display: 'inline-flex', alignItems: 'center', gap: 4 }}><Icon name="clock" size={13} />{item.time}</span>
       </div>
-      <div className="q-pet">{SPECIES_EMOJI[item.species] || '🐾'} {item.petName}
+      <div className="q-pet"><span className="anim-wiggle">{SPECIES_EMOJI[item.species] || '🐾'}</span> {item.petName}
         {item.isNew ? <span className="chip chip-blush" style={{ fontSize: 11 }}>ลูกค้าใหม่</span> : null}
       </div>
       <div className="q-meta">
@@ -757,11 +757,11 @@ function Dashboard({ pets, queue, appointments, admitted, receipts = [], onOpenC
   sort((a, b) => (a.time || '').localeCompare(b.time || ''));
 
   const stats = [
-  { v: byStatus('wait').length, l: 'รอตรวจ', cls: 'tint-butter' },
-  { v: byStatus('exam').length, l: 'กำลังตรวจ', cls: 'tint-powder' },
-  { v: byStatus('cashier').length, l: 'รอชำระเงิน', cls: 'tint-blush' },
-  { v: byStatus('done').length, l: 'เสร็จแล้ววันนี้', cls: 'tint-mint' },
-  { v: fmtB(revenue), l: 'รายรับวันนี้ (OPD)', cls: 'tint-navy' }];
+  { num: byStatus('wait').length, l: 'รอตรวจ', cls: 'tint-butter' },
+  { num: byStatus('exam').length, l: 'กำลังตรวจ', cls: 'tint-powder' },
+  { num: byStatus('cashier').length, l: 'รอชำระเงิน', cls: 'tint-blush' },
+  { num: byStatus('done').length, l: 'เสร็จแล้ววันนี้', cls: 'tint-mint' },
+  { num: revenue, fmt: fmtB, l: 'รายรับวันนี้ (OPD)', cls: 'tint-navy' }];
 
 
   return (
@@ -861,8 +861,8 @@ function Dashboard({ pets, queue, appointments, admitted, receipts = [], onOpenC
         <div>
           <div className="stats-row" style={{ marginBottom: 14 }}>
             {stats.map((s, i) =>
-            <div key={i} className={'stat-tile ' + s.cls}>
-                <div className="v">{s.v}</div>
+            <div key={i} className={'stat-tile anim-pop ' + s.cls} style={{ '--i': i }}>
+                <div className="v"><CountUp value={s.num} format={s.fmt ? (n) => s.fmt(Math.round(n)) : undefined} /></div>
                 <div className="l">{s.l}</div>
               </div>
             )}

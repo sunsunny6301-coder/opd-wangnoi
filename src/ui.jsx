@@ -122,4 +122,32 @@ function Field({ label, children }) {
   return <div className="field"><label>{label}</label>{children}</div>;
 }
 
-Object.assign(window, { Icon, Modal, useToasts, Field, SPECIES_EMOJI, TYPE_CHIP, fmtB, todayTH, dateTH, timeNow, calcAge, todayISO, imageToDataURL });
+// ── CountUp: ตัวเลขไล่นับขึ้น (ลูกเล่นหน้าหลัก/สรุป) — นับตอนโหลด และตอนค่าเปลี่ยน · เคารพ reduced-motion ──
+// สำคัญ: requestAnimationFrame หยุดทำงานเมื่อแท็บถูกซ่อน (document.hidden) → ต้องมี setTimeout กันตัวเลขค้างที่ 0
+function CountUp({ value, format, dur = 900 }) {
+  const num = Number(value) || 0;
+  const [disp, setDisp] = useState(num);   // เริ่มที่ค่าจริงไว้ก่อน กันค้าง 0 ถ้า rAF ไม่ทำงาน
+  const prev = useRef(0);                   // แต่ครั้งแรกไล่นับจาก 0 → num
+  useEffect(() => {
+    const reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const from = prev.current, to = num;
+    prev.current = to;
+    if (reduce || from === to) { setDisp(to); return; }
+    let raf = 0, done = false;
+    const start = performance.now();
+    const tick = (now) => {
+      const p = Math.min(1, (now - start) / dur);
+      const e = 1 - Math.pow(1 - p, 3);         // ease-out
+      setDisp(from + (to - from) * e);
+      if (p < 1) raf = requestAnimationFrame(tick); else done = true;
+    };
+    setDisp(from);
+    raf = requestAnimationFrame(tick);
+    // กันเหนียว: ถ้า rAF ไม่ทำงาน (แท็บซ่อน/ถูก throttle) ให้เด้งไปค่าจริงเมื่อครบเวลา
+    const safety = setTimeout(() => { if (!done) setDisp(to); }, dur + 220);
+    return () => { cancelAnimationFrame(raf); clearTimeout(safety); };
+  }, [num]);
+  return <>{format ? format(disp) : Math.round(disp).toLocaleString('th-TH')}</>;
+}
+
+Object.assign(window, { Icon, Modal, useToasts, Field, SPECIES_EMOJI, TYPE_CHIP, fmtB, todayTH, dateTH, timeNow, calcAge, todayISO, imageToDataURL, CountUp });

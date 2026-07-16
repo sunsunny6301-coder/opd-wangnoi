@@ -272,6 +272,41 @@ button, input, select, textarea { font-family: inherit; font-size: inherit; colo
 }
 .modal-box.wide { max-width: 760px; }
 @keyframes pop { from { opacity: 0; transform: translateY(10px) scale(.98); } }
+
+/* ── Playful motion (ธีมสนุก มีชีวิตชีวา) ── */
+@keyframes popBounce {
+  0%   { opacity: 0; transform: scale(.72) translateY(12px); }
+  62%  { opacity: 1; transform: scale(1.05) translateY(0); }
+  100% { opacity: 1; transform: scale(1); }
+}
+.anim-pop { animation: popBounce .5s cubic-bezier(.34,1.56,.64,1) both; animation-delay: calc(var(--i, 0) * 65ms); }
+
+/* อีโมจิสัตว์ขยับไหวๆ เป็นช่วงๆ (ส่วนใหญ่นิ่ง สะบัดสั้นๆ ทุก ~5 วิ ไม่รบกวนสายตา) */
+@keyframes wiggleGentle {
+  0%, 80%, 100% { transform: rotate(0); }
+  84% { transform: rotate(-11deg); }
+  88% { transform: rotate(9deg); }
+  92% { transform: rotate(-6deg); }
+  96% { transform: rotate(3deg); }
+}
+.anim-wiggle { display: inline-block; transform-origin: 60% 90%; animation: wiggleGentle 5s ease-in-out infinite; }
+.anim-wiggle.d1 { animation-delay: .8s; }
+.anim-wiggle.d2 { animation-delay: 1.9s; }
+.anim-wiggle.d3 { animation-delay: 3.1s; }
+/* ชี้การ์ดคิว → อีโมจิเด้งเร็วขึ้นทันที */
+.q-card:hover .anim-wiggle, .cust-row:hover .anim-wiggle { animation-duration: .7s; }
+
+/* ประกายเด้ง (ตอนโหลดเสร็จ / เคสเข้าโซนเสร็จแล้ว) */
+@keyframes sparkPop {
+  0%   { opacity: 0; transform: scale(.4) translateY(4px); }
+  45%  { opacity: 1; transform: scale(1.15) translateY(-5px); }
+  100% { opacity: 0; transform: scale(1) translateY(-14px); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .anim-pop { animation: none; opacity: 1; transform: none; }
+  .anim-wiggle { animation: none; }
+}
 .modal-head {
   display: flex; align-items: center; justify-content: space-between;
   padding: 16px 20px; border-bottom: 1px solid var(--line-soft);
@@ -1214,7 +1249,35 @@ function Field({ label, children }) {
   return <div className="field"><label>{label}</label>{children}</div>;
 }
 
-Object.assign(window, { Icon, Modal, useToasts, Field, SPECIES_EMOJI, TYPE_CHIP, fmtB, todayTH, dateTH, timeNow, calcAge, todayISO, imageToDataURL });
+// ── CountUp: ตัวเลขไล่นับขึ้น (ลูกเล่นหน้าหลัก/สรุป) — นับตอนโหลด และตอนค่าเปลี่ยน · เคารพ reduced-motion ──
+// สำคัญ: requestAnimationFrame หยุดทำงานเมื่อแท็บถูกซ่อน (document.hidden) → ต้องมี setTimeout กันตัวเลขค้างที่ 0
+function CountUp({ value, format, dur = 900 }) {
+  const num = Number(value) || 0;
+  const [disp, setDisp] = useState(num);   // เริ่มที่ค่าจริงไว้ก่อน กันค้าง 0 ถ้า rAF ไม่ทำงาน
+  const prev = useRef(0);                   // แต่ครั้งแรกไล่นับจาก 0 → num
+  useEffect(() => {
+    const reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const from = prev.current, to = num;
+    prev.current = to;
+    if (reduce || from === to) { setDisp(to); return; }
+    let raf = 0, done = false;
+    const start = performance.now();
+    const tick = (now) => {
+      const p = Math.min(1, (now - start) / dur);
+      const e = 1 - Math.pow(1 - p, 3);         // ease-out
+      setDisp(from + (to - from) * e);
+      if (p < 1) raf = requestAnimationFrame(tick); else done = true;
+    };
+    setDisp(from);
+    raf = requestAnimationFrame(tick);
+    // กันเหนียว: ถ้า rAF ไม่ทำงาน (แท็บซ่อน/ถูก throttle) ให้เด้งไปค่าจริงเมื่อครบเวลา
+    const safety = setTimeout(() => { if (!done) setDisp(to); }, dur + 220);
+    return () => { cancelAnimationFrame(raf); clearTimeout(safety); };
+  }, [num]);
+  return <>{format ? format(disp) : Math.round(disp).toLocaleString('th-TH')}</>;
+}
+
+Object.assign(window, { Icon, Modal, useToasts, Field, SPECIES_EMOJI, TYPE_CHIP, fmtB, todayTH, dateTH, timeNow, calcAge, todayISO, imageToDataURL, CountUp });
 
 </script>
 
@@ -1908,14 +1971,14 @@ function QueueCard({ item, pet, onOpen, onOpenCase, onMove, onPay, onCancel, zon
   const total = (item.charges || []).reduce((s, [, q, p]) => s + q * p, 0);
   const [confirmCancel, setConfirmCancel] = useState(false);
   return (
-    <div className={'q-card ' + meta.tone}
+    <div className={'q-card anim-pop ' + meta.tone}
     style={{ borderTop: 'none', borderLeft: `4px solid ${zoneBorder || meta.dot}`, cursor: 'pointer' }}
     onClick={() => onOpen(item)}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
         <span className="q-no">{item.q}</span>
         <span style={{ fontSize: 12, color: 'var(--ink-faint)', display: 'inline-flex', alignItems: 'center', gap: 4 }}><Icon name="clock" size={13} />{item.time}</span>
       </div>
-      <div className="q-pet">{SPECIES_EMOJI[item.species] || '🐾'} {item.petName}
+      <div className="q-pet"><span className="anim-wiggle">{SPECIES_EMOJI[item.species] || '🐾'}</span> {item.petName}
         {item.isNew ? <span className="chip chip-blush" style={{ fontSize: 11 }}>ลูกค้าใหม่</span> : null}
       </div>
       <div className="q-meta">
@@ -2389,11 +2452,11 @@ function Dashboard({ pets, queue, appointments, admitted, receipts = [], onOpenC
   sort((a, b) => (a.time || '').localeCompare(b.time || ''));
 
   const stats = [
-  { v: byStatus('wait').length, l: 'รอตรวจ', cls: 'tint-butter' },
-  { v: byStatus('exam').length, l: 'กำลังตรวจ', cls: 'tint-powder' },
-  { v: byStatus('cashier').length, l: 'รอชำระเงิน', cls: 'tint-blush' },
-  { v: byStatus('done').length, l: 'เสร็จแล้ววันนี้', cls: 'tint-mint' },
-  { v: fmtB(revenue), l: 'รายรับวันนี้ (OPD)', cls: 'tint-navy' }];
+  { num: byStatus('wait').length, l: 'รอตรวจ', cls: 'tint-butter' },
+  { num: byStatus('exam').length, l: 'กำลังตรวจ', cls: 'tint-powder' },
+  { num: byStatus('cashier').length, l: 'รอชำระเงิน', cls: 'tint-blush' },
+  { num: byStatus('done').length, l: 'เสร็จแล้ววันนี้', cls: 'tint-mint' },
+  { num: revenue, fmt: fmtB, l: 'รายรับวันนี้ (OPD)', cls: 'tint-navy' }];
 
 
   return (
@@ -2493,8 +2556,8 @@ function Dashboard({ pets, queue, appointments, admitted, receipts = [], onOpenC
         <div>
           <div className="stats-row" style={{ marginBottom: 14 }}>
             {stats.map((s, i) =>
-            <div key={i} className={'stat-tile ' + s.cls}>
-                <div className="v">{s.v}</div>
+            <div key={i} className={'stat-tile anim-pop ' + s.cls} style={{ '--i': i }}>
+                <div className="v"><CountUp value={s.num} format={s.fmt ? (n) => s.fmt(Math.round(n)) : undefined} /></div>
                 <div className="l">{s.l}</div>
               </div>
             )}
@@ -4849,7 +4912,7 @@ function ServiceCasesModal({ donutData, cases, selected, onSelectCat, onOpenPet,
                     cursor: onOpenPet && c.hn && c.hn !== '?' ? 'pointer' : 'default' }}>
                   <div style={{ minWidth: 0 }}>
                     <div style={{ fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                      {SP_EMOJI[c.species] || '🐾'} {c.petName || '-'}
+                      <span className="anim-wiggle">{SP_EMOJI[c.species] || '🐾'}</span> {c.petName || '-'}
                       {c.hn ? <span style={{ color: 'var(--ink-faint)', fontSize: 11.5, fontWeight: 500 }}> · HN {c.hn}</span> : null}
                     </div>
                     <div style={{ color: 'var(--ink-faint)', fontSize: 11.5 }}>{c.ownerName || ''} · {dateTH(c.date)} · {c.no || ''}</div>
@@ -5102,17 +5165,18 @@ function ReportsView({ pets, queue, stock, shopStock = [], services = [], receip
     [pets, queue, stock, visits, opdReceipts, dateRange, appointments, prevRevenue, shopStock]);
 
   const chg = m.revenueChangePct;
+  const money = (n) => fmtB(Math.round(n));
   const kpiCards = [
-    { label: 'รายรับ OPD', value: fmtB(m.opdRevenue),
+    { label: 'รายรับ OPD', num: m.opdRevenue, fmt: money,
       sub: chg == null ? 'เทียบช่วงก่อน —' : `${chg >= 0 ? '▲' : '▼'} ${Math.abs(chg)}% เทียบช่วงก่อน`,
       subColor: chg == null ? undefined : (chg >= 0 ? 'var(--mint-deep)' : 'var(--blush-deep)'), cls: 'tint-navy' },
-    { label: 'กำไรขั้นต้น', value: fmtB(m.profit), sub: `หักต้นทุนสินค้า ${fmtB(m.cogs)}`, cls: 'tint-mint' },
-    { label: 'จำนวนเคส', value: m.cases, sub: null, cls: 'tint-powder' },
-    { label: 'เฉลี่ยรายรับ/เคส', value: fmtB(m.avgRevenuePerCase), sub: null, cls: 'tint-butter' },
-    { label: 'เคสตรวจรักษา', value: m.treatmentCases, sub: null, cls: 'tint-powder' },
-    { label: 'เฉลี่ยเคส/วัน', value: m.casesPerDay, sub: 'ในช่วงที่เลือก', cls: 'tint-mint' },
-    { label: 'ใบเสร็จในช่วง', value: receiptsInRange, sub: `ทั้งระบบ ${receipts.length} ใบ`, cls: 'tint-blush' },
-    { label: 'กำไรขั้นต้น Margin', value: m.profitMargin + '%', sub: 'ยังไม่หักค่าแรง/โสหุ้ย', cls: 'tint-navy' },
+    { label: 'กำไรขั้นต้น', num: m.profit, fmt: money, sub: `หักต้นทุนสินค้า ${fmtB(m.cogs)}`, cls: 'tint-mint' },
+    { label: 'จำนวนเคส', num: m.cases, sub: null, cls: 'tint-powder' },
+    { label: 'เฉลี่ยรายรับ/เคส', num: m.avgRevenuePerCase, fmt: money, sub: null, cls: 'tint-butter' },
+    { label: 'เคสตรวจรักษา', num: m.treatmentCases, sub: null, cls: 'tint-powder' },
+    { label: 'เฉลี่ยเคส/วัน', num: m.casesPerDay, fmt: (n) => n.toFixed(1), sub: 'ในช่วงที่เลือก', cls: 'tint-mint' },
+    { label: 'ใบเสร็จในช่วง', num: receiptsInRange, sub: `ทั้งระบบ ${receipts.length} ใบ`, cls: 'tint-blush' },
+    { label: 'กำไรขั้นต้น Margin', num: m.profitMargin, fmt: (n) => Math.round(n) + '%', sub: 'ยังไม่หักค่าแรง/โสหุ้ย', cls: 'tint-navy' },
   ];
 
   const topRevDays = Object.entries(m.dailyRevenue).sort((a, b) => b[1] - a[1]).slice(0, 5);
@@ -5240,8 +5304,8 @@ function ReportsView({ pets, queue, stock, shopStock = [], services = [], receip
       {/* KPI grid */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12, marginBottom: 22 }}>
         {kpiCards.map((c, i) => (
-          <div key={i} className={'stat-tile ' + c.cls}>
-            <div className="v">{c.value}</div>
+          <div key={i} className={'stat-tile anim-pop ' + c.cls} style={{ '--i': i }}>
+            <div className="v">{c.num != null ? <CountUp value={c.num} format={c.fmt} /> : c.value}</div>
             <div className="l">{c.label}</div>
             {c.sub ? <div style={{ fontSize: 12, opacity: c.subColor ? 1 : .75, marginTop: 2, color: c.subColor || undefined, fontWeight: c.subColor ? 700 : 400 }}>{c.sub}</div> : null}
           </div>

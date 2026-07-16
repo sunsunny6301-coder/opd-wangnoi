@@ -462,7 +462,7 @@ function ServiceCasesModal({ donutData, cases, selected, onSelectCat, onOpenPet,
                     cursor: onOpenPet && c.hn && c.hn !== '?' ? 'pointer' : 'default' }}>
                   <div style={{ minWidth: 0 }}>
                     <div style={{ fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                      {SP_EMOJI[c.species] || '🐾'} {c.petName || '-'}
+                      <span className="anim-wiggle">{SP_EMOJI[c.species] || '🐾'}</span> {c.petName || '-'}
                       {c.hn ? <span style={{ color: 'var(--ink-faint)', fontSize: 11.5, fontWeight: 500 }}> · HN {c.hn}</span> : null}
                     </div>
                     <div style={{ color: 'var(--ink-faint)', fontSize: 11.5 }}>{c.ownerName || ''} · {dateTH(c.date)} · {c.no || ''}</div>
@@ -715,17 +715,18 @@ function ReportsView({ pets, queue, stock, shopStock = [], services = [], receip
     [pets, queue, stock, visits, opdReceipts, dateRange, appointments, prevRevenue, shopStock]);
 
   const chg = m.revenueChangePct;
+  const money = (n) => fmtB(Math.round(n));
   const kpiCards = [
-    { label: 'รายรับ OPD', value: fmtB(m.opdRevenue),
+    { label: 'รายรับ OPD', num: m.opdRevenue, fmt: money,
       sub: chg == null ? 'เทียบช่วงก่อน —' : `${chg >= 0 ? '▲' : '▼'} ${Math.abs(chg)}% เทียบช่วงก่อน`,
       subColor: chg == null ? undefined : (chg >= 0 ? 'var(--mint-deep)' : 'var(--blush-deep)'), cls: 'tint-navy' },
-    { label: 'กำไรขั้นต้น', value: fmtB(m.profit), sub: `หักต้นทุนสินค้า ${fmtB(m.cogs)}`, cls: 'tint-mint' },
-    { label: 'จำนวนเคส', value: m.cases, sub: null, cls: 'tint-powder' },
-    { label: 'เฉลี่ยรายรับ/เคส', value: fmtB(m.avgRevenuePerCase), sub: null, cls: 'tint-butter' },
-    { label: 'เคสตรวจรักษา', value: m.treatmentCases, sub: null, cls: 'tint-powder' },
-    { label: 'เฉลี่ยเคส/วัน', value: m.casesPerDay, sub: 'ในช่วงที่เลือก', cls: 'tint-mint' },
-    { label: 'ใบเสร็จในช่วง', value: receiptsInRange, sub: `ทั้งระบบ ${receipts.length} ใบ`, cls: 'tint-blush' },
-    { label: 'กำไรขั้นต้น Margin', value: m.profitMargin + '%', sub: 'ยังไม่หักค่าแรง/โสหุ้ย', cls: 'tint-navy' },
+    { label: 'กำไรขั้นต้น', num: m.profit, fmt: money, sub: `หักต้นทุนสินค้า ${fmtB(m.cogs)}`, cls: 'tint-mint' },
+    { label: 'จำนวนเคส', num: m.cases, sub: null, cls: 'tint-powder' },
+    { label: 'เฉลี่ยรายรับ/เคส', num: m.avgRevenuePerCase, fmt: money, sub: null, cls: 'tint-butter' },
+    { label: 'เคสตรวจรักษา', num: m.treatmentCases, sub: null, cls: 'tint-powder' },
+    { label: 'เฉลี่ยเคส/วัน', num: m.casesPerDay, fmt: (n) => n.toFixed(1), sub: 'ในช่วงที่เลือก', cls: 'tint-mint' },
+    { label: 'ใบเสร็จในช่วง', num: receiptsInRange, sub: `ทั้งระบบ ${receipts.length} ใบ`, cls: 'tint-blush' },
+    { label: 'กำไรขั้นต้น Margin', num: m.profitMargin, fmt: (n) => Math.round(n) + '%', sub: 'ยังไม่หักค่าแรง/โสหุ้ย', cls: 'tint-navy' },
   ];
 
   const topRevDays = Object.entries(m.dailyRevenue).sort((a, b) => b[1] - a[1]).slice(0, 5);
@@ -853,8 +854,8 @@ function ReportsView({ pets, queue, stock, shopStock = [], services = [], receip
       {/* KPI grid */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12, marginBottom: 22 }}>
         {kpiCards.map((c, i) => (
-          <div key={i} className={'stat-tile ' + c.cls}>
-            <div className="v">{c.value}</div>
+          <div key={i} className={'stat-tile anim-pop ' + c.cls} style={{ '--i': i }}>
+            <div className="v">{c.num != null ? <CountUp value={c.num} format={c.fmt} /> : c.value}</div>
             <div className="l">{c.label}</div>
             {c.sub ? <div style={{ fontSize: 12, opacity: c.subColor ? 1 : .75, marginTop: 2, color: c.subColor || undefined, fontWeight: c.subColor ? 700 : 400 }}>{c.sub}</div> : null}
           </div>
