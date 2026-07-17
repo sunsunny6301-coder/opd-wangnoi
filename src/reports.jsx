@@ -735,6 +735,19 @@ function ReportsView({ pets, queue, stock, shopStock = [], services = [], receip
       return 'ตรวจรักษา';
     };
     const per = {};
+    const add = (name, svc, amount, groomAmt, v, extra) => {
+      if (!per[name]) per[name] = { cases: 0, revenue: 0, groom: 0, byService: {}, byServiceCases: {}, list: [] };
+      const p = per[name];
+      p.cases++; p.revenue += amount; p.groom += groomAmt;
+      if (!p.byService[svc]) p.byService[svc] = { count: 0, revenue: 0 };
+      p.byService[svc].count++; p.byService[svc].revenue += amount;
+      const pet = petByHn[v.petHn];
+      const item = { date: v.date, petName: v.petName, petHn: v.petHn, hn: v.petHn,
+        species: (pet && pet.species) || '', ownerName: (pet && pet.owner && pet.owner.name) || '',
+        no: noByKey[`${v.petHn}|${v.q || ''}|${v.date}`] || '', svc, total: amount, groom: groomAmt, ...(extra || {}) };
+      p.list.push(item);
+      (p.byServiceCases[svc] = p.byServiceCases[svc] || []).push(item);
+    };
     visits.forEach((v) => {
       const name = String(v.vet || '').trim() || '(ไม่ระบุ)';
       const svc = svcOfVisit(v);
@@ -748,17 +761,17 @@ function ReportsView({ pets, queue, stock, shopStock = [], services = [], receip
         total += line;
         if (isGroomItem(nm, stockId)) groom += line;
       });
-      if (!per[name]) per[name] = { cases: 0, revenue: 0, groom: 0, byService: {}, byServiceCases: {}, list: [] };
-      const p = per[name];
-      p.cases++; p.revenue += total; p.groom += groom;
-      if (!p.byService[svc]) p.byService[svc] = { count: 0, revenue: 0 };
-      p.byService[svc].count++; p.byService[svc].revenue += total;
-      const pet = petByHn[v.petHn];
-      const item = { date: v.date, petName: v.petName, petHn: v.petHn, hn: v.petHn,
-        species: (pet && pet.species) || '', ownerName: (pet && pet.owner && pet.owner.name) || '',
-        no: noByKey[`${v.petHn}|${v.q || ''}|${v.date}`] || '', svc, total, groom };
-      p.list.push(item);
-      (p.byServiceCases[svc] = p.byServiceCases[svc] || []).push(item);
+      // เคสอาบน้ำที่ระบุหมอไว้ (มีตรวจ/จ่ายยาเพิ่ม) → แบ่งยอด: ค่าอาบน้ำเข้าผู้ช่วย · ที่เหลือเข้าหมอคนนั้น
+      const medVet = String(v.medVet || '').trim();
+      const medAmt = total - groom;
+      if (svc === 'อาบน้ำตัดขน' && medVet && medAmt > 0) {
+        add(name, svc, groom, groom, v, { billTotal: total });
+        add(medVet, 'ตรวจรักษา', medAmt, 0, v, { billTotal: total, fromGroom: true });
+        return;
+      }
+      add(name, svc, total, groom, v, { billTotal: total });
+      // เคสอาบน้ำที่มีรายการแพทย์ปนแต่ยังไม่ได้เลือกหมอ → ยอดนี้ยังไม่มีเจ้าของ (เตือนให้ไปเลือกหมอ)
+      if (svc === 'อาบน้ำตัดขน' && !medVet && medAmt > 0) per[name].unassignedMed = (per[name].unassignedMed || 0) + medAmt;
     });
     Object.values(per).forEach((p) => {
       p.list.sort((a, b) => (a.date < b.date ? 1 : -1));
@@ -1157,6 +1170,11 @@ function ReportsView({ pets, queue, stock, shopStock = [], services = [], receip
                 <span style={{ fontWeight: 800, color: 'var(--mint-deep)', fontSize: 15 }}>
                   {staffTab === 'asst' ? `ยอดอาบน้ำรวม ${fmtB(selPerf.groom)}` : `ยอดรวม ${fmtB(selPerf.revenue)}`}
                 </span>
+                {staffTab === 'asst' && selPerf.unassignedMed ? (
+                  <span className="chip chip-butter" style={{ fontSize: 11.5 }} title="ยอดยา/ตรวจในเคสอาบน้ำที่ยังไม่ได้เลือกหมอ — ไปเลือกในบันทึกตรวจเพื่อให้เข้าผลงานหมอ">
+                    ⚠️ ยอดแพทย์ยังไม่ระบุหมอ {fmtB(selPerf.unassignedMed)}
+                  </span>
+                ) : null}
               </div>
               {staffTab === 'vet' && Object.keys(selPerf.byService).length > 0 ? (
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, alignItems: 'center', marginBottom: 12 }}>
@@ -1179,9 +1197,10 @@ function ReportsView({ pets, queue, stock, shopStock = [], services = [], receip
                         {c.petName || '-'} <span style={{ color: 'var(--ink-faint)', fontWeight: 500, fontSize: 11.5 }}>HN {c.petHn}</span>
                       </span>
                       <span className="chip" style={{ fontSize: 11 }}>{c.svc}</span>
+                      {c.fromGroom ? <span className="chip chip-butter" style={{ fontSize: 10.5 }} title="ส่วนแพทย์ในเคสอาบน้ำ">ในเคสอาบน้ำ</span> : null}
                       {staffTab === 'asst'
                         ? <span style={{ fontWeight: 800, color: 'var(--mint-deep)', minWidth: 82, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
-                            {fmtB(c.groom)}{c.total !== c.groom ? <span style={{ color: 'var(--ink-faint)', fontWeight: 500, fontSize: 10.5 }}> /บิล {fmtB(c.total)}</span> : null}
+                            {fmtB(c.groom)}{c.billTotal && c.billTotal !== c.groom ? <span style={{ color: 'var(--ink-faint)', fontWeight: 500, fontSize: 10.5 }}> /บิล {fmtB(c.billTotal)}</span> : null}
                           </span>
                         : <span style={{ fontWeight: 800, minWidth: 70, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{fmtB(c.total)}</span>}
                     </div>

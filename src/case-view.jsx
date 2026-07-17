@@ -329,6 +329,8 @@ function CaseView({ pet, queueItem, vets, assistants = [], services, stock, shop
     dx: draft?.dx ?? '',
     plan: draft?.plan ?? '',
     vet: draft?.vet ?? (isGroomCase ? (assistants[0] || '') : vets[0]),
+    // เคสอาบน้ำที่มีตรวจ/จ่ายยาเพิ่ม: เลือกหมอผู้ดูแลส่วนแพทย์ → ยอดที่ไม่ใช่ "อาบน้ำ" จะไปเข้าผลงานหมอคนนี้
+    medVet: draft?.medVet ?? '',
     weight: draft?.weight ?? (latestWeight || ''),
   });
   const [petAvatar, setPetAvatar] = useState(pet.avatar || null);
@@ -407,7 +409,8 @@ function CaseView({ pet, queueItem, vets, assistants = [], services, stock, shop
     .sort((a, b) => (a.date + (a.time || '')).localeCompare(b.date + (b.time || '')));
   // ประวัติเรียงล่าสุดบนสุด → บันทึกใหม่ใส่หน้าสุดของ visits
   const buildVisit = () => ({
-    date: todayISO(), vet: rec.vet, cc: rec.cc, pe: rec.pe, dx: rec.dx, plan: rec.plan,
+    date: todayISO(), vet: rec.vet, medVet: (isGroomCase && rec.medVet) ? rec.medVet : undefined,
+    cc: rec.cc, pe: rec.pe, dx: rec.dx, plan: rec.plan,
     weight: parseFloat(rec.weight) || latestWeight, items: charges,
     media: media.filter((m) => !m.session),
     q: queueItem?.q,  // ผูกกับเลขคิว เพื่อกันบันทึกประวัติซ้ำเมื่อบันทึกรอบเดิมซ้ำ
@@ -571,6 +574,17 @@ function CaseView({ pet, queueItem, vets, assistants = [], services, stock, shop
                     <VetSelector vets={vets} value={rec.vet} onChange={(v) => setRec({ ...rec, vet: v })} onAddVet={onAddVet || (() => {})} onDeleteVet={onDeleteVet} />
                   )}
                 </Field>
+                {isGroomCase ? (
+                  <Field label="สัตวแพทย์ (ถ้ามีตรวจ/จ่ายยาเพิ่ม)">
+                    <select className="select" value={rec.medVet} onChange={(e) => setRec({ ...rec, medVet: e.target.value })}>
+                      <option value="">— ไม่มี (อาบน้ำอย่างเดียว) —</option>
+                      {vets.map((v) => <option key={v} value={v}>{v}</option>)}
+                    </select>
+                    <div style={{ fontSize: 11.5, color: 'var(--ink-faint)', marginTop: 4 }}>
+                      ยอดรายการที่ไม่ใช่ “อาบน้ำ” (ยา/ตรวจ) จะเข้าผลงานหมอคนนี้ · ค่าอาบน้ำยังเป็นของผู้ช่วย
+                    </div>
+                  </Field>
+                ) : null}
                 <Field label="น้ำหนักวันนี้ (kg)">
                   <input className="input" type="number" step="0.1" value={rec.weight} onChange={setR('weight')} />
                 </Field>
@@ -682,7 +696,7 @@ function CaseView({ pet, queueItem, vets, assistants = [], services, stock, shop
           <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
             <button className="btn btn-lg" onClick={() => {
               if (queueItem?.q && onSaveDraft) {
-                onSaveDraft(queueItem.q, { cc: rec.cc, pe: rec.pe, dx: rec.dx, plan: rec.plan, vet: rec.vet, weight: rec.weight, charges, media: media.filter((m) => !m.session) });
+                onSaveDraft(queueItem.q, { cc: rec.cc, pe: rec.pe, dx: rec.dx, plan: rec.plan, vet: rec.vet, medVet: rec.medVet, weight: rec.weight, charges, media: media.filter((m) => !m.session) });
               }
               onBack();
             }}>เก็บไว้ก่อน</button>

@@ -3200,6 +3200,8 @@ function CaseView({ pet, queueItem, vets, assistants = [], services, stock, shop
     dx: draft?.dx ?? '',
     plan: draft?.plan ?? '',
     vet: draft?.vet ?? (isGroomCase ? (assistants[0] || '') : vets[0]),
+    // เคสอาบน้ำที่มีตรวจ/จ่ายยาเพิ่ม: เลือกหมอผู้ดูแลส่วนแพทย์ → ยอดที่ไม่ใช่ "อาบน้ำ" จะไปเข้าผลงานหมอคนนี้
+    medVet: draft?.medVet ?? '',
     weight: draft?.weight ?? (latestWeight || ''),
   });
   const [petAvatar, setPetAvatar] = useState(pet.avatar || null);
@@ -3278,7 +3280,8 @@ function CaseView({ pet, queueItem, vets, assistants = [], services, stock, shop
     .sort((a, b) => (a.date + (a.time || '')).localeCompare(b.date + (b.time || '')));
   // ประวัติเรียงล่าสุดบนสุด → บันทึกใหม่ใส่หน้าสุดของ visits
   const buildVisit = () => ({
-    date: todayISO(), vet: rec.vet, cc: rec.cc, pe: rec.pe, dx: rec.dx, plan: rec.plan,
+    date: todayISO(), vet: rec.vet, medVet: (isGroomCase && rec.medVet) ? rec.medVet : undefined,
+    cc: rec.cc, pe: rec.pe, dx: rec.dx, plan: rec.plan,
     weight: parseFloat(rec.weight) || latestWeight, items: charges,
     media: media.filter((m) => !m.session),
     q: queueItem?.q,  // ผูกกับเลขคิว เพื่อกันบันทึกประวัติซ้ำเมื่อบันทึกรอบเดิมซ้ำ
@@ -3442,6 +3445,17 @@ function CaseView({ pet, queueItem, vets, assistants = [], services, stock, shop
                     <VetSelector vets={vets} value={rec.vet} onChange={(v) => setRec({ ...rec, vet: v })} onAddVet={onAddVet || (() => {})} onDeleteVet={onDeleteVet} />
                   )}
                 </Field>
+                {isGroomCase ? (
+                  <Field label="สัตวแพทย์ (ถ้ามีตรวจ/จ่ายยาเพิ่ม)">
+                    <select className="select" value={rec.medVet} onChange={(e) => setRec({ ...rec, medVet: e.target.value })}>
+                      <option value="">— ไม่มี (อาบน้ำอย่างเดียว) —</option>
+                      {vets.map((v) => <option key={v} value={v}>{v}</option>)}
+                    </select>
+                    <div style={{ fontSize: 11.5, color: 'var(--ink-faint)', marginTop: 4 }}>
+                      ยอดรายการที่ไม่ใช่ “อาบน้ำ” (ยา/ตรวจ) จะเข้าผลงานหมอคนนี้ · ค่าอาบน้ำยังเป็นของผู้ช่วย
+                    </div>
+                  </Field>
+                ) : null}
                 <Field label="น้ำหนักวันนี้ (kg)">
                   <input className="input" type="number" step="0.1" value={rec.weight} onChange={setR('weight')} />
                 </Field>
@@ -3553,7 +3567,7 @@ function CaseView({ pet, queueItem, vets, assistants = [], services, stock, shop
           <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
             <button className="btn btn-lg" onClick={() => {
               if (queueItem?.q && onSaveDraft) {
-                onSaveDraft(queueItem.q, { cc: rec.cc, pe: rec.pe, dx: rec.dx, plan: rec.plan, vet: rec.vet, weight: rec.weight, charges, media: media.filter((m) => !m.session) });
+                onSaveDraft(queueItem.q, { cc: rec.cc, pe: rec.pe, dx: rec.dx, plan: rec.plan, vet: rec.vet, medVet: rec.medVet, weight: rec.weight, charges, media: media.filter((m) => !m.session) });
               }
               onBack();
             }}>เก็บไว้ก่อน</button>
@@ -5397,6 +5411,19 @@ function ReportsView({ pets, queue, stock, shopStock = [], services = [], receip
       return 'ตรวจรักษา';
     };
     const per = {};
+    const add = (name, svc, amount, groomAmt, v, extra) => {
+      if (!per[name]) per[name] = { cases: 0, revenue: 0, groom: 0, byService: {}, byServiceCases: {}, list: [] };
+      const p = per[name];
+      p.cases++; p.revenue += amount; p.groom += groomAmt;
+      if (!p.byService[svc]) p.byService[svc] = { count: 0, revenue: 0 };
+      p.byService[svc].count++; p.byService[svc].revenue += amount;
+      const pet = petByHn[v.petHn];
+      const item = { date: v.date, petName: v.petName, petHn: v.petHn, hn: v.petHn,
+        species: (pet && pet.species) || '', ownerName: (pet && pet.owner && pet.owner.name) || '',
+        no: noByKey[`${v.petHn}|${v.q || ''}|${v.date}`] || '', svc, total: amount, groom: groomAmt, ...(extra || {}) };
+      p.list.push(item);
+      (p.byServiceCases[svc] = p.byServiceCases[svc] || []).push(item);
+    };
     visits.forEach((v) => {
       const name = String(v.vet || '').trim() || '(ไม่ระบุ)';
       const svc = svcOfVisit(v);
@@ -5410,17 +5437,17 @@ function ReportsView({ pets, queue, stock, shopStock = [], services = [], receip
         total += line;
         if (isGroomItem(nm, stockId)) groom += line;
       });
-      if (!per[name]) per[name] = { cases: 0, revenue: 0, groom: 0, byService: {}, byServiceCases: {}, list: [] };
-      const p = per[name];
-      p.cases++; p.revenue += total; p.groom += groom;
-      if (!p.byService[svc]) p.byService[svc] = { count: 0, revenue: 0 };
-      p.byService[svc].count++; p.byService[svc].revenue += total;
-      const pet = petByHn[v.petHn];
-      const item = { date: v.date, petName: v.petName, petHn: v.petHn, hn: v.petHn,
-        species: (pet && pet.species) || '', ownerName: (pet && pet.owner && pet.owner.name) || '',
-        no: noByKey[`${v.petHn}|${v.q || ''}|${v.date}`] || '', svc, total, groom };
-      p.list.push(item);
-      (p.byServiceCases[svc] = p.byServiceCases[svc] || []).push(item);
+      // เคสอาบน้ำที่ระบุหมอไว้ (มีตรวจ/จ่ายยาเพิ่ม) → แบ่งยอด: ค่าอาบน้ำเข้าผู้ช่วย · ที่เหลือเข้าหมอคนนั้น
+      const medVet = String(v.medVet || '').trim();
+      const medAmt = total - groom;
+      if (svc === 'อาบน้ำตัดขน' && medVet && medAmt > 0) {
+        add(name, svc, groom, groom, v, { billTotal: total });
+        add(medVet, 'ตรวจรักษา', medAmt, 0, v, { billTotal: total, fromGroom: true });
+        return;
+      }
+      add(name, svc, total, groom, v, { billTotal: total });
+      // เคสอาบน้ำที่มีรายการแพทย์ปนแต่ยังไม่ได้เลือกหมอ → ยอดนี้ยังไม่มีเจ้าของ (เตือนให้ไปเลือกหมอ)
+      if (svc === 'อาบน้ำตัดขน' && !medVet && medAmt > 0) per[name].unassignedMed = (per[name].unassignedMed || 0) + medAmt;
     });
     Object.values(per).forEach((p) => {
       p.list.sort((a, b) => (a.date < b.date ? 1 : -1));
@@ -5819,6 +5846,11 @@ function ReportsView({ pets, queue, stock, shopStock = [], services = [], receip
                 <span style={{ fontWeight: 800, color: 'var(--mint-deep)', fontSize: 15 }}>
                   {staffTab === 'asst' ? `ยอดอาบน้ำรวม ${fmtB(selPerf.groom)}` : `ยอดรวม ${fmtB(selPerf.revenue)}`}
                 </span>
+                {staffTab === 'asst' && selPerf.unassignedMed ? (
+                  <span className="chip chip-butter" style={{ fontSize: 11.5 }} title="ยอดยา/ตรวจในเคสอาบน้ำที่ยังไม่ได้เลือกหมอ — ไปเลือกในบันทึกตรวจเพื่อให้เข้าผลงานหมอ">
+                    ⚠️ ยอดแพทย์ยังไม่ระบุหมอ {fmtB(selPerf.unassignedMed)}
+                  </span>
+                ) : null}
               </div>
               {staffTab === 'vet' && Object.keys(selPerf.byService).length > 0 ? (
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, alignItems: 'center', marginBottom: 12 }}>
@@ -5841,9 +5873,10 @@ function ReportsView({ pets, queue, stock, shopStock = [], services = [], receip
                         {c.petName || '-'} <span style={{ color: 'var(--ink-faint)', fontWeight: 500, fontSize: 11.5 }}>HN {c.petHn}</span>
                       </span>
                       <span className="chip" style={{ fontSize: 11 }}>{c.svc}</span>
+                      {c.fromGroom ? <span className="chip chip-butter" style={{ fontSize: 10.5 }} title="ส่วนแพทย์ในเคสอาบน้ำ">ในเคสอาบน้ำ</span> : null}
                       {staffTab === 'asst'
                         ? <span style={{ fontWeight: 800, color: 'var(--mint-deep)', minWidth: 82, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
-                            {fmtB(c.groom)}{c.total !== c.groom ? <span style={{ color: 'var(--ink-faint)', fontWeight: 500, fontSize: 10.5 }}> /บิล {fmtB(c.total)}</span> : null}
+                            {fmtB(c.groom)}{c.billTotal && c.billTotal !== c.groom ? <span style={{ color: 'var(--ink-faint)', fontWeight: 500, fontSize: 10.5 }}> /บิล {fmtB(c.billTotal)}</span> : null}
                           </span>
                         : <span style={{ fontWeight: 800, minWidth: 70, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{fmtB(c.total)}</span>}
                     </div>
