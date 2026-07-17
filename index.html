@@ -5084,11 +5084,11 @@ function DonutChart({ data, size = 160, onSelect, selected }) {
 }
 
 // ── ป๊อปอัพ: กดโดนัท → ซ้ายวงกลม · ขวารายชื่อเคสในบริการนั้น (กดเปิด OPD ได้) ──
-function ServiceCasesModal({ donutData, cases, selected, onSelectCat, onOpenPet, onClose }) {
+function ServiceCasesModal({ donutData, cases, selected, onSelectCat, onOpenPet, onClose, heading = 'เคสแยกตามประเภท' }) {
   const list = cases[selected] || [];
   const SP_EMOJI = { 'สุนัข': '🐶', 'แมว': '🐱', 'กระต่าย': '🐰', 'นก': '🐦' };
   return (
-    <Modal title={`🩺 เคสแยกตามประเภท — ${selected}`} onClose={onClose} wide>
+    <Modal title={`🩺 ${heading} — ${selected}`} onClose={onClose} wide>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.2fr', gap: 18, alignItems: 'start' }}>
         {/* ซ้าย: โดนัท (กดสลับบริการได้) */}
         <div>
@@ -5321,6 +5321,7 @@ function ReportsView({ pets, queue, stock, shopStock = [], services = [], receip
   const [donutSel, setDonutSel] = useState(null); // บริการที่กดในโดนัท → เปิดป๊อปอัพรายชื่อเคส
   const [staffTab, setStaffTab] = useState('vet');  // ผลงานรายคน: 'vet' หมอ | 'asst' ผู้ช่วย
   const [staffSel, setStaffSel] = useState(null);   // ชื่อคนที่กดดูรายละเอียด
+  const [staffModalCat, setStaffModalCat] = useState(null); // ประเภทที่กดในโดนัทรายคน → เปิดป๊อปอัพรายชื่อเคส
   // ปีที่เลือกได้ = ปีที่มีใบเสร็จ + ปีนี้
   const years = useMemo(() => {
     const ys = new Set((receipts || []).map((r) => parseInt((r.date || '').slice(0, 4))).filter(Boolean));
@@ -5367,6 +5368,8 @@ function ReportsView({ pets, queue, stock, shopStock = [], services = [], receip
   // ── ผลงานรายคน (หมอ/ผู้ช่วย): สรุปจากบันทึกตรวจที่มีใบเสร็จจริงในช่วง — คนที่เลือกในช่อง "สัตวแพทย์ผู้ตรวจ/ผู้ช่วย" ──
   const staffPerf = useMemo(() => {
     const qByQ = {}; (queue || []).forEach((x) => { if (x && x.q) qByQ[x.q] = x; });
+    const petByHn = {}; (pets || []).forEach((p) => { petByHn[p.hn] = p; });
+    const noByKey = {}; (receipts || []).forEach((r) => { if ((r.type || 'opd') === 'opd') noByKey[`${r.hn}|${r.q || ''}|${r.date}`] = r.no; });
     const stockAll = {}; [stock || [], shopStock || []].forEach((arr) => arr.forEach((st) => { if (st && st.id != null && !stockAll[st.id]) stockAll[st.id] = st; }));
     // ยอดอาบน้ำใช้กติกาเดียวกับช่อง "ราคาอาบน้ำตัดขน" ใน Excel: ชื่อมีคำว่า "อาบน้ำ" หรือหมวดสต็อกมี "อาบน้ำ"
     const isGroomItem = (name, stockId) => /อาบน้ำ/.test(String(name || '')) || !!(stockId != null && stockAll[stockId] && /อาบน้ำ/.test(stockAll[stockId].cat || ''));
@@ -5393,19 +5396,27 @@ function ReportsView({ pets, queue, stock, shopStock = [], services = [], receip
         total += line;
         if (isGroomItem(nm, stockId)) groom += line;
       });
-      if (!per[name]) per[name] = { cases: 0, revenue: 0, groom: 0, byService: {}, list: [] };
+      if (!per[name]) per[name] = { cases: 0, revenue: 0, groom: 0, byService: {}, byServiceCases: {}, list: [] };
       const p = per[name];
       p.cases++; p.revenue += total; p.groom += groom;
       if (!p.byService[svc]) p.byService[svc] = { count: 0, revenue: 0 };
       p.byService[svc].count++; p.byService[svc].revenue += total;
-      p.list.push({ date: v.date, petName: v.petName, petHn: v.petHn, svc, total, groom });
+      const pet = petByHn[v.petHn];
+      const item = { date: v.date, petName: v.petName, petHn: v.petHn, hn: v.petHn,
+        species: (pet && pet.species) || '', ownerName: (pet && pet.owner && pet.owner.name) || '',
+        no: noByKey[`${v.petHn}|${v.q || ''}|${v.date}`] || '', svc, total, groom };
+      p.list.push(item);
+      (p.byServiceCases[svc] = p.byServiceCases[svc] || []).push(item);
     });
-    Object.values(per).forEach((p) => p.list.sort((a, b) => (a.date < b.date ? 1 : -1)));
+    Object.values(per).forEach((p) => {
+      p.list.sort((a, b) => (a.date < b.date ? 1 : -1));
+      Object.values(p.byServiceCases).forEach((l) => l.sort((a, b) => (a.date < b.date ? 1 : -1)));
+    });
     return per;
-  }, [visits, queue, stock, shopStock]);
+  }, [visits, queue, stock, shopStock, pets, receipts]);
   // รายชื่อคนตามแท็บ: หมอ = รายชื่อหมอ + ชื่อที่พบในบันทึก (ที่ไม่ใช่ผู้ช่วย) · ผู้ช่วย = รายชื่อผู้ช่วยเท่านั้น
   const staffPeople = useMemo(() => {
-    const empty = { cases: 0, revenue: 0, groom: 0, byService: {}, list: [] };
+    const empty = { cases: 0, revenue: 0, groom: 0, byService: {}, byServiceCases: {}, list: [] };
     if (staffTab === 'asst') {
       return (assistants || []).map((n) => ({ name: n, ...(staffPerf[n] || empty) })).sort((a, b) => b.groom - a.groom);
     }
@@ -5414,7 +5425,7 @@ function ReportsView({ pets, queue, stock, shopStock = [], services = [], receip
     Object.keys(staffPerf).forEach((n) => { if (!asstSet.has(n)) names.add(n); });
     return [...names].map((n) => ({ name: n, ...(staffPerf[n] || empty) })).sort((a, b) => b.revenue - a.revenue);
   }, [staffTab, staffPerf, vets, assistants]);
-  const selPerf = staffSel ? (staffPerf[staffSel] || { cases: 0, revenue: 0, groom: 0, byService: {}, list: [] }) : null;
+  const selPerf = staffSel ? (staffPerf[staffSel] || { cases: 0, revenue: 0, groom: 0, byService: {}, byServiceCases: {}, list: [] }) : null;
 
   const chg = m.revenueChangePct;
   const money = (n) => fmtB(Math.round(n));
@@ -5753,8 +5764,8 @@ function ReportsView({ pets, queue, stock, shopStock = [], services = [], receip
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <span className="chip">{rangeLabel}</span>
             <div className="seg">
-              <button className={staffTab === 'vet' ? 'on' : ''} onClick={() => { setStaffTab('vet'); setStaffSel(null); }}>🩺 หมอ</button>
-              <button className={staffTab === 'asst' ? 'on' : ''} onClick={() => { setStaffTab('asst'); setStaffSel(null); }}>🛁 ผู้ช่วย</button>
+              <button className={staffTab === 'vet' ? 'on' : ''} onClick={() => { setStaffTab('vet'); setStaffSel(null); setStaffModalCat(null); }}>🩺 หมอ</button>
+              <button className={staffTab === 'asst' ? 'on' : ''} onClick={() => { setStaffTab('asst'); setStaffSel(null); setStaffModalCat(null); }}>🛁 ผู้ช่วย</button>
             </div>
           </div>
         </div>
@@ -5768,7 +5779,7 @@ function ReportsView({ pets, queue, stock, shopStock = [], services = [], receip
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
               {staffPeople.map((p) => (
-                <button key={p.name} onClick={() => setStaffSel(staffSel === p.name ? null : p.name)}
+                <button key={p.name} onClick={() => { setStaffSel(staffSel === p.name ? null : p.name); setStaffModalCat(null); }}
                   style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%', textAlign: 'left', padding: '9px 12px', borderRadius: 'var(--radius-sm)', cursor: 'pointer', fontSize: 14, font: 'inherit',
                     border: '1.5px solid ' + (staffSel === p.name ? 'var(--navy)' : 'var(--line)'), background: staffSel === p.name ? 'var(--navy-soft)' : 'var(--surface)' }}>
                   <span style={{ fontSize: 17 }}>{staffTab === 'asst' ? '🛁' : '🩺'}</span>
@@ -5797,7 +5808,7 @@ function ReportsView({ pets, queue, stock, shopStock = [], services = [], receip
               </div>
               {staffTab === 'vet' && Object.keys(selPerf.byService).length > 0 ? (
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, alignItems: 'center', marginBottom: 12 }}>
-                  <DonutChart data={Object.entries(selPerf.byService).map(([label, v]) => ({ label, v: v.count })).sort((a, b) => b.v - a.v)} size={140} />
+                  <DonutChart data={Object.entries(selPerf.byService).map(([label, v]) => ({ label, v: v.count })).sort((a, b) => b.v - a.v)} size={140} onSelect={setStaffModalCat} />
                   <div>
                     {Object.entries(selPerf.byService).sort((a, b) => b[1].revenue - a[1].revenue).map(([k, v]) => (
                       <SimpleBar key={k} label={`${k} (${v.count})`} value={v.revenue}
@@ -5834,6 +5845,16 @@ function ReportsView({ pets, queue, stock, shopStock = [], services = [], receip
         <ServiceCasesModal
           donutData={donutData} cases={m.casesByService} selected={donutSel}
           onSelectCat={setDonutSel} onOpenPet={onOpenPet} onClose={() => setDonutSel(null)}
+        />
+      ) : null}
+
+      {/* ป๊อปอัพเคสแยกประเภทของ "รายคน" (กดโดนัทในผลงานรายคน) */}
+      {staffModalCat && staffSel && selPerf ? (
+        <ServiceCasesModal
+          heading={staffSel}
+          donutData={Object.entries(selPerf.byService).map(([label, v]) => ({ label, v: v.count })).sort((a, b) => b.v - a.v)}
+          cases={selPerf.byServiceCases} selected={staffModalCat}
+          onSelectCat={setStaffModalCat} onOpenPet={onOpenPet} onClose={() => setStaffModalCat(null)}
         />
       ) : null}
 
