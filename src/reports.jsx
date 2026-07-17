@@ -660,7 +660,7 @@ function ReceiptEditModal({ receipt, onClose, onSave, onOpenPet, services = [], 
   );
 }
 
-function ReportsView({ pets, queue, stock, shopStock = [], services = [], receipts = [], appointments = [], vets = [], assistants = [], onCancelReceipt, onUpdateReceipt, onOpenPet }) {
+function ReportsView({ pets, queue, stock, shopStock = [], services = [], receipts = [], appointments = [], vets = [], assistants = [], commissionPct = 10, onSaveCommissionPct, onCancelReceipt, onUpdateReceipt, onOpenPet }) {
   const now = new Date();
   const [range, setRange] = useState('week');
   const [pickYear, setPickYear] = useState(now.getFullYear());
@@ -674,6 +674,9 @@ function ReportsView({ pets, queue, stock, shopStock = [], services = [], receip
   const [staffTab, setStaffTab] = useState('vet');  // ผลงานรายคน: 'vet' หมอ | 'asst' ผู้ช่วย
   const [staffSel, setStaffSel] = useState(null);   // ชื่อคนที่กดดูรายละเอียด
   const [staffModalCat, setStaffModalCat] = useState(null); // ประเภทที่กดในโดนัทรายคน → เปิดป๊อปอัพรายชื่อเคส
+  const [pctInput, setPctInput] = useState(String(commissionPct));   // % ค่าคอมอาบน้ำ (พิมพ์ได้ · จำค่าไว้ในระบบ)
+  const pct = Math.max(0, Math.min(100, parseFloat(pctInput) || 0));
+  const commOf = (groom) => Math.round(groom * pct) / 100;
   // ปีที่เลือกได้ = ปีที่มีใบเสร็จ + ปีนี้
   const years = useMemo(() => {
     const ys = new Set((receipts || []).map((r) => parseInt((r.date || '').slice(0, 4))).filter(Boolean));
@@ -1135,6 +1138,21 @@ function ReportsView({ pets, queue, stock, shopStock = [], services = [], receip
           </div>
         </div>
         <div className="card-pad">
+          {/* แถบตั้ง % ค่าคอม (เฉพาะแท็บผู้ช่วย) */}
+          {staffTab === 'asst' && staffPeople.length > 0 ? (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 12, padding: '9px 12px', borderRadius: 'var(--radius-sm)', background: 'var(--mint-soft)', border: '1px solid var(--mint)' }}>
+              <span style={{ fontWeight: 700, fontSize: 13.5 }}>💰 ค่าคอม</span>
+              <input className="input" type="number" min="0" max="100" step="0.5" value={pctInput}
+                onChange={(e) => { setPctInput(e.target.value); onSaveCommissionPct && onSaveCommissionPct(e.target.value); }}
+                style={{ width: 78, textAlign: 'right', fontWeight: 700 }} />
+              <span style={{ fontSize: 13.5 }}>% ของยอดอาบน้ำ</span>
+              <div style={{ flex: 1, minWidth: 8 }} />
+              <span style={{ fontSize: 13.5 }}>รวมต้องจ่ายทั้งหมด</span>
+              <span style={{ fontWeight: 800, fontSize: 17, color: 'var(--mint-deep)', fontVariantNumeric: 'tabular-nums' }}>
+                {fmtB(commOf(staffPeople.reduce((a, p) => a + p.groom, 0)))}
+              </span>
+            </div>
+          ) : null}
           {staffPeople.length === 0 ? (
             <div className="queue-empty">
               {staffTab === 'asst'
@@ -1150,7 +1168,13 @@ function ReportsView({ pets, queue, stock, shopStock = [], services = [], receip
                   <span style={{ fontSize: 17 }}>{staffTab === 'asst' ? '🛁' : '🩺'}</span>
                   <span style={{ fontWeight: 700, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name}</span>
                   <span className="chip">{p.cases} เคส</span>
-                  <span style={{ fontWeight: 800, color: 'var(--mint-deep)', minWidth: 86, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{fmtB(staffTab === 'asst' ? p.groom : p.revenue)}</span>
+                  <span style={{ fontWeight: 800, color: staffTab === 'asst' ? 'var(--ink-soft)' : 'var(--mint-deep)', minWidth: 86, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{fmtB(staffTab === 'asst' ? p.groom : p.revenue)}</span>
+                  {staffTab === 'asst' ? (
+                    <span style={{ minWidth: 96, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
+                      <span style={{ color: 'var(--ink-faint)', fontSize: 11.5 }}>คอม {pct}% </span>
+                      <b style={{ color: 'var(--mint-deep)', fontSize: 14.5 }}>{fmtB(commOf(p.groom))}</b>
+                    </span>
+                  ) : null}
                   <span style={{ color: 'var(--ink-faint)', fontSize: 12 }}>{staffSel === p.name ? '▲' : '▼'}</span>
                 </button>
               ))}
@@ -1167,9 +1191,14 @@ function ReportsView({ pets, queue, stock, shopStock = [], services = [], receip
               <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 10, flexWrap: 'wrap' }}>
                 <span style={{ fontWeight: 800, fontSize: 15 }}>{staffTab === 'asst' ? '🛁' : '🩺'} {staffSel}</span>
                 <span className="chip">{selPerf.cases} เคส</span>
-                <span style={{ fontWeight: 800, color: 'var(--mint-deep)', fontSize: 15 }}>
+                <span style={{ fontWeight: 800, color: staffTab === 'asst' ? 'var(--ink)' : 'var(--mint-deep)', fontSize: 15 }}>
                   {staffTab === 'asst' ? `ยอดอาบน้ำรวม ${fmtB(selPerf.groom)}` : `ยอดรวม ${fmtB(selPerf.revenue)}`}
                 </span>
+                {staffTab === 'asst' ? (
+                  <span style={{ fontWeight: 800, fontSize: 15, color: 'var(--mint-deep)', background: 'var(--mint-soft)', border: '1px solid var(--mint)', borderRadius: 99, padding: '3px 12px' }}>
+                    💰 ค่าคอม {pct}% = {fmtB(commOf(selPerf.groom))}
+                  </span>
+                ) : null}
                 {staffTab === 'asst' && selPerf.unassignedMed ? (
                   <span className="chip chip-butter" style={{ fontSize: 11.5 }} title="ยอดยา/ตรวจในเคสอาบน้ำที่ยังไม่ได้เลือกหมอ — ไปเลือกในบันทึกตรวจเพื่อให้เข้าผลงานหมอ">
                     ⚠️ ยอดแพทย์ยังไม่ระบุหมอ {fmtB(selPerf.unassignedMed)}

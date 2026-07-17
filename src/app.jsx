@@ -43,6 +43,7 @@ function App() {
   const admitted = state.admitted || [];
   const vets = state.vets || VetData.vets;
   const assistants = state.assistants || [];
+  const commissionPct = state.commissionPct != null ? state.commissionPct : 10;   // % ค่าคอมอาบน้ำของผู้ช่วย
   const receipts = state.receipts || [];
   const receiptSeq = state.receiptSeq || {};
   const receiptVoids = state.receiptVoids || {};
@@ -462,6 +463,11 @@ function App() {
     setState((s) => ({ ...s, assistants: (s.assistants || []).filter((v) => v !== name) }));
     pushToast(`ลบผู้ช่วย "${name}" แล้ว`);
   };
+  // % ค่าคอมอาบน้ำ — จำไว้ในระบบ ไม่ต้องพิมพ์ใหม่ทุกครั้ง
+  const saveCommissionPct = (pct) => {
+    const n = Math.max(0, Math.min(100, Number(pct) || 0));
+    setState((s) => ({ ...s, commissionPct: n }));
+  };
 
   const deductStock = (stockArr, charges) => {
     let n = 0;
@@ -811,7 +817,7 @@ function App() {
           {page === 'appointments' ? <AppointmentsView appointments={appointments} pets={pets} onAdd={addAppointment} onUpdate={updateAppointment} onDelete={deleteAppointment} onOpenPet={openPet} pushToast={pushToast} notePresets={notePresets} onSavePresets={saveNotePresets} smsPresets={smsPresets} onSaveSmsPresets={saveSmsPresets} /> : null}
           {page === 'shop' ? <PetShop stock={shopStock} onCheckout={shopCheckout} previewReceiptNo={nextReceiptNo().no} onDeleteItem={deleteShopItem} onAddItem={addShopItem} onImportStock={importShopItems} onUpdateItem={updateShopItem} /> : null}
           {page === 'stock' ? <StockView stock={stock} onAdjust={adjustStock} onAddItem={addStockItem} onImportStock={importStockItems} onDeleteItem={deleteStockItem} onClearAll={clearStock} onUpdateItem={updateStockItem} /> : null}
-          {page === 'reports' ? <ReportsView pets={pets} queue={queue} stock={stock} shopStock={shopStock} services={services} receipts={receipts} appointments={appointments} vets={vets} assistants={assistants} onCancelReceipt={cancelReceipt} onUpdateReceipt={updateReceipt} onOpenPet={openPet} /> : null}
+          {page === 'reports' ? <ReportsView pets={pets} queue={queue} stock={stock} shopStock={shopStock} services={services} receipts={receipts} appointments={appointments} vets={vets} assistants={assistants} commissionPct={commissionPct} onSaveCommissionPct={saveCommissionPct} onCancelReceipt={cancelReceipt} onUpdateReceipt={updateReceipt} onOpenPet={openPet} /> : null}
           {page === 'history' ? <HistoryView pets={pets} onOpenPet={openPet} /> : null}
           {page === 'tax' ? <TaxView pets={pets} receipts={receipts} /> : null}
         </main>
