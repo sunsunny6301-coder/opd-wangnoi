@@ -1,5 +1,6 @@
 // ── Dashboard: queue board + walk-in + global search ────────
 var { useState, useEffect, useRef, useMemo } = React;
+const SERVICE_TYPES = ['ตรวจรักษา', 'วัคซีน', 'อาบน้ำตัดขน', 'ผ่าตัด', 'ซื้อสินค้า'];
 const STATUS_META = {
   wait: {
     label: 'รอตรวจ', dot: '#C9A227', tone: 'tone-butter',
@@ -26,12 +27,14 @@ const STATUS_META = {
 function GlobalSearch({ pets, onOpenPet, onWalkIn, onDirectWalkIn }) {
   const [q, setQ] = useState('');
   const [open, setOpen] = useState(false);
+  const [svcFor, setSvcFor] = useState(null);   // hn ของแถวที่กำลังเลือกบริการก่อนส่งเข้าคิว
   const wrapRef = useRef(null);
   useEffect(() => {
-    const fn = (e) => { if (wrapRef.current && !wrapRef.current.contains(e.target)) setOpen(false); };
+    const fn = (e) => { if (wrapRef.current && !wrapRef.current.contains(e.target)) { setOpen(false); setSvcFor(null); } };
     document.addEventListener('mousedown', fn);
     return () => document.removeEventListener('mousedown', fn);
   }, []);
+  const sendToQueue = (hn, type) => { setOpen(false); setQ(''); setSvcFor(null); onDirectWalkIn({ existingHn: hn, type, cc: '' }); };
   const results = useMemo(() => {
     const s = q.trim().toLowerCase();
     if (!s) return [];
@@ -54,18 +57,31 @@ function GlobalSearch({ pets, onOpenPet, onWalkIn, onDirectWalkIn }) {
           {results.length === 0
             ? <div className="search-empty">ไม่พบเคสที่ค้นหา — ลองคำอื่น หรือกด "รับเคสใหม่"</div>
             : results.map((p) => (
-              <div key={p.hn} className="search-row" style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px', borderBottom: '1px solid var(--line-soft)' }}>
-                <div className="pet-avatar" style={{ width: 40, height: 40, fontSize: 19 }}>{SPECIES_EMOJI[p.species] || '🐾'}</div>
-                <div style={{ flex: 1, minWidth: 0, cursor: 'pointer' }} onClick={() => { setOpen(false); setQ(''); onOpenPet(p.hn); }}>
-                  <div style={{ fontWeight: 700 }}>{p.name} <span style={{ color: 'var(--ink-faint)', fontWeight: 500, fontSize: 12.5 }}>HN {p.hn}</span></div>
-                  <div style={{ fontSize: 12.5, color: 'var(--ink-soft)' }}>{p.species} · {p.breed} · {p.owner.name} · {p.owner.phone}</div>
+              <div key={p.hn} style={{ borderBottom: '1px solid var(--line-soft)', background: svcFor === p.hn ? 'var(--butter-soft)' : 'transparent' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px' }}>
+                  <div className="pet-avatar" style={{ width: 40, height: 40, fontSize: 19 }}>{SPECIES_EMOJI[p.species] || '🐾'}</div>
+                  <div style={{ flex: 1, minWidth: 0, cursor: 'pointer' }} onClick={() => { setOpen(false); setQ(''); onOpenPet(p.hn); }}>
+                    <div style={{ fontWeight: 700 }}>{p.name} <span style={{ color: 'var(--ink-faint)', fontWeight: 500, fontSize: 12.5 }}>HN {p.hn}</span></div>
+                    <div style={{ fontSize: 12.5, color: 'var(--ink-soft)' }}>{p.species} · {p.breed} · {p.owner.name} · {p.owner.phone}</div>
+                  </div>
+                  <button className="btn btn-sm btn-primary" style={{ fontSize: 12, whiteSpace: 'nowrap', flexShrink: 0 }}
+                    onClick={(e) => { e.stopPropagation(); setSvcFor(svcFor === p.hn ? null : p.hn); }}>
+                    <Icon name="plus" size={13} /> รอตรวจ <span style={{ fontSize: 10, opacity: .8 }}>{svcFor === p.hn ? '▴' : '▾'}</span>
+                  </button>
+                  <Icon name="chevR" size={16} style={{ color: 'var(--ink-faint)', cursor: 'pointer', flexShrink: 0 }}
+                    onClick={() => { setOpen(false); setQ(''); setSvcFor(null); onOpenPet(p.hn); }} />
                 </div>
-                <button className="btn btn-sm btn-primary" style={{ fontSize: 12, whiteSpace: 'nowrap', flexShrink: 0 }}
-                  onClick={(e) => { e.stopPropagation(); setOpen(false); setQ(''); onDirectWalkIn({ existingHn: p.hn, type: 'ตรวจรักษา', cc: '' }); }}>
-                  <Icon name="plus" size={13} /> รอตรวจ
-                </button>
-                <Icon name="chevR" size={16} style={{ color: 'var(--ink-faint)', cursor: 'pointer', flexShrink: 0 }}
-                  onClick={() => { setOpen(false); setQ(''); onOpenPet(p.hn); }} />
+                {svcFor === p.hn ? (
+                  <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 7, padding: '0 14px 11px 66px' }}>
+                    <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--butter-deep)' }}>เลือกบริการ:</span>
+                    {SERVICE_TYPES.map((t) => (
+                      <button key={t} className="btn btn-sm" style={{ fontSize: 12.5, padding: '5px 12px', background: 'var(--surface)', borderColor: 'var(--butter)' }}
+                        onClick={(e) => { e.stopPropagation(); sendToQueue(p.hn, t); }}>
+                        {t}
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
               </div>
             ))}
         </div>
@@ -116,8 +132,6 @@ function WalkInModal({ pets, onClose, onSubmit, prefillHn }) {
       onSubmit({ newPet: f, type: f.type, cc: f.cc });
     }
   };
-
-  const SERVICE_TYPES = ['ตรวจรักษา', 'วัคซีน', 'อาบน้ำตัดขน', 'ผ่าตัด', 'ซื้อสินค้า'];
 
   return (
     <Modal
