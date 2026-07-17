@@ -2,7 +2,8 @@
 var { useState, useEffect, useRef, useMemo } = React;
 
 // ── Vet selector with inline "add" and per-vet delete ──
-function VetSelector({ vets, value, onChange, onAddVet, onDeleteVet }) {
+// ใช้เลือกได้ทั้ง "หมอ" และ "ผู้ช่วย" (เคสอาบน้ำตัดขน) — เปลี่ยนป้ายผ่าน personWord/addLabel
+function VetSelector({ vets, value, onChange, onAddVet, onDeleteVet, personWord = 'สัตวแพทย์', addLabel = 'เพิ่มหมอ' }) {
   const [adding, setAdding] = useState(false);
   const [open, setOpen] = useState(false);
   const [name, setName] = useState('');
@@ -23,7 +24,7 @@ function VetSelector({ vets, value, onChange, onAddVet, onDeleteVet }) {
   };
   const doDelete = (v, e) => {
     e.stopPropagation();
-    if (!confirm(`ลบสัตวแพทย์ "${v}" ออกจากรายการ?`)) return;
+    if (!confirm(`ลบ${personWord} "${v}" ออกจากรายการ?`)) return;
     if (value === v && vets.length > 1) onChange(vets.find((x) => x !== v));
     onDeleteVet && onDeleteVet(v);
     setOpen(false);
@@ -35,7 +36,7 @@ function VetSelector({ vets, value, onChange, onAddVet, onDeleteVet }) {
         <>
           <input className="input" value={name} autoFocus onChange={(e) => setName(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Enter') doAdd(); if (e.key === 'Escape') { setAdding(false); setName(''); } }}
-            placeholder="ชื่อสัตวแพทย์ใหม่..." style={{ flex: 1 }} />
+            placeholder={`ชื่อ${personWord}ใหม่...`} style={{ flex: 1 }} />
           <button className="btn btn-primary btn-sm" onClick={doAdd} disabled={!name.trim()}>เพิ่ม</button>
           <button className="btn btn-sm" onClick={() => { setAdding(false); setName(''); }}>ยกเลิก</button>
         </>
@@ -68,8 +69,8 @@ function VetSelector({ vets, value, onChange, onAddVet, onDeleteVet }) {
               </div>
             )}
           </div>
-          <button className="btn btn-sm" onClick={() => setAdding(true)} title="เพิ่มสัตวแพทย์">
-            <Icon name="plus" size={14} /> เพิ่มหมอ
+          <button className="btn btn-sm" onClick={() => setAdding(true)} title={`เพิ่ม${personWord}`}>
+            <Icon name="plus" size={14} /> {addLabel}
           </button>
         </>
       )}
@@ -317,15 +318,17 @@ function ChargePicker({ services, stock, shopStock = [], onAdd }) {
   );
 }
 
-function CaseView({ pet, queueItem, vets, services, stock, shopStock = [], allPets, appointments = [], onBack, onFinish, onAddVet, onDeleteVet, onAddAdmitted, onUpdateAdmitted, onDischargeAdmitted, onAddAppointment, onUpdateAppointment, onDeleteAppointment, pushToast, onUpdatePet, onUpdateVisit, onAddService, onDeleteService, onUpdateService, onSaveDraft, previewReceiptNo, notePresets, onSavePresets }) {
+function CaseView({ pet, queueItem, vets, assistants = [], services, stock, shopStock = [], allPets, appointments = [], onBack, onFinish, onAddVet, onDeleteVet, onAddAssistant, onDeleteAssistant, onAddAdmitted, onUpdateAdmitted, onDischargeAdmitted, onAddAppointment, onUpdateAppointment, onDeleteAppointment, pushToast, onUpdatePet, onUpdateVisit, onAddService, onDeleteService, onUpdateService, onSaveDraft, previewReceiptNo, notePresets, onSavePresets }) {
   const latestWeight = pet.visits.length ? pet.visits[0].weight : pet.weight;
   const draft = queueItem?.draft;
+  // เคสอาบน้ำตัดขน: ช่อง "สัตวแพทย์ผู้ตรวจ" เปลี่ยนเป็นเลือก "ผู้ช่วย" แทน (ยอดอาบน้ำจะสรุปรายคนในหน้ารายงาน)
+  const isGroomCase = queueItem?.type === 'อาบน้ำตัดขน';
   const [rec, setRec] = useState({
     cc: draft?.cc ?? ((queueItem && queueItem.cc) || ''),
     pe: draft?.pe ?? '',
     dx: draft?.dx ?? '',
     plan: draft?.plan ?? '',
-    vet: draft?.vet ?? vets[0],
+    vet: draft?.vet ?? (isGroomCase ? (assistants[0] || '') : vets[0]),
     weight: draft?.weight ?? (latestWeight || ''),
   });
   const [petAvatar, setPetAvatar] = useState(pet.avatar || null);
@@ -559,8 +562,14 @@ function CaseView({ pet, queueItem, vets, services, stock, shopStock = [], allPe
             </div>
             <div className="card-pad" style={{ display: 'flex', flexDirection: 'column', gap: 13 }}>
               <div className="form-grid">
-                <Field label="สัตวแพทย์ผู้ตรวจ">
-                  <VetSelector vets={vets} value={rec.vet} onChange={(v) => setRec({ ...rec, vet: v })} onAddVet={onAddVet || (() => {})} onDeleteVet={onDeleteVet} />
+                <Field label={isGroomCase ? 'ผู้ช่วยผู้ทำ (อาบน้ำตัดขน)' : 'สัตวแพทย์ผู้ตรวจ'}>
+                  {isGroomCase ? (
+                    <VetSelector vets={assistants} value={rec.vet} onChange={(v) => setRec({ ...rec, vet: v })}
+                      onAddVet={onAddAssistant || (() => {})} onDeleteVet={onDeleteAssistant}
+                      personWord="ผู้ช่วย" addLabel="เพิ่มผู้ช่วย" />
+                  ) : (
+                    <VetSelector vets={vets} value={rec.vet} onChange={(v) => setRec({ ...rec, vet: v })} onAddVet={onAddVet || (() => {})} onDeleteVet={onDeleteVet} />
+                  )}
                 </Field>
                 <Field label="น้ำหนักวันนี้ (kg)">
                   <input className="input" type="number" step="0.1" value={rec.weight} onChange={setR('weight')} />

@@ -19,6 +19,7 @@ function loadState() {
     queue: JSON.parse(JSON.stringify(VetData.queue)),
     stock: JSON.parse(JSON.stringify(VetData.stock)),
     vets: [...VetData.vets],
+    assistants: [],
     receipts: [],
     receiptSeq: {},
     receiptVoids: {},
@@ -41,6 +42,7 @@ function App() {
   const appointments = state.appointments || [];
   const admitted = state.admitted || [];
   const vets = state.vets || VetData.vets;
+  const assistants = state.assistants || [];
   const receipts = state.receipts || [];
   const receiptSeq = state.receiptSeq || {};
   const receiptVoids = state.receiptVoids || {};
@@ -450,6 +452,16 @@ function App() {
     setState((s) => ({ ...s, vets: (s.vets || VetData.vets).filter((v) => v !== name) }));
     pushToast(`ลบสัตวแพทย์ "${name}" แล้ว`);
   };
+  // ผู้ช่วย (เคสอาบน้ำตัดขน): เพิ่ม/ลบชื่อได้เหมือนหมอ — ใช้แสดงแทนช่องสัตวแพทย์ผู้ตรวจ
+  const addAssistant = (name) => {
+    if (!name.trim() || assistants.includes(name.trim())) return;
+    setState((s) => ({ ...s, assistants: [...(s.assistants || []), name.trim()] }));
+    pushToast(`เพิ่มผู้ช่วย "${name.trim()}" แล้ว`);
+  };
+  const deleteAssistant = (name) => {
+    setState((s) => ({ ...s, assistants: (s.assistants || []).filter((v) => v !== name) }));
+    pushToast(`ลบผู้ช่วย "${name}" แล้ว`);
+  };
 
   const deductStock = (stockArr, charges) => {
     let n = 0;
@@ -787,9 +799,9 @@ function App() {
           null}
           {page === 'case' && casePet ?
           <CaseView pet={casePet} queueItem={caseQItem}
-          vets={vets} services={services} stock={stock} shopStock={shopStock} allPets={pets} appointments={appointments}
+          vets={vets} assistants={assistants} services={services} stock={stock} shopStock={shopStock} allPets={pets} appointments={appointments}
           onBack={() => {setPage('dashboard');setCaseCtx(null);}}
-          onFinish={finishCase} onAddVet={addVet} onDeleteVet={deleteVet}
+          onFinish={finishCase} onAddVet={addVet} onDeleteVet={deleteVet} onAddAssistant={addAssistant} onDeleteAssistant={deleteAssistant}
           onAddAppointment={addAppointment} onUpdateAppointment={updateAppointment} onDeleteAppointment={deleteAppointment}
           onUpdateAdmitted={updateAdmitted} onDischargeAdmitted={dischargeAdmitted}
           onAddAdmitted={addAdmitted} pushToast={pushToast}
@@ -799,7 +811,7 @@ function App() {
           {page === 'appointments' ? <AppointmentsView appointments={appointments} pets={pets} onAdd={addAppointment} onUpdate={updateAppointment} onDelete={deleteAppointment} onOpenPet={openPet} pushToast={pushToast} notePresets={notePresets} onSavePresets={saveNotePresets} smsPresets={smsPresets} onSaveSmsPresets={saveSmsPresets} /> : null}
           {page === 'shop' ? <PetShop stock={shopStock} onCheckout={shopCheckout} previewReceiptNo={nextReceiptNo().no} onDeleteItem={deleteShopItem} onAddItem={addShopItem} onImportStock={importShopItems} onUpdateItem={updateShopItem} /> : null}
           {page === 'stock' ? <StockView stock={stock} onAdjust={adjustStock} onAddItem={addStockItem} onImportStock={importStockItems} onDeleteItem={deleteStockItem} onClearAll={clearStock} onUpdateItem={updateStockItem} /> : null}
-          {page === 'reports' ? <ReportsView pets={pets} queue={queue} stock={stock} shopStock={shopStock} services={services} receipts={receipts} appointments={appointments} onCancelReceipt={cancelReceipt} onUpdateReceipt={updateReceipt} onOpenPet={openPet} /> : null}
+          {page === 'reports' ? <ReportsView pets={pets} queue={queue} stock={stock} shopStock={shopStock} services={services} receipts={receipts} appointments={appointments} vets={vets} assistants={assistants} onCancelReceipt={cancelReceipt} onUpdateReceipt={updateReceipt} onOpenPet={openPet} /> : null}
           {page === 'history' ? <HistoryView pets={pets} onOpenPet={openPet} /> : null}
           {page === 'tax' ? <TaxView pets={pets} receipts={receipts} /> : null}
         </main>

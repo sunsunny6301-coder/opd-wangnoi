@@ -2859,7 +2859,8 @@ Object.assign(window, { Dashboard, STATUS_META });
 var { useState, useEffect, useRef, useMemo } = React;
 
 // ── Vet selector with inline "add" and per-vet delete ──
-function VetSelector({ vets, value, onChange, onAddVet, onDeleteVet }) {
+// ใช้เลือกได้ทั้ง "หมอ" และ "ผู้ช่วย" (เคสอาบน้ำตัดขน) — เปลี่ยนป้ายผ่าน personWord/addLabel
+function VetSelector({ vets, value, onChange, onAddVet, onDeleteVet, personWord = 'สัตวแพทย์', addLabel = 'เพิ่มหมอ' }) {
   const [adding, setAdding] = useState(false);
   const [open, setOpen] = useState(false);
   const [name, setName] = useState('');
@@ -2880,7 +2881,7 @@ function VetSelector({ vets, value, onChange, onAddVet, onDeleteVet }) {
   };
   const doDelete = (v, e) => {
     e.stopPropagation();
-    if (!confirm(`ลบสัตวแพทย์ "${v}" ออกจากรายการ?`)) return;
+    if (!confirm(`ลบ${personWord} "${v}" ออกจากรายการ?`)) return;
     if (value === v && vets.length > 1) onChange(vets.find((x) => x !== v));
     onDeleteVet && onDeleteVet(v);
     setOpen(false);
@@ -2892,7 +2893,7 @@ function VetSelector({ vets, value, onChange, onAddVet, onDeleteVet }) {
         <>
           <input className="input" value={name} autoFocus onChange={(e) => setName(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Enter') doAdd(); if (e.key === 'Escape') { setAdding(false); setName(''); } }}
-            placeholder="ชื่อสัตวแพทย์ใหม่..." style={{ flex: 1 }} />
+            placeholder={`ชื่อ${personWord}ใหม่...`} style={{ flex: 1 }} />
           <button className="btn btn-primary btn-sm" onClick={doAdd} disabled={!name.trim()}>เพิ่ม</button>
           <button className="btn btn-sm" onClick={() => { setAdding(false); setName(''); }}>ยกเลิก</button>
         </>
@@ -2925,8 +2926,8 @@ function VetSelector({ vets, value, onChange, onAddVet, onDeleteVet }) {
               </div>
             )}
           </div>
-          <button className="btn btn-sm" onClick={() => setAdding(true)} title="เพิ่มสัตวแพทย์">
-            <Icon name="plus" size={14} /> เพิ่มหมอ
+          <button className="btn btn-sm" onClick={() => setAdding(true)} title={`เพิ่ม${personWord}`}>
+            <Icon name="plus" size={14} /> {addLabel}
           </button>
         </>
       )}
@@ -3174,15 +3175,17 @@ function ChargePicker({ services, stock, shopStock = [], onAdd }) {
   );
 }
 
-function CaseView({ pet, queueItem, vets, services, stock, shopStock = [], allPets, appointments = [], onBack, onFinish, onAddVet, onDeleteVet, onAddAdmitted, onUpdateAdmitted, onDischargeAdmitted, onAddAppointment, onUpdateAppointment, onDeleteAppointment, pushToast, onUpdatePet, onUpdateVisit, onAddService, onDeleteService, onUpdateService, onSaveDraft, previewReceiptNo, notePresets, onSavePresets }) {
+function CaseView({ pet, queueItem, vets, assistants = [], services, stock, shopStock = [], allPets, appointments = [], onBack, onFinish, onAddVet, onDeleteVet, onAddAssistant, onDeleteAssistant, onAddAdmitted, onUpdateAdmitted, onDischargeAdmitted, onAddAppointment, onUpdateAppointment, onDeleteAppointment, pushToast, onUpdatePet, onUpdateVisit, onAddService, onDeleteService, onUpdateService, onSaveDraft, previewReceiptNo, notePresets, onSavePresets }) {
   const latestWeight = pet.visits.length ? pet.visits[0].weight : pet.weight;
   const draft = queueItem?.draft;
+  // เคสอาบน้ำตัดขน: ช่อง "สัตวแพทย์ผู้ตรวจ" เปลี่ยนเป็นเลือก "ผู้ช่วย" แทน (ยอดอาบน้ำจะสรุปรายคนในหน้ารายงาน)
+  const isGroomCase = queueItem?.type === 'อาบน้ำตัดขน';
   const [rec, setRec] = useState({
     cc: draft?.cc ?? ((queueItem && queueItem.cc) || ''),
     pe: draft?.pe ?? '',
     dx: draft?.dx ?? '',
     plan: draft?.plan ?? '',
-    vet: draft?.vet ?? vets[0],
+    vet: draft?.vet ?? (isGroomCase ? (assistants[0] || '') : vets[0]),
     weight: draft?.weight ?? (latestWeight || ''),
   });
   const [petAvatar, setPetAvatar] = useState(pet.avatar || null);
@@ -3416,8 +3419,14 @@ function CaseView({ pet, queueItem, vets, services, stock, shopStock = [], allPe
             </div>
             <div className="card-pad" style={{ display: 'flex', flexDirection: 'column', gap: 13 }}>
               <div className="form-grid">
-                <Field label="สัตวแพทย์ผู้ตรวจ">
-                  <VetSelector vets={vets} value={rec.vet} onChange={(v) => setRec({ ...rec, vet: v })} onAddVet={onAddVet || (() => {})} onDeleteVet={onDeleteVet} />
+                <Field label={isGroomCase ? 'ผู้ช่วยผู้ทำ (อาบน้ำตัดขน)' : 'สัตวแพทย์ผู้ตรวจ'}>
+                  {isGroomCase ? (
+                    <VetSelector vets={assistants} value={rec.vet} onChange={(v) => setRec({ ...rec, vet: v })}
+                      onAddVet={onAddAssistant || (() => {})} onDeleteVet={onDeleteAssistant}
+                      personWord="ผู้ช่วย" addLabel="เพิ่มผู้ช่วย" />
+                  ) : (
+                    <VetSelector vets={vets} value={rec.vet} onChange={(v) => setRec({ ...rec, vet: v })} onAddVet={onAddVet || (() => {})} onDeleteVet={onDeleteVet} />
+                  )}
                 </Field>
                 <Field label="น้ำหนักวันนี้ (kg)">
                   <input className="input" type="number" step="0.1" value={rec.weight} onChange={setR('weight')} />
@@ -5299,7 +5308,7 @@ function ReceiptEditModal({ receipt, onClose, onSave, onOpenPet, services = [], 
   );
 }
 
-function ReportsView({ pets, queue, stock, shopStock = [], services = [], receipts = [], appointments = [], onCancelReceipt, onUpdateReceipt, onOpenPet }) {
+function ReportsView({ pets, queue, stock, shopStock = [], services = [], receipts = [], appointments = [], vets = [], assistants = [], onCancelReceipt, onUpdateReceipt, onOpenPet }) {
   const now = new Date();
   const [range, setRange] = useState('week');
   const [pickYear, setPickYear] = useState(now.getFullYear());
@@ -5310,6 +5319,8 @@ function ReportsView({ pets, queue, stock, shopStock = [], services = [], receip
   const [editReceipt, setEditReceipt] = useState(null);
   const [rcSearch, setRcSearch] = useState('');
   const [donutSel, setDonutSel] = useState(null); // บริการที่กดในโดนัท → เปิดป๊อปอัพรายชื่อเคส
+  const [staffTab, setStaffTab] = useState('vet');  // ผลงานรายคน: 'vet' หมอ | 'asst' ผู้ช่วย
+  const [staffSel, setStaffSel] = useState(null);   // ชื่อคนที่กดดูรายละเอียด
   // ปีที่เลือกได้ = ปีที่มีใบเสร็จ + ปีนี้
   const years = useMemo(() => {
     const ys = new Set((receipts || []).map((r) => parseInt((r.date || '').slice(0, 4))).filter(Boolean));
@@ -5352,6 +5363,58 @@ function ReportsView({ pets, queue, stock, shopStock = [], services = [], receip
   }, [receipts, dateRange]);
   const m = useMemo(() => calcMetrics(pets, queue, stock, visits, opdReceipts, { dateRange, appointments, prevRevenue, shopStock }),
     [pets, queue, stock, visits, opdReceipts, dateRange, appointments, prevRevenue, shopStock]);
+
+  // ── ผลงานรายคน (หมอ/ผู้ช่วย): สรุปจากบันทึกตรวจที่มีใบเสร็จจริงในช่วง — คนที่เลือกในช่อง "สัตวแพทย์ผู้ตรวจ/ผู้ช่วย" ──
+  const staffPerf = useMemo(() => {
+    const qByQ = {}; (queue || []).forEach((x) => { if (x && x.q) qByQ[x.q] = x; });
+    const stockAll = {}; [stock || [], shopStock || []].forEach((arr) => arr.forEach((st) => { if (st && st.id != null && !stockAll[st.id]) stockAll[st.id] = st; }));
+    // ยอดอาบน้ำใช้กติกาเดียวกับช่อง "ราคาอาบน้ำตัดขน" ใน Excel: ชื่อมีคำว่า "อาบน้ำ" หรือหมวดสต็อกมี "อาบน้ำ"
+    const isGroomItem = (name, stockId) => /อาบน้ำ/.test(String(name || '')) || !!(stockId != null && stockAll[stockId] && /อาบน้ำ/.test(stockAll[stockId].cat || ''));
+    const svcOfVisit = (v) => {
+      const t = v.q && qByQ[v.q] && qByQ[v.q].type; if (t) return t;
+      const first = (v.items || [])[0];
+      const n = first ? cleanItemName(Array.isArray(first) ? first[0] : first.name).toLowerCase() : '';
+      if (n.includes('วัคซีน') || n.includes('vaccine')) return 'วัคซีน';
+      if (n.includes('ผ่าตัด') || n.includes('ทำหมัน') || n.includes('surgery')) return 'ผ่าตัด';
+      if (n.includes('อาบน้ำ') || n.includes('ตัดขน') || n.includes('groom')) return 'อาบน้ำตัดขน';
+      return 'ตรวจรักษา';
+    };
+    const per = {};
+    visits.forEach((v) => {
+      const name = String(v.vet || '').trim() || '(ไม่ระบุ)';
+      const svc = svcOfVisit(v);
+      let total = 0, groom = 0;
+      (v.items || []).forEach((it) => {
+        const nm = cleanItemName(Array.isArray(it) ? it[0] : it.name);
+        const qty = Number(Array.isArray(it) ? it[1] : it.qty) || 1;
+        const price = Number(Array.isArray(it) ? it[2] : it.price) || 0;
+        const stockId = Array.isArray(it) ? it[3] : it.stockId;
+        const line = qty * price;
+        total += line;
+        if (isGroomItem(nm, stockId)) groom += line;
+      });
+      if (!per[name]) per[name] = { cases: 0, revenue: 0, groom: 0, byService: {}, list: [] };
+      const p = per[name];
+      p.cases++; p.revenue += total; p.groom += groom;
+      if (!p.byService[svc]) p.byService[svc] = { count: 0, revenue: 0 };
+      p.byService[svc].count++; p.byService[svc].revenue += total;
+      p.list.push({ date: v.date, petName: v.petName, petHn: v.petHn, svc, total, groom });
+    });
+    Object.values(per).forEach((p) => p.list.sort((a, b) => (a.date < b.date ? 1 : -1)));
+    return per;
+  }, [visits, queue, stock, shopStock]);
+  // รายชื่อคนตามแท็บ: หมอ = รายชื่อหมอ + ชื่อที่พบในบันทึก (ที่ไม่ใช่ผู้ช่วย) · ผู้ช่วย = รายชื่อผู้ช่วยเท่านั้น
+  const staffPeople = useMemo(() => {
+    const empty = { cases: 0, revenue: 0, groom: 0, byService: {}, list: [] };
+    if (staffTab === 'asst') {
+      return (assistants || []).map((n) => ({ name: n, ...(staffPerf[n] || empty) })).sort((a, b) => b.groom - a.groom);
+    }
+    const asstSet = new Set((assistants || []).map((a) => String(a).trim()));
+    const names = new Set((vets || []).map((v) => String(v).trim()).filter(Boolean));
+    Object.keys(staffPerf).forEach((n) => { if (!asstSet.has(n)) names.add(n); });
+    return [...names].map((n) => ({ name: n, ...(staffPerf[n] || empty) })).sort((a, b) => b.revenue - a.revenue);
+  }, [staffTab, staffPerf, vets, assistants]);
+  const selPerf = staffSel ? (staffPerf[staffSel] || { cases: 0, revenue: 0, groom: 0, byService: {}, list: [] }) : null;
 
   const chg = m.revenueChangePct;
   const money = (n) => fmtB(Math.round(n));
@@ -5680,6 +5743,90 @@ function ReportsView({ pets, queue, stock, shopStock = [], services = [], receip
               ));
             })()}
           </div>
+        </div>
+      </div>
+
+      {/* ── ผลงานรายคน: หมอ / ผู้ช่วย (ตามช่วงเวลาที่เลือกด้านบน) ── */}
+      <div className="card" style={{ marginTop: 14 }}>
+        <div className="card-head">
+          <span style={{ fontWeight: 800 }}>🧑‍⚕️ ผลงานรายคน</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span className="chip">{rangeLabel}</span>
+            <div className="seg">
+              <button className={staffTab === 'vet' ? 'on' : ''} onClick={() => { setStaffTab('vet'); setStaffSel(null); }}>🩺 หมอ</button>
+              <button className={staffTab === 'asst' ? 'on' : ''} onClick={() => { setStaffTab('asst'); setStaffSel(null); }}>🛁 ผู้ช่วย</button>
+            </div>
+          </div>
+        </div>
+        <div className="card-pad">
+          {staffPeople.length === 0 ? (
+            <div className="queue-empty">
+              {staffTab === 'asst'
+                ? 'ยังไม่มีรายชื่อผู้ช่วย — เพิ่มได้ในหน้า "บันทึกตรวจ" ของเคสอาบน้ำตัดขน (ช่องผู้ช่วยผู้ทำ → ปุ่ม + เพิ่มผู้ช่วย)'
+                : 'ยังไม่มีข้อมูล'}
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {staffPeople.map((p) => (
+                <button key={p.name} onClick={() => setStaffSel(staffSel === p.name ? null : p.name)}
+                  style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%', textAlign: 'left', padding: '9px 12px', borderRadius: 'var(--radius-sm)', cursor: 'pointer', fontSize: 14, font: 'inherit',
+                    border: '1.5px solid ' + (staffSel === p.name ? 'var(--navy)' : 'var(--line)'), background: staffSel === p.name ? 'var(--navy-soft)' : 'var(--surface)' }}>
+                  <span style={{ fontSize: 17 }}>{staffTab === 'asst' ? '🛁' : '🩺'}</span>
+                  <span style={{ fontWeight: 700, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name}</span>
+                  <span className="chip">{p.cases} เคส</span>
+                  <span style={{ fontWeight: 800, color: 'var(--mint-deep)', minWidth: 86, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{fmtB(staffTab === 'asst' ? p.groom : p.revenue)}</span>
+                  <span style={{ color: 'var(--ink-faint)', fontSize: 12 }}>{staffSel === p.name ? '▲' : '▼'}</span>
+                </button>
+              ))}
+            </div>
+          )}
+          {staffTab === 'asst' && staffPeople.length > 0 ? (
+            <div style={{ fontSize: 12, color: 'var(--ink-faint)', marginTop: 8 }}>
+              💡 ยอดผู้ช่วย = เฉพาะรายการที่มีคำว่า “อาบน้ำ” (ตรงกับช่อง “ราคาอาบน้ำตัดขน” ใน Excel) — ค่ายา/สินค้าอื่นที่คีย์เพิ่มในบิลเดียวกันไม่ถูกนับ
+            </div>
+          ) : null}
+
+          {staffSel && selPerf ? (
+            <div style={{ marginTop: 14, borderTop: '1px solid var(--line-soft)', paddingTop: 14 }}>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 10, flexWrap: 'wrap' }}>
+                <span style={{ fontWeight: 800, fontSize: 15 }}>{staffTab === 'asst' ? '🛁' : '🩺'} {staffSel}</span>
+                <span className="chip">{selPerf.cases} เคส</span>
+                <span style={{ fontWeight: 800, color: 'var(--mint-deep)', fontSize: 15 }}>
+                  {staffTab === 'asst' ? `ยอดอาบน้ำรวม ${fmtB(selPerf.groom)}` : `ยอดรวม ${fmtB(selPerf.revenue)}`}
+                </span>
+              </div>
+              {staffTab === 'vet' && Object.keys(selPerf.byService).length > 0 ? (
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, alignItems: 'center', marginBottom: 12 }}>
+                  <DonutChart data={Object.entries(selPerf.byService).map(([label, v]) => ({ label, v: v.count })).sort((a, b) => b.v - a.v)} size={140} />
+                  <div>
+                    {Object.entries(selPerf.byService).sort((a, b) => b[1].revenue - a[1].revenue).map(([k, v]) => (
+                      <SimpleBar key={k} label={`${k} (${v.count})`} value={v.revenue}
+                        max={Math.max(1, ...Object.values(selPerf.byService).map((x) => x.revenue))} color="var(--powder-deep)" />
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+              <div style={{ maxHeight: 260, overflowY: 'auto', border: '1px solid var(--line-soft)', borderRadius: 'var(--radius-sm)' }}>
+                {selPerf.list.length === 0 ? <div className="queue-empty">ยังไม่มีเคสในช่วงนี้</div>
+                  : selPerf.list.map((c, i) => (
+                    <div key={i} onClick={() => onOpenPet && c.petHn && onOpenPet(c.petHn)}
+                      style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', borderBottom: '1px solid var(--line-soft)', fontSize: 13, cursor: onOpenPet ? 'pointer' : 'default' }}>
+                      <span style={{ color: 'var(--ink-faint)', width: 78, flexShrink: 0, fontVariantNumeric: 'tabular-nums' }}>{dateTH(c.date)}</span>
+                      <span style={{ fontWeight: 700, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {c.petName || '-'} <span style={{ color: 'var(--ink-faint)', fontWeight: 500, fontSize: 11.5 }}>HN {c.petHn}</span>
+                      </span>
+                      <span className="chip" style={{ fontSize: 11 }}>{c.svc}</span>
+                      {staffTab === 'asst'
+                        ? <span style={{ fontWeight: 800, color: 'var(--mint-deep)', minWidth: 82, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
+                            {fmtB(c.groom)}{c.total !== c.groom ? <span style={{ color: 'var(--ink-faint)', fontWeight: 500, fontSize: 10.5 }}> /บิล {fmtB(c.total)}</span> : null}
+                          </span>
+                        : <span style={{ fontWeight: 800, minWidth: 70, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{fmtB(c.total)}</span>}
+                    </div>
+                  ))}
+              </div>
+              {onOpenPet ? <div style={{ fontSize: 11.5, color: 'var(--ink-faint)', marginTop: 6 }}>👆 กดที่เคสเพื่อเปิดประวัติ</div> : null}
+            </div>
+          ) : null}
         </div>
       </div>
 
@@ -7891,6 +8038,7 @@ function loadState() {
     queue: JSON.parse(JSON.stringify(VetData.queue)),
     stock: JSON.parse(JSON.stringify(VetData.stock)),
     vets: [...VetData.vets],
+    assistants: [],
     receipts: [],
     receiptSeq: {},
     receiptVoids: {},
@@ -7913,6 +8061,7 @@ function App() {
   const appointments = state.appointments || [];
   const admitted = state.admitted || [];
   const vets = state.vets || VetData.vets;
+  const assistants = state.assistants || [];
   const receipts = state.receipts || [];
   const receiptSeq = state.receiptSeq || {};
   const receiptVoids = state.receiptVoids || {};
@@ -8322,6 +8471,16 @@ function App() {
     setState((s) => ({ ...s, vets: (s.vets || VetData.vets).filter((v) => v !== name) }));
     pushToast(`ลบสัตวแพทย์ "${name}" แล้ว`);
   };
+  // ผู้ช่วย (เคสอาบน้ำตัดขน): เพิ่ม/ลบชื่อได้เหมือนหมอ — ใช้แสดงแทนช่องสัตวแพทย์ผู้ตรวจ
+  const addAssistant = (name) => {
+    if (!name.trim() || assistants.includes(name.trim())) return;
+    setState((s) => ({ ...s, assistants: [...(s.assistants || []), name.trim()] }));
+    pushToast(`เพิ่มผู้ช่วย "${name.trim()}" แล้ว`);
+  };
+  const deleteAssistant = (name) => {
+    setState((s) => ({ ...s, assistants: (s.assistants || []).filter((v) => v !== name) }));
+    pushToast(`ลบผู้ช่วย "${name}" แล้ว`);
+  };
 
   const deductStock = (stockArr, charges) => {
     let n = 0;
@@ -8659,9 +8818,9 @@ function App() {
           null}
           {page === 'case' && casePet ?
           <CaseView pet={casePet} queueItem={caseQItem}
-          vets={vets} services={services} stock={stock} shopStock={shopStock} allPets={pets} appointments={appointments}
+          vets={vets} assistants={assistants} services={services} stock={stock} shopStock={shopStock} allPets={pets} appointments={appointments}
           onBack={() => {setPage('dashboard');setCaseCtx(null);}}
-          onFinish={finishCase} onAddVet={addVet} onDeleteVet={deleteVet}
+          onFinish={finishCase} onAddVet={addVet} onDeleteVet={deleteVet} onAddAssistant={addAssistant} onDeleteAssistant={deleteAssistant}
           onAddAppointment={addAppointment} onUpdateAppointment={updateAppointment} onDeleteAppointment={deleteAppointment}
           onUpdateAdmitted={updateAdmitted} onDischargeAdmitted={dischargeAdmitted}
           onAddAdmitted={addAdmitted} pushToast={pushToast}
@@ -8671,7 +8830,7 @@ function App() {
           {page === 'appointments' ? <AppointmentsView appointments={appointments} pets={pets} onAdd={addAppointment} onUpdate={updateAppointment} onDelete={deleteAppointment} onOpenPet={openPet} pushToast={pushToast} notePresets={notePresets} onSavePresets={saveNotePresets} smsPresets={smsPresets} onSaveSmsPresets={saveSmsPresets} /> : null}
           {page === 'shop' ? <PetShop stock={shopStock} onCheckout={shopCheckout} previewReceiptNo={nextReceiptNo().no} onDeleteItem={deleteShopItem} onAddItem={addShopItem} onImportStock={importShopItems} onUpdateItem={updateShopItem} /> : null}
           {page === 'stock' ? <StockView stock={stock} onAdjust={adjustStock} onAddItem={addStockItem} onImportStock={importStockItems} onDeleteItem={deleteStockItem} onClearAll={clearStock} onUpdateItem={updateStockItem} /> : null}
-          {page === 'reports' ? <ReportsView pets={pets} queue={queue} stock={stock} shopStock={shopStock} services={services} receipts={receipts} appointments={appointments} onCancelReceipt={cancelReceipt} onUpdateReceipt={updateReceipt} onOpenPet={openPet} /> : null}
+          {page === 'reports' ? <ReportsView pets={pets} queue={queue} stock={stock} shopStock={shopStock} services={services} receipts={receipts} appointments={appointments} vets={vets} assistants={assistants} onCancelReceipt={cancelReceipt} onUpdateReceipt={updateReceipt} onOpenPet={openPet} /> : null}
           {page === 'history' ? <HistoryView pets={pets} onOpenPet={openPet} /> : null}
           {page === 'tax' ? <TaxView pets={pets} receipts={receipts} /> : null}
         </main>

@@ -660,7 +660,7 @@ function ReceiptEditModal({ receipt, onClose, onSave, onOpenPet, services = [], 
   );
 }
 
-function ReportsView({ pets, queue, stock, shopStock = [], services = [], receipts = [], appointments = [], onCancelReceipt, onUpdateReceipt, onOpenPet }) {
+function ReportsView({ pets, queue, stock, shopStock = [], services = [], receipts = [], appointments = [], vets = [], assistants = [], onCancelReceipt, onUpdateReceipt, onOpenPet }) {
   const now = new Date();
   const [range, setRange] = useState('week');
   const [pickYear, setPickYear] = useState(now.getFullYear());
@@ -671,6 +671,8 @@ function ReportsView({ pets, queue, stock, shopStock = [], services = [], receip
   const [editReceipt, setEditReceipt] = useState(null);
   const [rcSearch, setRcSearch] = useState('');
   const [donutSel, setDonutSel] = useState(null); // บริการที่กดในโดนัท → เปิดป๊อปอัพรายชื่อเคส
+  const [staffTab, setStaffTab] = useState('vet');  // ผลงานรายคน: 'vet' หมอ | 'asst' ผู้ช่วย
+  const [staffSel, setStaffSel] = useState(null);   // ชื่อคนที่กดดูรายละเอียด
   // ปีที่เลือกได้ = ปีที่มีใบเสร็จ + ปีนี้
   const years = useMemo(() => {
     const ys = new Set((receipts || []).map((r) => parseInt((r.date || '').slice(0, 4))).filter(Boolean));
@@ -713,6 +715,58 @@ function ReportsView({ pets, queue, stock, shopStock = [], services = [], receip
   }, [receipts, dateRange]);
   const m = useMemo(() => calcMetrics(pets, queue, stock, visits, opdReceipts, { dateRange, appointments, prevRevenue, shopStock }),
     [pets, queue, stock, visits, opdReceipts, dateRange, appointments, prevRevenue, shopStock]);
+
+  // ── ผลงานรายคน (หมอ/ผู้ช่วย): สรุปจากบันทึกตรวจที่มีใบเสร็จจริงในช่วง — คนที่เลือกในช่อง "สัตวแพทย์ผู้ตรวจ/ผู้ช่วย" ──
+  const staffPerf = useMemo(() => {
+    const qByQ = {}; (queue || []).forEach((x) => { if (x && x.q) qByQ[x.q] = x; });
+    const stockAll = {}; [stock || [], shopStock || []].forEach((arr) => arr.forEach((st) => { if (st && st.id != null && !stockAll[st.id]) stockAll[st.id] = st; }));
+    // ยอดอาบน้ำใช้กติกาเดียวกับช่อง "ราคาอาบน้ำตัดขน" ใน Excel: ชื่อมีคำว่า "อาบน้ำ" หรือหมวดสต็อกมี "อาบน้ำ"
+    const isGroomItem = (name, stockId) => /อาบน้ำ/.test(String(name || '')) || !!(stockId != null && stockAll[stockId] && /อาบน้ำ/.test(stockAll[stockId].cat || ''));
+    const svcOfVisit = (v) => {
+      const t = v.q && qByQ[v.q] && qByQ[v.q].type; if (t) return t;
+      const first = (v.items || [])[0];
+      const n = first ? cleanItemName(Array.isArray(first) ? first[0] : first.name).toLowerCase() : '';
+      if (n.includes('วัคซีน') || n.includes('vaccine')) return 'วัคซีน';
+      if (n.includes('ผ่าตัด') || n.includes('ทำหมัน') || n.includes('surgery')) return 'ผ่าตัด';
+      if (n.includes('อาบน้ำ') || n.includes('ตัดขน') || n.includes('groom')) return 'อาบน้ำตัดขน';
+      return 'ตรวจรักษา';
+    };
+    const per = {};
+    visits.forEach((v) => {
+      const name = String(v.vet || '').trim() || '(ไม่ระบุ)';
+      const svc = svcOfVisit(v);
+      let total = 0, groom = 0;
+      (v.items || []).forEach((it) => {
+        const nm = cleanItemName(Array.isArray(it) ? it[0] : it.name);
+        const qty = Number(Array.isArray(it) ? it[1] : it.qty) || 1;
+        const price = Number(Array.isArray(it) ? it[2] : it.price) || 0;
+        const stockId = Array.isArray(it) ? it[3] : it.stockId;
+        const line = qty * price;
+        total += line;
+        if (isGroomItem(nm, stockId)) groom += line;
+      });
+      if (!per[name]) per[name] = { cases: 0, revenue: 0, groom: 0, byService: {}, list: [] };
+      const p = per[name];
+      p.cases++; p.revenue += total; p.groom += groom;
+      if (!p.byService[svc]) p.byService[svc] = { count: 0, revenue: 0 };
+      p.byService[svc].count++; p.byService[svc].revenue += total;
+      p.list.push({ date: v.date, petName: v.petName, petHn: v.petHn, svc, total, groom });
+    });
+    Object.values(per).forEach((p) => p.list.sort((a, b) => (a.date < b.date ? 1 : -1)));
+    return per;
+  }, [visits, queue, stock, shopStock]);
+  // รายชื่อคนตามแท็บ: หมอ = รายชื่อหมอ + ชื่อที่พบในบันทึก (ที่ไม่ใช่ผู้ช่วย) · ผู้ช่วย = รายชื่อผู้ช่วยเท่านั้น
+  const staffPeople = useMemo(() => {
+    const empty = { cases: 0, revenue: 0, groom: 0, byService: {}, list: [] };
+    if (staffTab === 'asst') {
+      return (assistants || []).map((n) => ({ name: n, ...(staffPerf[n] || empty) })).sort((a, b) => b.groom - a.groom);
+    }
+    const asstSet = new Set((assistants || []).map((a) => String(a).trim()));
+    const names = new Set((vets || []).map((v) => String(v).trim()).filter(Boolean));
+    Object.keys(staffPerf).forEach((n) => { if (!asstSet.has(n)) names.add(n); });
+    return [...names].map((n) => ({ name: n, ...(staffPerf[n] || empty) })).sort((a, b) => b.revenue - a.revenue);
+  }, [staffTab, staffPerf, vets, assistants]);
+  const selPerf = staffSel ? (staffPerf[staffSel] || { cases: 0, revenue: 0, groom: 0, byService: {}, list: [] }) : null;
 
   const chg = m.revenueChangePct;
   const money = (n) => fmtB(Math.round(n));
@@ -1041,6 +1095,90 @@ function ReportsView({ pets, queue, stock, shopStock = [], services = [], receip
               ));
             })()}
           </div>
+        </div>
+      </div>
+
+      {/* ── ผลงานรายคน: หมอ / ผู้ช่วย (ตามช่วงเวลาที่เลือกด้านบน) ── */}
+      <div className="card" style={{ marginTop: 14 }}>
+        <div className="card-head">
+          <span style={{ fontWeight: 800 }}>🧑‍⚕️ ผลงานรายคน</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span className="chip">{rangeLabel}</span>
+            <div className="seg">
+              <button className={staffTab === 'vet' ? 'on' : ''} onClick={() => { setStaffTab('vet'); setStaffSel(null); }}>🩺 หมอ</button>
+              <button className={staffTab === 'asst' ? 'on' : ''} onClick={() => { setStaffTab('asst'); setStaffSel(null); }}>🛁 ผู้ช่วย</button>
+            </div>
+          </div>
+        </div>
+        <div className="card-pad">
+          {staffPeople.length === 0 ? (
+            <div className="queue-empty">
+              {staffTab === 'asst'
+                ? 'ยังไม่มีรายชื่อผู้ช่วย — เพิ่มได้ในหน้า "บันทึกตรวจ" ของเคสอาบน้ำตัดขน (ช่องผู้ช่วยผู้ทำ → ปุ่ม + เพิ่มผู้ช่วย)'
+                : 'ยังไม่มีข้อมูล'}
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {staffPeople.map((p) => (
+                <button key={p.name} onClick={() => setStaffSel(staffSel === p.name ? null : p.name)}
+                  style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%', textAlign: 'left', padding: '9px 12px', borderRadius: 'var(--radius-sm)', cursor: 'pointer', fontSize: 14, font: 'inherit',
+                    border: '1.5px solid ' + (staffSel === p.name ? 'var(--navy)' : 'var(--line)'), background: staffSel === p.name ? 'var(--navy-soft)' : 'var(--surface)' }}>
+                  <span style={{ fontSize: 17 }}>{staffTab === 'asst' ? '🛁' : '🩺'}</span>
+                  <span style={{ fontWeight: 700, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name}</span>
+                  <span className="chip">{p.cases} เคส</span>
+                  <span style={{ fontWeight: 800, color: 'var(--mint-deep)', minWidth: 86, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{fmtB(staffTab === 'asst' ? p.groom : p.revenue)}</span>
+                  <span style={{ color: 'var(--ink-faint)', fontSize: 12 }}>{staffSel === p.name ? '▲' : '▼'}</span>
+                </button>
+              ))}
+            </div>
+          )}
+          {staffTab === 'asst' && staffPeople.length > 0 ? (
+            <div style={{ fontSize: 12, color: 'var(--ink-faint)', marginTop: 8 }}>
+              💡 ยอดผู้ช่วย = เฉพาะรายการที่มีคำว่า “อาบน้ำ” (ตรงกับช่อง “ราคาอาบน้ำตัดขน” ใน Excel) — ค่ายา/สินค้าอื่นที่คีย์เพิ่มในบิลเดียวกันไม่ถูกนับ
+            </div>
+          ) : null}
+
+          {staffSel && selPerf ? (
+            <div style={{ marginTop: 14, borderTop: '1px solid var(--line-soft)', paddingTop: 14 }}>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 10, flexWrap: 'wrap' }}>
+                <span style={{ fontWeight: 800, fontSize: 15 }}>{staffTab === 'asst' ? '🛁' : '🩺'} {staffSel}</span>
+                <span className="chip">{selPerf.cases} เคส</span>
+                <span style={{ fontWeight: 800, color: 'var(--mint-deep)', fontSize: 15 }}>
+                  {staffTab === 'asst' ? `ยอดอาบน้ำรวม ${fmtB(selPerf.groom)}` : `ยอดรวม ${fmtB(selPerf.revenue)}`}
+                </span>
+              </div>
+              {staffTab === 'vet' && Object.keys(selPerf.byService).length > 0 ? (
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, alignItems: 'center', marginBottom: 12 }}>
+                  <DonutChart data={Object.entries(selPerf.byService).map(([label, v]) => ({ label, v: v.count })).sort((a, b) => b.v - a.v)} size={140} />
+                  <div>
+                    {Object.entries(selPerf.byService).sort((a, b) => b[1].revenue - a[1].revenue).map(([k, v]) => (
+                      <SimpleBar key={k} label={`${k} (${v.count})`} value={v.revenue}
+                        max={Math.max(1, ...Object.values(selPerf.byService).map((x) => x.revenue))} color="var(--powder-deep)" />
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+              <div style={{ maxHeight: 260, overflowY: 'auto', border: '1px solid var(--line-soft)', borderRadius: 'var(--radius-sm)' }}>
+                {selPerf.list.length === 0 ? <div className="queue-empty">ยังไม่มีเคสในช่วงนี้</div>
+                  : selPerf.list.map((c, i) => (
+                    <div key={i} onClick={() => onOpenPet && c.petHn && onOpenPet(c.petHn)}
+                      style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', borderBottom: '1px solid var(--line-soft)', fontSize: 13, cursor: onOpenPet ? 'pointer' : 'default' }}>
+                      <span style={{ color: 'var(--ink-faint)', width: 78, flexShrink: 0, fontVariantNumeric: 'tabular-nums' }}>{dateTH(c.date)}</span>
+                      <span style={{ fontWeight: 700, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {c.petName || '-'} <span style={{ color: 'var(--ink-faint)', fontWeight: 500, fontSize: 11.5 }}>HN {c.petHn}</span>
+                      </span>
+                      <span className="chip" style={{ fontSize: 11 }}>{c.svc}</span>
+                      {staffTab === 'asst'
+                        ? <span style={{ fontWeight: 800, color: 'var(--mint-deep)', minWidth: 82, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
+                            {fmtB(c.groom)}{c.total !== c.groom ? <span style={{ color: 'var(--ink-faint)', fontWeight: 500, fontSize: 10.5 }}> /บิล {fmtB(c.total)}</span> : null}
+                          </span>
+                        : <span style={{ fontWeight: 800, minWidth: 70, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{fmtB(c.total)}</span>}
+                    </div>
+                  ))}
+              </div>
+              {onOpenPet ? <div style={{ fontSize: 11.5, color: 'var(--ink-faint)', marginTop: 6 }}>👆 กดที่เคสเพื่อเปิดประวัติ</div> : null}
+            </div>
+          ) : null}
         </div>
       </div>
 
