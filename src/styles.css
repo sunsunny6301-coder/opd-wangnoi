@@ -254,7 +254,9 @@ button, input, select, textarea { font-family: inherit; font-size: inherit; colo
   62%  { opacity: 1; transform: scale(1.05) translateY(0); }
   100% { opacity: 1; transform: scale(1); }
 }
-.anim-pop { animation: popBounce .5s cubic-bezier(.34,1.56,.64,1) both; animation-delay: calc(var(--i, 0) * 65ms); }
+/* fill-mode = backwards (ไม่ใช่ both): กันกระพริบตอนหน่วงเวลา แต่พออนิเมชันจบต้องปล่อย transform คืน
+   ไม่งั้นค่า transform ที่ค้างจาก keyframe จะทับ :hover ทำให้เอฟเฟกต์ตอนเมาส์ชี้ไม่ทำงาน */
+.anim-pop { animation: popBounce .5s cubic-bezier(.34,1.56,.64,1) backwards; animation-delay: calc(var(--i, 0) * 65ms); }
 
 /* อีโมจิสัตว์ขยับไหวๆ เป็นช่วงๆ (ส่วนใหญ่นิ่ง สะบัดสั้นๆ ทุก ~5 วิ ไม่รบกวนสายตา) */
 @keyframes wiggleGentle {
@@ -327,9 +329,51 @@ button, input, select, textarea { font-family: inherit; font-size: inherit; colo
 .skeleton { border-radius: var(--radius-sm); background: linear-gradient(100deg, var(--line-soft) 30%, var(--line) 45%, var(--line-soft) 60%); background-size: 220% 100%; animation: skelSweep 1.3s ease-in-out infinite; color: transparent !important; }
 .skeleton * { visibility: hidden; }
 
+/* ══ Hover · หัวข้อใหญ่: ยกลอย + เงานุ่ม (ใช้ทุกหน้า — ชื่อหน้า + หัวข้อการ์ด) ══ */
+.top-bar .page-title,
+.card-head > span:first-child {
+  display: inline-block; border-radius: 8px; padding: 2px 7px; margin: -2px -7px;
+  transition: transform .25s ease, box-shadow .25s ease;
+}
+.top-bar .page-title:hover,
+.card-head > span:first-child:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 8px 18px rgba(34,48,62,.13), 0 20px 44px rgba(34,48,62,.13);
+}
+
+/* ══ Hover · การ์ด/ป้าย: เด้ง + ประกายรอยเท้า (ใช้ทุกหน้า) ══ */
+@keyframes hxSpark {
+  0%   { opacity: 0; transform: translate(0,0) scale(.4) rotate(0); }
+  45%  { opacity: 1; }
+  100% { opacity: 0; transform: translate(var(--dx), var(--dy)) scale(1.1) rotate(140deg); }
+}
+.stat-tile, .q-card, .chip { position: relative; }
+.stat-tile, .chip { transition: transform .3s cubic-bezier(.34,1.56,.64,1), box-shadow .3s ease; }
+.q-card { transition: transform .3s cubic-bezier(.34,1.56,.64,1), box-shadow .3s ease; }
+.stat-tile:hover, .q-card:hover, .chip:hover { transform: translateY(-5px) scale(1.04); }
+/* ประกาย ✦ (มุมซ้ายบน) + รอยเท้า 🐾 (มุมขวาบน) — เว้น .goal-hit ที่ใช้ ::after ทำแสงกวาดอยู่แล้ว */
+.stat-tile::before, .q-card::before, .chip::before {
+  content: "✦"; position: absolute; top: 1px; left: -5px; font-size: 12px; color: var(--gold);
+  opacity: 0; pointer-events: none; z-index: 2;
+}
+.stat-tile:not(.goal-hit)::after, .q-card::after, .chip::after {
+  content: "🐾"; position: absolute; top: -6px; right: -7px; font-size: 11px;
+  opacity: 0; pointer-events: none; z-index: 2;
+}
+.stat-tile:hover::before, .q-card:hover::before, .chip:hover::before {
+  --dx: -13px; --dy: -15px; animation: hxSpark .8s ease-out;
+}
+.stat-tile:not(.goal-hit):hover::after, .q-card:hover::after, .chip:hover::after {
+  --dx: 13px; --dy: -17px; animation: hxSpark .9s ease-out .08s;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .q-card.just-moved, .due-badge, .count-bounce, .sleep-corner .cat, .sleep-corner .zzz span,
   .stat-tile.goal-hit::after, .goal-badge, .festival-drift, .skeleton { animation: none; }
+  .top-bar .page-title:hover, .card-head > span:first-child:hover,
+  .stat-tile:hover, .q-card:hover, .chip:hover { transform: none; }
+  .stat-tile:hover::before, .q-card:hover::before, .chip:hover::before,
+  .stat-tile:hover::after, .q-card:hover::after, .chip:hover::after { animation: none; opacity: 0; }
 }
 .modal-head {
   display: flex; align-items: center; justify-content: space-between;
