@@ -214,6 +214,62 @@ function ConfettiLayer() {
   return <canvas ref={ref} aria-hidden="true" style={{ position: 'fixed', inset: 0, width: '100%', height: '100%', pointerEvents: 'none', zIndex: 9999 }} />;
 }
 
+// ── แบนเนอร์ชวนติดตั้งแอป (PWA) — โผล่เฉพาะเครื่องที่ยังไม่ได้ติดตั้ง ──────
+function isStandalone() {
+  return (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) || window.navigator.standalone === true;
+}
+function InstallPrompt() {
+  const [evt, setEvt] = useState(null);      // beforeinstallprompt ที่เก็บไว้ (Android/Chrome/Edge)
+  const [show, setShow] = useState(false);
+  const [iosHelp, setIosHelp] = useState(false);  // iOS ไม่มี event → ต้องบอกวิธีเอง
+  const SNOOZE_KEY = 'wnvet_install_snooze';
+
+  useEffect(() => {
+    if (isStandalone()) return;                       // ติดตั้งแล้ว ไม่ต้องกวน
+    const snooze = Number(localStorage.getItem(SNOOZE_KEY) || 0);
+    if (snooze && Date.now() < snooze) return;        // กด "ไว้ก่อน" ยังไม่ครบกำหนด
+
+    const onBip = (e) => { e.preventDefault(); setEvt(e); setShow(true); };
+    window.addEventListener('beforeinstallprompt', onBip);
+
+    // iOS/Safari ไม่ยิง beforeinstallprompt → ถ้าเป็น iOS และยังไม่ได้ติดตั้ง ให้โชว์วิธีทำ
+    const ua = navigator.userAgent || '';
+    const isIOS = /iPad|iPhone|iPod/.test(ua) && !window.MSStream;
+    const isSafari = /Safari/.test(ua) && !/CriOS|FxiOS|EdgiOS/.test(ua);
+    let t = 0;
+    if (isIOS && isSafari) t = setTimeout(() => { setIosHelp(true); setShow(true); }, 2500);
+
+    const onInstalled = () => { setShow(false); localStorage.removeItem(SNOOZE_KEY); };
+    window.addEventListener('appinstalled', onInstalled);
+    return () => { window.removeEventListener('beforeinstallprompt', onBip); window.removeEventListener('appinstalled', onInstalled); clearTimeout(t); };
+  }, []);
+
+  if (!show) return null;
+  const snoozeDays = (d) => { localStorage.setItem(SNOOZE_KEY, String(Date.now() + d * 86400000)); setShow(false); };
+  const doInstall = async () => {
+    if (!evt) return;
+    evt.prompt();
+    try { const r = await evt.userChoice; if (r && r.outcome === 'dismissed') snoozeDays(3); } catch (e) {}
+    setEvt(null); setShow(false);
+  };
+
+  return (
+    <div className="install-bar" role="dialog" aria-label="ติดตั้งแอป">
+      <img className="install-icon" src="/icons/icon-192.png" alt="" width="46" height="46" />
+      <div className="install-text">
+        <div className="install-title">ติดตั้ง OPD วังน้อยสัตวแพทย์</div>
+        <div className="install-sub">
+          {iosHelp
+            ? <>กดปุ่ม <b>แชร์</b> <span aria-hidden="true">⎋</span> ด้านล่าง → เลือก <b>“เพิ่มไปยังหน้าจอโฮม”</b></>
+            : 'เปิดเร็วขึ้น เต็มจอ ใช้งานเหมือนแอป'}
+        </div>
+      </div>
+      {!iosHelp ? <button className="btn btn-primary btn-sm install-go" onClick={doInstall}>ติดตั้ง</button> : null}
+      <button className="install-x" onClick={() => snoozeDays(7)} aria-label="ปิด (ไว้ก่อน)">✕</button>
+    </div>
+  );
+}
+
 // ── โหมดเทศกาล: สลับอีโมจิ/สีตามวันที่โดยอัตโนมัติ ──────────────────────
 function getFestival(d) {
   d = d || new Date();
@@ -240,4 +296,4 @@ function FestivalFloat({ override }) {
   );
 }
 
-Object.assign(window, { Icon, Modal, useToasts, Field, SPECIES_EMOJI, TYPE_CHIP, fmtB, todayTH, dateTH, timeNow, calcAge, todayISO, imageToDataURL, CountUp, celebrate, playDing, ConfettiLayer, getFestival, FestivalFloat });
+Object.assign(window, { Icon, Modal, useToasts, Field, SPECIES_EMOJI, TYPE_CHIP, fmtB, todayTH, dateTH, timeNow, calcAge, todayISO, imageToDataURL, CountUp, celebrate, playDing, ConfettiLayer, getFestival, FestivalFloat, InstallPrompt, isStandalone });

@@ -842,6 +842,7 @@ function App() {
       ) : null}
 
       {toastRack}
+      <InstallPrompt />
       <ConfettiLayer />
       <FestivalFloat />
     </div>);
