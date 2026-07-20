@@ -530,12 +530,14 @@ function App() {
     const visit = updatedPet.visits[0];
     if (!visit) return;
 
-    // เคสที่ชำระและปิดแล้ว: กันกดซ้ำจนเกิดประวัติ/ใบเสร็จ/ตัดสต็อกซ้ำ
-    if (queueItem && queueItem.status === 'done') {
-      setPage('dashboard'); setCaseCtx(null);
-      pushToast('เคสนี้ชำระและปิดแล้ว — หากต้องการแก้ไข กรุณายกเลิกใบเสร็จเดิมก่อน');
-      return;
-    }
+    // เคสที่ชำระและปิดแล้ว + กดบันทึกอีกครั้ง = "แก้ไขเคสที่ชำระแล้ว"
+    // → อัปเดตใบเสร็จ "ใบเดิม" (เลขที่เดิม) + ปรับสต็อกตามส่วนต่าง
+    //   ไม่ออกใบใหม่/ไม่ตัดสต็อกซ้ำ เพื่อกันรายได้นับซ้ำ (เจตนาเดิมของตัวกันกดซ้ำ)
+    const prevReceipt = (queueItem && queueItem.status === 'done' && status === 'paid')
+      ? (receipts || []).find((r) => (r.type || 'opd') === 'opd' && r.hn === updatedPet.hn && String(r.q || '') === String(queueItem.q || ''))
+      : null;
+    const isRepay = !!prevReceipt;
+
     // charge = [ชื่อ, จำนวน, ราคา, stockId?, origin?] — stockId ตัดสต็อก, origin='shop' = สินค้าเพ็ทช้อป (ตัดคลังเพ็ทช้อป)
     const charges = (visit.items || []).map((c) =>
       Array.isArray(c) ? [c[0] || '', Number(c[1]) || 1, Number(c[2]) || 0, c[3] || null, c[4] || null]
@@ -552,9 +554,14 @@ function App() {
     // ให้แทนที่บันทึกเดิม ไม่เพิ่มซ้ำ
     const encId = queueItem?.q;
     // เลขใบเสร็จดึงครั้งเดียว (เหมือน payFromBoard) แล้วค่อย apply กับ state ล่าสุดใน setState
-    const receipt = status === 'paid' ? nextReceiptNo() : null;
-    // จำนวนรายการที่ตัดสต็อก — ใช้แสดง toast เท่านั้น (นับจาก charges ที่มี stockId)
-    const deducted = status === 'paid' ? charges.filter((c) => c[3]).length : 0;
+    // แก้ไขเคสที่ชำระแล้ว (isRepay) = ใช้เลขใบเดิม ไม่กินเลขใหม่
+    const receipt = (status === 'paid' && !isRepay) ? nextReceiptNo() : null;
+    // จำนวนรายการที่ตัดสต็อก — ใช้แสดง toast เท่านั้น
+    const deducted = status !== 'paid' ? 0
+      : isRepay
+        ? (() => { const o = tallyStock(prevReceipt.items || []), n = tallyStock(receiptItems);
+                   return stockDeltaCharges(o.clinic, n.clinic).length + stockDeltaCharges(o.shop, n.shop).length; })()
+        : charges.filter((c) => c[3]).length;
 
     // อัปเดตทุกอย่างจาก state ล่าสุด (s) ไม่ใช่ closure — กันข้อมูลอีกเครื่องที่ sync เข้ามาหาย/เลขใบเสร็จซ้ำ
     setState((s) => {
@@ -567,7 +574,16 @@ function App() {
       let newStock = s.stock || [];
       let newShopStock = s.shopStock || s.stock || [];
       let con = { receiptSeq: s.receiptSeq || {}, receiptVoids: s.receiptVoids || {} };
-      if (status === 'paid') {
+      if (status === 'paid' && isRepay) {
+        // ── แก้ไขเคสที่ชำระแล้ว: อัปเดตใบเดิม + ปรับสต็อกตามส่วนต่าง (ไม่ออกใบใหม่/ไม่ตัดซ้ำ) ──
+        const cur = newReceipts.find((r) => r.no === prevReceipt.no) || prevReceipt;
+        newReceipts = newReceipts.map((r) => r.no === prevReceipt.no
+          ? applyBillEdits({ ...r, petName: updatedPet.name, ownerName: r.ownerName || updatedPet.owner.name, items: receiptItems, method: payMethod || r.method || 'เงินสด', total, noVat: noVatAmt }, billEdits)
+          : r);
+        newQueue = queueItem?.q ? newQueue.map((x) => x.q === queueItem.q ? { ...x, paid: total } : x) : newQueue;
+        const d = applyItemDelta(s, cur.items || [], receiptItems);
+        newStock = d.stock; newShopStock = d.shopStock;
+      } else if (status === 'paid') {
         con = consumeReceipt(receipt, s);
         newReceipts = [...newReceipts, applyBillEdits({ no: receipt.no, date: todayISO(), type: 'opd', svcType: queueItem?.type || null, petName: updatedPet.name, ownerName: updatedPet.owner.name, hn: updatedPet.hn, q: queueItem?.q || '', items: receiptItems, method: payMethod || 'เงินสด', total, noVat: noVatAmt }, billEdits)];
         newQueue = queueItem?.q ? newQueue.map((x) => x.q === queueItem.q ? { ...x, status: 'done', paid: total, doneDate: todayISO() } : x) : newQueue;
@@ -581,9 +597,10 @@ function App() {
     });
     setPage('dashboard');
     setCaseCtx(null);
-    pushToast(status === 'paid'
-      ? `รับชำระ ${fmtB(total)} แล้ว` + (deducted > 0 ? ` · ตัดสต็อก ${deducted} รายการ` : '')
-      : `บันทึกเรียบร้อย`);
+    pushToast(status !== 'paid' ? 'บันทึกเรียบร้อย'
+      : isRepay
+        ? `อัปเดตใบเสร็จ ${prevReceipt.no} — ${fmtB(total)}` + (deducted > 0 ? ` · ปรับสต็อก ${deducted} รายการ` : '')
+        : `รับชำระ ${fmtB(total)} แล้ว` + (deducted > 0 ? ` · ตัดสต็อก ${deducted} รายการ` : ''));
     if (status === 'paid') celebrate({ big: total >= 3000 });
   };
 

@@ -716,7 +716,7 @@ function CaseView({ pet, queueItem, vets, assistants = [], services, stock, shop
                 ) : null}
                 <button className="btn btn-primary btn-lg" onClick={() => { charges.length > 0 ? setShowReceipt(true) : save('paid', ''); }}>
                   <Icon name="printer" size={17} />
-                  {isEditMode ? 'ออกใบเสร็จใหม่' : charges.length === 0 ? 'ปิดเคส (ไม่มีค่าใช้จ่าย)' : 'ชำระเงิน + ใบเสร็จ'}
+                  {queueItem?.status === 'done' ? 'อัปเดตใบเสร็จ' : isEditMode ? 'ออกใบเสร็จ' : charges.length === 0 ? 'ปิดเคส (ไม่มีค่าใช้จ่าย)' : 'ชำระเงิน + ใบเสร็จ'}
                 </button>
               </>
             )}
@@ -806,7 +806,9 @@ function CaseView({ pet, queueItem, vets, assistants = [], services, stock, shop
 
       {isEditMode ? (
         <div style={{ padding: '10px 14px', background: '#FFF8E0', border: '1.5px solid #E5C97E', borderRadius: 'var(--radius-sm)', fontSize: 13, color: '#7A5E00', display: 'flex', alignItems: 'center', gap: 8, marginTop: 16 }}>
-          <Icon name="alert" size={15} /> กำลังแก้ไขเคสที่{queueItem.status === 'done' ? 'ชำระแล้ว' : 'รอชำระ'} — บันทึกจะอัปเดตรายการและออกใบเสร็จใหม่
+          <Icon name="alert" size={15} /> {queueItem.status === 'done'
+            ? 'กำลังแก้ไขเคสที่ชำระแล้ว — บันทึกจะอัปเดตรายการและใบเสร็จใบเดิม (เลขที่เดิม) พร้อมปรับสต็อกตามส่วนต่าง'
+            : 'กำลังแก้ไขเคสที่รอชำระ — บันทึกจะอัปเดตรายการและออกใบเสร็จ'}
         </div>
       ) : null}
 
