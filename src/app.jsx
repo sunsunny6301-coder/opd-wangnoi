@@ -143,7 +143,21 @@ function App() {
     if (total > 0) celebrate({ big: total >= 3000 });
   };
   const updatePet = (updated) => {
-    setState((s) => ({ ...s, pets: s.pets.map((p) => p.hn === updated.hn ? updated : p) }));
+    // ชื่อเจ้าของเปลี่ยน → ให้ใบเสร็จเก่าของ HN นี้ตามไปด้วย (ลิ้งกัน ไม่ค้างชื่อเดิม)
+    // แตะเฉพาะใบที่ยังใช้ "ชื่อเดิม" อยู่ — ใบที่พิมพ์ชื่อผู้ซื้อเองไว้ (เช่นออกในนามบริษัท) จะไม่ถูกทับ
+    const prevPet = (pets || []).find((p) => p.hn === updated.hn);
+    const oldName = String((prevPet && prevPet.owner && prevPet.owner.name) || '').trim();
+    const newName = String((updated.owner && updated.owner.name) || '').trim();
+    const renamed = oldName && newName && oldName !== newName;
+    const affected = renamed ? (receipts || []).filter((r) => r.hn === updated.hn && String(r.ownerName || '').trim() === oldName).length : 0;
+    setState((s) => {
+      const nextPets = s.pets.map((p) => p.hn === updated.hn ? updated : p);
+      const nextReceipts = renamed
+        ? (s.receipts || []).map((r) => (r.hn === updated.hn && String(r.ownerName || '').trim() === oldName) ? { ...r, ownerName: newName } : r)
+        : (s.receipts || []);
+      return { ...s, pets: nextPets, receipts: nextReceipts };
+    });
+    if (affected > 0) pushToast(`อัปเดตชื่อเจ้าของในใบเสร็จ ${affected} ใบแล้ว`);
   };
 
   const services = state.services || VetData.services;

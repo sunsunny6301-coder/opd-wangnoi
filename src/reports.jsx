@@ -573,6 +573,10 @@ function SimpleBar({ label, value, max, color }) {
 function ReceiptEditModal({ receipt, onClose, onSave, onOpenPet, services = [], stock = [], shopStock = [] }) {
   const [petName, setPetName] = useState(receipt.petName || '');
   const [ownerName, setOwnerName] = useState(receipt.ownerName || '');
+  // ข้อมูลผู้ซื้อสำหรับใบกำกับภาษี — แก้ได้เหมือนตอนรับชำระในหน้า OPD
+  const [ownerPhone, setOwnerPhone] = useState(receipt.ownerPhone || '');
+  const [ownerAddr, setOwnerAddr] = useState(receipt.ownerAddr || '');
+  const [ownerTaxId, setOwnerTaxId] = useState(receipt.ownerTaxId || '');
   const [method, setMethod] = useState(receipt.method || 'เงินสด');
   const [date, setDate] = useState(receipt.date || '');
   const [items, setItems] = useState(
@@ -592,7 +596,9 @@ function ReceiptEditModal({ receipt, onClose, onSave, onOpenPet, services = [], 
     const newTotal = cleanItems.reduce((s, c) => s + c[1] * c[2], 0);
     // noVat = ยอดรายการเพ็ทช้อป (origin='shop') คำนวณใหม่จากรายการจริง (app.jsx จะ recompute ซ้ำอีกชั้น)
     const newNoVat = cleanItems.filter((c) => c[4] === 'shop').reduce((s, c) => s + c[1] * c[2], 0);
-    onSave({ petName: petName.trim() || '-', ownerName: ownerName.trim() || '-', method, date, items: cleanItems, total: newTotal, noVat: newNoVat });
+    onSave({ petName: petName.trim() || '-', ownerName: ownerName.trim() || '-',
+      ownerPhone: ownerPhone.trim(), ownerAddr: ownerAddr.trim(), ownerTaxId: ownerTaxId.trim(),
+      method, date, items: cleanItems, total: newTotal, noVat: newNoVat });
   };
   const [showPreview, setShowPreview] = useState(false);
   const previewItems = items.map((it) => ({ name: String(it.name || ''), qty: Number(it.qty) || 0, price: Number(it.price) || 0 }));
@@ -619,7 +625,16 @@ function ReceiptEditModal({ receipt, onClose, onSave, onOpenPet, services = [], 
             </select>
           </Field>
           <Field label="ชื่อสัตว์เลี้ยง"><input className="input" value={petName} onChange={(e) => setPetName(e.target.value)} placeholder="—" /></Field>
-          <Field label="ชื่อเจ้าของ"><input className="input" value={ownerName} onChange={(e) => setOwnerName(e.target.value)} placeholder="—" /></Field>
+          <Field label="ชื่อเจ้าของ / ชื่อผู้ซื้อ"><input className="input" value={ownerName} onChange={(e) => setOwnerName(e.target.value)} placeholder="—" /></Field>
+        </div>
+        {/* ข้อมูลผู้ซื้อ (ใบกำกับภาษี) — เว้นว่างได้ ถ้าไม่ต้องออกให้บริษัท */}
+        <div>
+          <div style={{ fontWeight: 700, fontSize: 13, color: 'var(--ink-soft)', marginBottom: 8 }}>ข้อมูลผู้ซื้อ (สำหรับใบกำกับภาษี)</div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            <Field label="เบอร์โทร"><input className="input" value={ownerPhone} onChange={(e) => setOwnerPhone(e.target.value)} placeholder="08x-xxx-xxxx" /></Field>
+            <Field label="เลขประจำตัวผู้เสียภาษี (ลูกค้า)"><input className="input" value={ownerTaxId} onChange={(e) => setOwnerTaxId(e.target.value)} placeholder="13 หลัก" /></Field>
+          </div>
+          <Field label="ที่อยู่ลูกค้า"><input className="input" value={ownerAddr} onChange={(e) => setOwnerAddr(e.target.value)} placeholder="บ้านเลขที่ ถนน ตำบล อำเภอ จังหวัด รหัสไปรษณีย์" /></Field>
         </div>
         <div>
           <div style={{ fontWeight: 700, fontSize: 13, color: 'var(--ink-soft)', marginBottom: 8 }}>รายการในใบเสร็จ</div>
@@ -651,6 +666,7 @@ function ReceiptEditModal({ receipt, onClose, onSave, onOpenPet, services = [], 
               items={previewItems}
               petName={petName !== '-' ? petName : ''}
               ownerName={ownerName !== '-' ? ownerName : ''}
+              ownerPhone={ownerPhone} ownerAddr={ownerAddr} ownerTaxId={ownerTaxId}
               method={method} vatMode="none" no={receipt.no} date={date}
             />
           </div>
