@@ -318,7 +318,7 @@ function ChargePicker({ services, stock, shopStock = [], onAdd }) {
   );
 }
 
-function CaseView({ pet, queueItem, vets, assistants = [], services, stock, shopStock = [], allPets, appointments = [], onBack, onFinish, onAddVet, onDeleteVet, onAddAssistant, onDeleteAssistant, onAddAdmitted, onUpdateAdmitted, onDischargeAdmitted, onAddAppointment, onUpdateAppointment, onDeleteAppointment, pushToast, onUpdatePet, onUpdateVisit, onAddService, onDeleteService, onUpdateService, onSaveDraft, previewReceiptNo, notePresets, onSavePresets }) {
+function CaseView({ pet, queueItem, vets, assistants = [], services, stock, shopStock = [], allPets, appointments = [], onBack, onFinish, onAddVet, onDeleteVet, onAddAssistant, onDeleteAssistant, onAddAdmitted, onUpdateAdmitted, onDischargeAdmitted, onAddAdmitPayment, onDeleteAdmitPayment, onAddAppointment, onUpdateAppointment, onDeleteAppointment, pushToast, onUpdatePet, onUpdateVisit, onAddService, onDeleteService, onUpdateService, onSaveDraft, previewReceiptNo, notePresets, onSavePresets }) {
   const latestWeight = pet.visits.length ? pet.visits[0].weight : pet.weight;
   const draft = queueItem?.draft;
   // เคสอาบน้ำตัดขน: ช่อง "สัตวแพทย์ผู้ตรวจ" เปลี่ยนเป็นเลือก "ผู้ช่วย" แทน (ยอดอาบน้ำจะสรุปรายคนในหน้ารายงาน)
@@ -351,6 +351,7 @@ function CaseView({ pet, queueItem, vets, assistants = [], services, stock, shop
   const [editPetInfo, setEditPetInfo] = useState(null);
   const [editVisit, setEditVisit] = useState(null);
   const [showVaccineHistory, setShowVaccineHistory] = useState(false);
+  const [newPay, setNewPay] = useState({ amount: '', method: 'เงินสด', note: 'มัดจำ' });   // มัดจำ/จ่ายล่วงหน้า (แอดมิด)
   const [showServiceMgr, setShowServiceMgr] = useState(false);
   const [lightbox, setLightbox] = useState(null);
   const [expandedVisits, setExpandedVisits] = useState({ 0: true });
@@ -693,6 +694,53 @@ function CaseView({ pet, queueItem, vets, assistants = [], services, stock, shop
             </div>
           </div>
 
+          {/* ── มัดจำ / จ่ายล่วงหน้า (เฉพาะเคสแอดมิด) ── */}
+          {isAdmittedMode && onAddAdmitPayment ? (() => {
+            const paid = (queueItem.payments || []).reduce((s, p) => s + (Number(p.amount) || 0), 0);
+            const charged = (admittedItems || []).reduce((s, it) => s + it.qty * it.price, 0);
+            return (
+              <div className="card">
+                <div className="card-head" style={{ background: 'var(--mint-soft)', borderBottom: '2px solid var(--mint)' }}>
+                  <span style={{ fontWeight: 800, fontSize: 14.5, color: 'var(--mint-deep)', display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                    <span style={{ background: 'var(--mint-deep)', color: '#fff', borderRadius: 8, width: 30, height: 30, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}><Icon name="cash" size={16} /></span>
+                    มัดจำ / จ่ายล่วงหน้า
+                  </span>
+                  <span style={{ fontSize: 12.5, color: 'var(--mint-deep)', fontWeight: 700 }}>รับแล้ว {fmtB(paid)}</span>
+                </div>
+                <div className="card-pad" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  {(queueItem.payments || []).length > 0 ? (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                      {(queueItem.payments || []).map((p) => (
+                        <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, padding: '5px 8px', background: 'var(--paper)', borderRadius: 'var(--radius-sm)' }}>
+                          <span style={{ color: 'var(--mint-deep)', fontWeight: 700 }}>💵 {fmtB(p.amount)}</span>
+                          <span style={{ color: 'var(--ink-faint)', fontSize: 12 }}>{p.note || 'จ่ายล่วงหน้า'} · {p.date} · {p.method}</span>
+                          {onDeleteAdmitPayment ? <button title="ลบ" style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--ink-faint)', fontSize: 15 }} onClick={() => onDeleteAdmitPayment(queueItem.id, p.id)}>×</button> : null}
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                    <input className="input" style={{ width: 120 }} type="number" min="0" placeholder="จำนวนเงิน ฿" value={newPay.amount} onChange={(e) => setNewPay({ ...newPay, amount: e.target.value })} />
+                    <input className="input" style={{ width: 160 }} placeholder="หมายเหตุ (มัดจำ/รายวัน)" value={newPay.note} onChange={(e) => setNewPay({ ...newPay, note: e.target.value })} />
+                    {['เงินสด', 'โอน', 'บัตร'].map((m) => (
+                      <button key={m} className={'btn btn-sm' + (newPay.method === m ? ' btn-primary' : '')} onClick={() => setNewPay({ ...newPay, method: m })}>{m}</button>
+                    ))}
+                    <button className="btn btn-primary btn-sm" disabled={!(Number(newPay.amount) > 0)}
+                      onClick={() => { onAddAdmitPayment(queueItem.id, newPay); setNewPay({ amount: '', method: newPay.method, note: 'มัดจำ' }); }}>
+                      <Icon name="check" size={14} /> รับเงิน
+                    </button>
+                  </div>
+                  {(charged > 0 || paid > 0) ? (
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, borderTop: '1px solid var(--line-soft)', paddingTop: 8 }}>
+                      <span style={{ color: 'var(--ink-soft)' }}>ค่ารักษาสะสม {fmtB(charged)} · รับล่วงหน้าแล้ว {fmtB(paid)}</span>
+                      <b style={{ color: charged - paid > 0 ? '#A05A00' : 'var(--mint-deep)' }}>คงเหลือเก็บตอนจำหน่าย {fmtB(Math.max(0, charged - paid))}</b>
+                    </div>
+                  ) : null}
+                </div>
+              </div>
+            );
+          })() : null}
+
           <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
             <button className="btn btn-lg" onClick={() => {
               if (queueItem?.q && onSaveDraft) {
@@ -708,7 +756,18 @@ function CaseView({ pet, queueItem, vets, assistants = [], services, stock, shop
             ) : (
               <>
                 {onAddAdmitted ? (
-                  <button className="btn btn-lg" style={{ color: '#7A3D35', borderColor: '#C0685C', background: '#FCF0E8' }} onClick={() => onAddAdmitted(pet.hn, 'กำลังรักษา', rec.dx || rec.cc, queueItem?.q)}><Icon name="heart" size={17} /> เข้าแอดมิด</button>
+                  <button className="btn btn-lg" style={{ color: '#7A3D35', borderColor: '#C0685C', background: '#FCF0E8' }}
+                    onClick={() => {
+                      // เก็บสิ่งที่คีย์ไว้ (CC/PE/Dx/แผน/รายการ/รูป/น้ำหนัก/หมอ) เป็น "บันทึกวันแรก" ของการแอดมิด — ไม่ให้หาย
+                      onAddAdmitted(pet.hn, 'กำลังรักษา', rec.dx || rec.cc, queueItem?.q, {
+                        date: todayISO(), vet: rec.vet, weight: rec.weight,
+                        cc: rec.cc, pe: rec.pe, dx: rec.dx, plan: rec.plan,
+                        note: (rec.dx || rec.cc || '').trim(),
+                        media: media.filter((m) => !m.session),
+                        charges: charges.map((c) => [c[0], c[1], c[2], c[3] || null, c[4] || null]),
+                      });
+                      onBack && onBack();
+                    }}><Icon name="heart" size={17} /> เข้าแอดมิด</button>
                 ) : null}
                 <button className="btn btn-soft btn-lg" style={{ color: 'var(--powder-deep)', borderColor: 'var(--powder-deep)' }} onClick={() => setShowApptForm(true)}><Icon name="clock" size={17} /> นัดครั้งถัดไป</button>
                 {!isEditMode ? (

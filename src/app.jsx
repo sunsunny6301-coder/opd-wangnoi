@@ -80,14 +80,28 @@ function App() {
     setState((s) => ({ ...s, smsPresets: list }));
     pushToast(`บันทึกข้อความสำเร็จรูปแล้ว (${list.length} ข้อความ)`);
   };
-  const addAdmitted = (petHn, type, note, qNo) => {
+  const addAdmitted = (petHn, type, note, qNo, firstRec) => {
     const p = pets.find((x) => x.hn === petHn);
+    // ข้อมูลที่คีย์ไว้ตอนกดแอดมิด → เก็บเป็น "บันทึกวันแรก" (ไม่ให้หาย) ถ้ามีเนื้อหาจริง
+    const hasContent = firstRec && ((firstRec.charges && firstRec.charges.length) || firstRec.cc || firstRec.pe || firstRec.dx || firstRec.plan || firstRec.weight || (firstRec.media && firstRec.media.length));
+    const dailyRecords = hasContent ? [{ ...firstRec, date: firstRec.date || todayISO() }] : [];
     setState((s) => ({
       ...s,
-      admitted: [...(s.admitted || []), { id: 'adm' + Date.now(), hn: petHn, q: qNo || null, petName: p?.name, species: p?.species, owner: p?.owner, admittedDate: todayISO(), type, note, dailyRecords: [] }],
+      admitted: [...(s.admitted || []), { id: 'adm' + Date.now(), hn: petHn, q: qNo || null, petName: p?.name, species: p?.species, owner: p?.owner, admittedDate: todayISO(), type, note, dailyRecords, payments: [] }],
       queue: qNo ? (s.queue || []).map((x) => x.q === qNo ? { ...x, status: 'admitted' } : x) : (s.queue || []),
     }));
-    pushToast(`แอดมิด ${p?.name} — ${type}`);
+    pushToast(`แอดมิด ${p?.name} — ${type}` + (hasContent ? ' · เก็บบันทึกวันแรกแล้ว' : ''));
+  };
+  // มัดจำ / จ่ายล่วงหน้าระหว่างแอดมิด — เก็บเป็นรายการชำระบนเคสแอดมิด (ไปหักตอนจำหน่าย)
+  const addAdmitPayment = (admId, payment) => {
+    const amt = Number(payment && payment.amount) || 0;
+    if (amt <= 0) return;
+    const entry = { id: 'pay' + Date.now(), date: todayISO(), amount: amt, method: (payment.method || 'เงินสด'), note: (payment.note || '').trim() };
+    setState((s) => ({ ...s, admitted: (s.admitted || []).map((a) => a.id === admId ? { ...a, payments: [...(a.payments || []), entry] } : a) }));
+    pushToast(`รับชำระล่วงหน้า ${fmtB(amt)}` + (entry.note ? ` — ${entry.note}` : ''));
+  };
+  const deleteAdmitPayment = (admId, payId) => {
+    setState((s) => ({ ...s, admitted: (s.admitted || []).map((a) => a.id === admId ? { ...a, payments: (a.payments || []).filter((x) => x.id !== payId) } : a) }));
   };
   const updateAdmitted = (admId, data) => {
     setState((s) => ({ ...s, admitted: (s.admitted || []).map((a) => a.id === admId ? { ...a, ...data } : a) }));
@@ -841,7 +855,7 @@ function App() {
           onFinish={finishCase} onAddVet={addVet} onDeleteVet={deleteVet} onAddAssistant={addAssistant} onDeleteAssistant={deleteAssistant}
           onAddAppointment={addAppointment} onUpdateAppointment={updateAppointment} onDeleteAppointment={deleteAppointment}
           onUpdateAdmitted={updateAdmitted} onDischargeAdmitted={dischargeAdmitted}
-          onAddAdmitted={addAdmitted} pushToast={pushToast}
+          onAddAdmitted={addAdmitted} onAddAdmitPayment={addAdmitPayment} onDeleteAdmitPayment={deleteAdmitPayment} pushToast={pushToast}
           onUpdatePet={updatePet} onUpdateVisit={updateVisit} onAddService={addService} onDeleteService={deleteService} onUpdateService={updateService} onSaveDraft={saveDraft} previewReceiptNo={nextReceiptNo().no}
           notePresets={notePresets} onSavePresets={saveNotePresets} /> :
           null}
