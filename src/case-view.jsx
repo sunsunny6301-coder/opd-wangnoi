@@ -599,11 +599,44 @@ function CaseView({ pet, queueItem, vets, assistants = [], services, stock, shop
             </div>
           </div>
 
+          {/* รายการที่บันทึกไว้แล้ว (แอดมิด) — โชว์ dailyRecords สะสม ให้เห็นว่าบันทึกจริง ไม่ต้องคีย์ซ้ำ */}
+          {isAdmittedMode && (queueItem.dailyRecords || []).length > 0 ? (() => {
+            const savedTotal = (queueItem.dailyRecords || []).reduce((s, r) => s + (r.charges || []).reduce((ss, c) => ss + (Number(c[1]) || 1) * (Number(c[2]) || 0), 0), 0);
+            return (
+              <div className="card">
+                <div className="card-head" style={{ background: '#FFF8EC', borderBottom: '2px solid #E6A040' }}>
+                  <span style={{ fontWeight: 800, fontSize: 14.5, color: '#A05A00', display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                    <span style={{ background: '#E6A040', color: '#fff', borderRadius: 8, width: 30, height: 30, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>📋</span>
+                    รายการที่บันทึกไว้แล้ว
+                  </span>
+                  <span className="chip" style={{ fontWeight: 700 }}>{(queueItem.dailyRecords || []).length} วัน · รวม {fmtB(savedTotal)}</span>
+                </div>
+                <div className="card-pad" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  {(queueItem.dailyRecords || []).map((r, i) => (
+                    <div key={i} style={{ background: '#FFFAF4', border: '1px solid #F0D0A0', borderRadius: 'var(--radius-sm)', padding: '8px 11px' }}>
+                      <div style={{ fontWeight: 700, color: '#7A5500', fontSize: 13, marginBottom: 3 }}>
+                        {typeof dateTH !== 'undefined' ? dateTH(r.date) : r.date}{r.vet ? ` · ${r.vet}` : ''}
+                      </div>
+                      {[r.cc, r.dx].filter(Boolean).length ? <div style={{ fontSize: 12.5, color: 'var(--ink-soft)', marginBottom: 3 }}>{[r.cc, r.dx].filter(Boolean).join(' · ')}</div> : null}
+                      {(r.charges || []).length === 0 ? <div style={{ fontSize: 12.5, color: 'var(--ink-faint)' }}>— ไม่มีค่าใช้จ่าย —</div> : null}
+                      {(r.charges || []).map((c, j) => (
+                        <div key={j} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13 }}>
+                          <span>{c[0]} ×{c[1]}</span><span style={{ fontWeight: 600 }}>{fmtB((Number(c[1]) || 1) * (Number(c[2]) || 0))}</span>
+                        </div>
+                      ))}
+                    </div>
+                  ))}
+                  <div style={{ fontSize: 11.5, color: 'var(--ink-faint)' }}>💡 รายการด้านล่างที่คีย์ใหม่ กด “บันทึกการรักษาวันนี้” แล้วจะมาต่อท้ายตรงนี้ · ยอดทั้งหมดคิดตอนจำหน่าย</div>
+                </div>
+              </div>
+            );
+          })() : null}
+
           <div className="card">
             <div className="card-head" style={{ background: 'var(--blush-soft)', borderBottom: '2.5px solid var(--blush-deep)' }}>
               <span style={{ fontWeight: 800, fontSize: 15.5, color: 'var(--blush-deep)', display: 'inline-flex', alignItems: 'center', gap: 8 }}>
                 <span style={{ background: 'var(--blush-deep)', color: '#fff', borderRadius: 8, width: 30, height: 30, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><Icon name="cash" size={17} /></span>
-                บันทึกรายการ / บริการ
+                {isAdmittedMode ? 'เพิ่มรายการวันนี้' : 'บันทึกรายการ / บริการ'}
               </span>
               <span className="chip chip-blush" style={{ fontWeight: 700 }}>{charges.length} รายการ</span>
             </div>
