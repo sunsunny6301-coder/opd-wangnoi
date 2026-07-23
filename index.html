@@ -9084,9 +9084,12 @@ function App() {
 
     // อัปเดตทุกอย่างจาก state ล่าสุด (s) ไม่ใช่ closure — กันข้อมูลอีกเครื่องที่ sync เข้ามาหาย/เลขใบเสร็จซ้ำ
     setState((s) => {
-      const mergedVisits = encId
-        ? [updatedPet.visits[0], ...updatedPet.visits.slice(1).filter((v) => v.q !== encId)]
-        : updatedPet.visits;
+      // ประวัติเดิมต้องเอาจาก state ล่าสุด (s) ไม่ใช่ snapshot ตอนเปิดเคส
+      // ไม่งั้น visit ที่ถูกบันทึกระหว่างเปิดเคสอยู่ (เคสอื่นของสัตว์ตัวเดียวกัน / อีกเครื่อง) จะถูกทับหาย
+      const curPet = (s.pets || []).find((p) => p.hn === updatedPet.hn);
+      const baseVisits = curPet ? (curPet.visits || []) : (updatedPet.visits || []).slice(1);
+      const prevVisits = encId ? baseVisits.filter((v) => (v.q || '') !== encId) : baseVisits;
+      const mergedVisits = [updatedPet.visits[0], ...prevVisits];
       const newPets = (s.pets || []).map((p) => p.hn === updatedPet.hn ? { ...updatedPet, visits: mergedVisits } : p);
       let newQueue = s.queue || [];
       let newReceipts = s.receipts || [];
