@@ -8421,7 +8421,12 @@ function _union(a, b) { return [...new Set([...(a || []), ...(b || [])])]; }
 // → พนักงานเห็นการ์ดไม่หาย เลยกดจบซ้ำ กลายเป็นใบเสร็จซ้ำ/เก็บเงินซ้ำ
 function healQueue(queue, receipts) {
   const paid = {};
-  (receipts || []).forEach((r) => { if ((r.type || 'opd') === 'opd' && r.q) paid[r.q] = r; });
+  // ถ้าคิวเดียวมีหลายใบ (เคยกดจบซ้ำ) → ยึดใบที่ยอดสูงสุด ไม่ให้ใบ ฿0 ที่กดพลาดมาบังยอดจริง
+  (receipts || []).forEach((r) => {
+    if ((r.type || 'opd') !== 'opd' || !r.q) return;
+    const cur = paid[r.q];
+    if (!cur || (Number(r.total) || 0) > (Number(cur.total) || 0)) paid[r.q] = r;
+  });
   let changed = false;
   const out = (queue || []).map((q) => {
     const r = paid[q.q];
