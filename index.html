@@ -8363,7 +8363,19 @@ let sbSaveTimer = null;
 // หลักการ: รวมของทั้งสองเครื่องโดยดูจาก "ฐาน" (สถานะที่ sync ล่าสุด) เพื่อแยกว่าอันไหน "เพิ่มใหม่" (เก็บ)
 // กับ "ถูกลบ" (เอาออก) — เคสจริงส่วนใหญ่คือคนละเครื่องเพิ่มคนละรายการ → เก็บครบทั้งคู่ ไม่ทับกัน
 function _indexBy(arr, keyFn) { const m = {}; (arr || []).forEach((x) => { const k = keyFn(x); if (k != null && k !== '') m[String(k)] = x; }); return m; }
+// รวม object แบบ 3-way ระดับ field: ถ้า "เราไม่ได้แก้ field นี้ (เท่าฐาน) แต่เขาแก้" → เอาของเขา
+// (กันเครื่องที่ค่าเก่าไป revert ค่าใหม่ของอีกเครื่อง เช่น สถานะคิว exam ทับ done)
+function merge3obj(b, m, t) {
+  b = b || {}; const out = { ...m };
+  const keys = new Set([...Object.keys(m || {}), ...Object.keys(t || {})]);
+  keys.forEach((k) => {
+    const mv = JSON.stringify(m[k]), bv = JSON.stringify(b[k]), tv = JSON.stringify(t[k]);
+    if (mv === bv && tv !== bv) out[k] = t[k];   // เราไม่แตะ field นี้ · เขาแก้ → เอาของเขา
+  });
+  return out;
+}
 // รวม array ที่มี key: เก็บของที่ "ฝ่ายใดฝ่ายหนึ่งเพิ่มใหม่" · เอาออกเฉพาะที่ "เคยมีในฐานแล้วถูกลบ"
+// รายการที่อยู่ทั้งคู่ → 3-way: เราไม่แก้→ของเขา · เราแก้→ของเรา (มี mergeItem ก็รวมย่อยต่อ)
 function mergeArrayById(base, mine, theirs, keyFn, mergeItem) {
   const b = _indexBy(base, keyFn), m = _indexBy(mine, keyFn), t = _indexBy(theirs, keyFn);
   const keys = []; const seen = {};
@@ -8371,16 +8383,23 @@ function mergeArrayById(base, mine, theirs, keyFn, mergeItem) {
   const out = [];
   keys.forEach((k) => {
     const bi = b[k], mi = m[k], ti = t[k];
-    if (mi && ti) out.push(mergeItem ? mergeItem(bi, mi, ti) : mi);   // อยู่ทั้งคู่ → merge (ค่าเริ่ม = ของเรา)
-    else if (mi && !ti) { if (!bi) out.push(mi); }                     // มีแต่ของเรา: เพิ่งเพิ่ม→เก็บ / เขาลบ (เคยมีในฐาน)→เอาออก
+    if (mi && ti) {
+      if (bi && JSON.stringify(mi) === JSON.stringify(bi)) out.push(ti);   // เราไม่แตะรายการนี้ → เอาของเขา (ที่อาจแก้มา)
+      else out.push(mergeItem ? mergeItem(bi, mi, ti) : mi);               // เราแก้ (หรือไม่มีฐาน) → ของเรา/รวมย่อย
+    }
+    else if (mi && !ti) { if (!bi) out.push(mi); }                     // มีแต่ของเรา: เพิ่งเพิ่ม→เก็บ / เขาลบ→เอาออก
     else if (!mi && ti) { if (!bi) out.push(ti); }                     // มีแต่ของเขา: เขาเพิ่ง add→เก็บ / เราลบ→เอาออก
   });
   return out;
 }
 function _visitKey(v) { return `${v.q || ''}|${v.date || ''}`; }
-function mergePet(b, m, t) { return { ...m, visits: mergeArrayById((b && b.visits) || [], m.visits || [], t.visits || [], _visitKey) }; }
+function mergePet(b, m, t) {
+  const visits = mergeArrayById((b && b.visits) || [], m.visits || [], t.visits || [], _visitKey)
+    .sort((a, x) => (a.date < x.date ? 1 : a.date > x.date ? -1 : 0));   // ล่าสุดอยู่บนสุดเสมอ (กัน visit ที่ merge มาจมท้าย)
+  return { ...merge3obj(b, m, t), visits };
+}
 function mergeAdmitted(b, m, t) {
-  return { ...m,
+  return { ...merge3obj(b, m, t),
     dailyRecords: mergeArrayById((b && b.dailyRecords) || [], m.dailyRecords || [], t.dailyRecords || [], (r) => `${r.date}|${(r.charges || []).length}|${r.note || ''}|${(r.cc || '')}`),
     payments: mergeArrayById((b && b.payments) || [], m.payments || [], t.payments || [], (p) => p.id),
   };
@@ -8392,7 +8411,7 @@ function _union(a, b) { return [...new Set([...(a || []), ...(b || [])])]; }
 function mergeState(base, mine, theirs) {
   base = base || {}; const M = mine || {}, T = theirs || {};
   return {
-    ...T, ...M,
+    ...merge3obj(base, M, T),   // scalar/ตั้งค่า: เราไม่แก้ → เอาของเขา (กัน revert)
     pets: mergeArrayById(base.pets, M.pets, T.pets, (p) => p.hn, mergePet),
     queue: mergeArrayById(base.queue, M.queue, T.queue, (q) => q.q),
     receipts: mergeArrayById(base.receipts, M.receipts, T.receipts, (r) => r.no),
