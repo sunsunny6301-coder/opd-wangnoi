@@ -8416,14 +8416,33 @@ function mergeAdmitted(b, m, t) {
 function _mergeSeq(m, t) { const out = { ...(t || {}) }; Object.keys(m || {}).forEach((y) => { out[y] = Math.max(Number(out[y] || 0), Number((m || {})[y] || 0)); }); return out; }
 function _mergeVoids(m, t) { const out = {}; const ys = new Set([...Object.keys(m || {}), ...Object.keys(t || {})]); ys.forEach((y) => { out[y] = [...new Set([...(((m || {})[y]) || []), ...(((t || {})[y]) || [])])]; }); return out; }
 function _union(a, b) { return [...new Set([...(a || []), ...(b || [])])]; }
+// ซ่อมอัตโนมัติ: คิวที่ "ออกใบเสร็จแล้ว" ต้องเป็นสถานะเสร็จแล้วเสมอ
+// กันกรณีเครื่องที่ยังรันโค้ดเก่า/ข้อมูลเก่า ไป revert สถานะกลับเป็นกำลังตรวจ
+// → พนักงานเห็นการ์ดไม่หาย เลยกดจบซ้ำ กลายเป็นใบเสร็จซ้ำ/เก็บเงินซ้ำ
+function healQueue(queue, receipts) {
+  const paid = {};
+  (receipts || []).forEach((r) => { if ((r.type || 'opd') === 'opd' && r.q) paid[r.q] = r; });
+  let changed = false;
+  const out = (queue || []).map((q) => {
+    const r = paid[q.q];
+    if (r && (q.status === 'wait' || q.status === 'exam' || q.status === 'cashier')) {
+      changed = true;
+      return { ...q, status: 'done', doneDate: q.doneDate || r.date, paid: (q.paid != null ? q.paid : r.total) };
+    }
+    return q;
+  });
+  return changed ? out : (queue || []);
+}
 // รวมทั้ง state: scalar/ตั้งค่า = ของเราชนะ · collection = 3-way merge · เลขใบเสร็จ = เอาค่ามากสุด · voids = union
 function mergeState(base, mine, theirs) {
   base = base || {}; const M = mine || {}, T = theirs || {};
+  const mergedReceipts = mergeArrayById(base.receipts, M.receipts, T.receipts, (r) => r.no);
   return {
     ...merge3obj(base, M, T),   // scalar/ตั้งค่า: เราไม่แก้ → เอาของเขา (กัน revert)
     pets: mergeArrayById(base.pets, M.pets, T.pets, (p) => p.hn, mergePet),
-    queue: mergeArrayById(base.queue, M.queue, T.queue, (q) => q.q),
-    receipts: mergeArrayById(base.receipts, M.receipts, T.receipts, (r) => r.no),
+    // heal: คิวที่มีใบเสร็จแล้วต้องปิดเสมอ (กันสถานะถูก revert แล้วพนักงานกดจบซ้ำ)
+    queue: healQueue(mergeArrayById(base.queue, M.queue, T.queue, (q) => q.q), mergedReceipts),
+    receipts: mergedReceipts,
     appointments: mergeArrayById(base.appointments, M.appointments, T.appointments, (a) => a.id),
     admitted: mergeArrayById(base.admitted, M.admitted, T.admitted, (a) => a.id, mergeAdmitted),
     stock: mergeArrayById(base.stock, M.stock, T.stock, (s) => s.id),
@@ -8687,10 +8706,14 @@ function App() {
       }
       if (data?.data?.pets && data?.data?.queue) {
         console.log('[SB] loaded state from Supabase ✓');
-        setState(data.data);
-        try { localStorage.setItem(LS_KEY, JSON.stringify(data.data)); } catch (e) {}
+        // ซ่อมคิวที่ออกใบเสร็จแล้วแต่ยังไม่ปิด (ถ้ามี) ตั้งแต่ตอนเปิดแอป
+        const healed = healQueue(data.data.queue, data.data.receipts);
+        const loaded = healed === data.data.queue ? data.data : { ...data.data, queue: healed };
+        if (loaded !== data.data) console.log('[SB] ซ่อมคิวที่ออกใบเสร็จแล้วแต่ยังไม่ปิด ✓');
+        setState(loaded);
+        try { localStorage.setItem(LS_KEY, JSON.stringify(loaded)); } catch (e) {}
         lastSyncedAt.current = data.updated_at || null;
-        setBase(data.data);                          // ฐานสำหรับ merge = สิ่งที่โหลดมาจากคลาวด์
+        setBase(data.data);                          // ฐาน = สิ่งที่อยู่บนคลาวด์จริง (ถ้า heal แล้วต่างจากฐาน → save effect จะ push ให้)
       } else {
         console.log('[SB] no data in Supabase yet, using localStorage');
       }
