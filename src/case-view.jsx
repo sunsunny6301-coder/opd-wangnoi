@@ -321,26 +321,29 @@ function ChargePicker({ services, stock, shopStock = [], onAdd }) {
 function CaseView({ pet, queueItem, vets, assistants = [], services, stock, shopStock = [], allPets, appointments = [], onBack, onFinish, onAddVet, onDeleteVet, onAddAssistant, onDeleteAssistant, onAddAdmitted, onUpdateAdmitted, onDischargeAdmitted, onAddAdmitPayment, onDeleteAdmitPayment, onAddAppointment, onUpdateAppointment, onDeleteAppointment, pushToast, onUpdatePet, onUpdateVisit, onAddService, onDeleteService, onUpdateService, onSaveDraft, previewReceiptNo, notePresets, onSavePresets }) {
   const latestWeight = pet.visits.length ? pet.visits[0].weight : pet.weight;
   const draft = queueItem?.draft;
+  // เคสที่บันทึกประวัติไปแล้ว (ส่งแคชเชียร์/ชำระแล้ว) เปิดกลับเข้ามาใหม่ ต้องเห็นของเดิมครบทุกช่อง
+  // ไม่งั้นกดบันทึกซ้ำ = เขียนทับด้วยค่าว่าง และรายการในบิลหายทั้งใบ
+  const savedVisit = queueItem?.q ? (pet.visits || []).find((v) => String(v.q || '') === String(queueItem.q)) : null;
   // เคสอาบน้ำตัดขน: ช่อง "สัตวแพทย์ผู้ตรวจ" เปลี่ยนเป็นเลือก "ผู้ช่วย" แทน (ยอดอาบน้ำจะสรุปรายคนในหน้ารายงาน)
   const isGroomCase = queueItem?.type === 'อาบน้ำตัดขน';
   const [rec, setRec] = useState({
-    cc: draft?.cc ?? ((queueItem && queueItem.cc) || ''),
-    pe: draft?.pe ?? '',
-    dx: draft?.dx ?? '',
-    plan: draft?.plan ?? '',
-    vet: draft?.vet ?? (isGroomCase ? (assistants[0] || '') : vets[0]),
+    cc: draft?.cc ?? savedVisit?.cc ?? ((queueItem && queueItem.cc) || ''),
+    pe: draft?.pe ?? savedVisit?.pe ?? '',
+    dx: draft?.dx ?? savedVisit?.dx ?? '',
+    plan: draft?.plan ?? savedVisit?.plan ?? '',
+    vet: draft?.vet ?? savedVisit?.vet ?? (isGroomCase ? (assistants[0] || '') : vets[0]),
     // เคสอาบน้ำที่มีตรวจ/จ่ายยาเพิ่ม: เลือกหมอผู้ดูแลส่วนแพทย์ → ยอดที่ไม่ใช่ "อาบน้ำ" จะไปเข้าผลงานหมอคนนี้
-    medVet: draft?.medVet ?? '',
-    weight: draft?.weight ?? (latestWeight || ''),
+    medVet: draft?.medVet ?? savedVisit?.medVet ?? '',
+    weight: draft?.weight ?? savedVisit?.weight ?? (latestWeight || ''),
   });
   const [petAvatar, setPetAvatar] = useState(pet.avatar || null);
   const avatarRef = useRef(null);
-  const [media, setMedia] = useState(draft?.media || []);
+  const [media, setMedia] = useState(draft?.media || savedVisit?.media || []);
   const [showOwnerPets, setShowOwnerPets] = useState(false);
   const ownerPets = useMemo(() => (allPets || []).filter((p) => p.owner.phone === pet.owner.phone), [allPets, pet.owner.phone]);
   // charge = [ชื่อ, จำนวน, ราคา/หน่วย, stockId?, origin?] — stockId ไว้ตัดสต็อก/ปริ้นฉลาก, origin='shop' = สินค้าเพ็ทช้อป (ตัดสต็อกเพ็ทช้อป + ไม่คิด VAT)
   const [charges, setCharges] = useState(
-    (draft?.charges || (queueItem && queueItem.charges) || []).map((c) =>
+    (draft?.charges || (queueItem && queueItem.charges) || savedVisit?.items || []).map((c) =>
       Array.isArray(c) ? [c[0] || '', Number(c[1]) || 1, Number(c[2]) || 0, c[3] || null, c[4] || null]
         : [String(c.name || ''), Number(c.qty) || 1, Number(c.price) || 0, c.stockId || null, c.origin || null]
     )
@@ -808,7 +811,7 @@ function CaseView({ pet, queueItem, vets, assistants = [], services, stock, shop
                 ) : null}
                 <button className="btn btn-primary btn-lg" onClick={() => { charges.length > 0 ? setShowReceipt(true) : save('paid', ''); }}>
                   <Icon name="printer" size={17} />
-                  {queueItem?.status === 'done' ? 'อัปเดตใบเสร็จ' : isEditMode ? 'ออกใบเสร็จ' : charges.length === 0 ? 'ปิดเคส (ไม่มีค่าใช้จ่าย)' : 'ชำระเงิน + ใบเสร็จ'}
+                  {charges.length === 0 ? 'ปิดเคส (ไม่มีค่าใช้จ่าย)' : queueItem?.status === 'done' ? 'อัปเดตใบเสร็จ' : isEditMode ? 'ออกใบเสร็จ' : 'ชำระเงิน + ใบเสร็จ'}
                 </button>
               </>
             )}

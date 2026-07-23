@@ -719,9 +719,11 @@ function App() {
     // ผูกบันทึกกับเลขคิว (q): ถ้าคิวนี้เคยบันทึกประวัติไปแล้ว (เช่น เคยส่งแคชเชียร์/กดย้อนกลับ)
     // ให้แทนที่บันทึกเดิม ไม่เพิ่มซ้ำ
     const encId = queueItem?.q;
+    // ปิดเคสที่ไม่มีค่าใช้จ่าย = ไม่ออกใบเสร็จ (ไม่งั้นได้ใบเปล่ายอด ฿0 ค้างระบบ + กินเลขที่ฟรีๆ)
+    const noCharge = charges.length === 0;
     // เลขใบเสร็จดึงครั้งเดียว (เหมือน payFromBoard) แล้วค่อย apply กับ state ล่าสุดใน setState
     // แก้ไขเคสที่ชำระแล้ว (isRepay) = ใช้เลขใบเดิม ไม่กินเลขใหม่
-    const receipt = (status === 'paid' && !isRepay) ? nextReceiptNo() : null;
+    const receipt = (status === 'paid' && !isRepay && !noCharge) ? nextReceiptNo() : null;
     // จำนวนรายการที่ตัดสต็อก — ใช้แสดง toast เท่านั้น
     const deducted = status !== 'paid' ? 0
       : isRepay
@@ -746,12 +748,24 @@ function App() {
       if (status === 'paid' && isRepay) {
         // ── แก้ไขเคสที่ชำระแล้ว: อัปเดตใบเดิม + ปรับสต็อกตามส่วนต่าง (ไม่ออกใบใหม่/ไม่ตัดซ้ำ) ──
         const cur = newReceipts.find((r) => r.no === prevReceipt.no) || prevReceipt;
-        newReceipts = newReceipts.map((r) => r.no === prevReceipt.no
-          ? applyBillEdits({ ...r, petName: updatedPet.name, ownerName: r.ownerName || updatedPet.owner.name, items: receiptItems, method: payMethod || r.method || 'เงินสด', total, noVat: noVatAmt }, billEdits)
-          : r);
-        newQueue = queueItem?.q ? newQueue.map((x) => x.q === queueItem.q ? { ...x, paid: total } : x) : newQueue;
         const d = applyItemDelta(s, cur.items || [], receiptItems);
         newStock = d.stock; newShopStock = d.shopStock;
+        if (noCharge) {
+          // ลบรายการออกหมด = ไม่มีค่าใช้จ่ายแล้ว → ยกเลิกใบเดิม คืนเลขเข้า pool (ไม่ทิ้งใบ ฿0 ไว้)
+          newReceipts = newReceipts.filter((r) => r.no !== prevReceipt.no);
+          const parts = String(prevReceipt.no).split('-');
+          const yr = parseInt(parts[1], 10) || new Date().getFullYear();
+          const sq = parseInt(parts[2], 10) || 0;
+          con = { receiptSeq: s.receiptSeq || {}, receiptVoids: { ...(s.receiptVoids || {}), [yr]: [...new Set([...(((s.receiptVoids || {})[yr]) || []), sq])] } };
+        } else {
+          newReceipts = newReceipts.map((r) => r.no === prevReceipt.no
+            ? applyBillEdits({ ...r, petName: updatedPet.name, ownerName: r.ownerName || updatedPet.owner.name, items: receiptItems, method: payMethod || r.method || 'เงินสด', total, noVat: noVatAmt }, billEdits)
+            : r);
+        }
+        newQueue = queueItem?.q ? newQueue.map((x) => x.q === queueItem.q ? { ...x, paid: noCharge ? 0 : total } : x) : newQueue;
+      } else if (status === 'paid' && noCharge) {
+        // ── ปิดเคสแบบไม่มีค่าใช้จ่าย: เข้า "เสร็จแล้ว" ตามปกติ แต่ไม่ออกใบเสร็จ ──
+        newQueue = queueItem?.q ? newQueue.map((x) => x.q === queueItem.q ? { ...x, status: 'done', paid: 0, doneDate: todayISO() } : x) : newQueue;
       } else if (status === 'paid') {
         con = consumeReceipt(receipt, s);
         newReceipts = [...newReceipts, applyBillEdits({ no: receipt.no, date: todayISO(), type: 'opd', svcType: queueItem?.type || null, petName: updatedPet.name, ownerName: updatedPet.owner.name, hn: updatedPet.hn, q: queueItem?.q || '', items: receiptItems, method: payMethod || 'เงินสด', total, noVat: noVatAmt }, billEdits)];
@@ -768,25 +782,31 @@ function App() {
     setCaseCtx(null);
     pushToast(status !== 'paid' ? 'บันทึกเรียบร้อย'
       : isRepay
-        ? `อัปเดตใบเสร็จ ${prevReceipt.no} — ${fmtB(total)}` + (deducted > 0 ? ` · ปรับสต็อก ${deducted} รายการ` : '')
-        : `รับชำระ ${fmtB(total)} แล้ว` + (deducted > 0 ? ` · ตัดสต็อก ${deducted} รายการ` : ''));
-    if (status === 'paid') celebrate({ big: total >= 3000 });
+        ? (noCharge
+            ? `ไม่มีค่าใช้จ่ายแล้ว — ยกเลิกใบเสร็จ ${prevReceipt.no}` + (deducted > 0 ? ` · คืนสต็อก ${deducted} รายการ` : '')
+            : `อัปเดตใบเสร็จ ${prevReceipt.no} — ${fmtB(total)}` + (deducted > 0 ? ` · ปรับสต็อก ${deducted} รายการ` : ''))
+        : noCharge
+          ? 'ปิดเคสแล้ว — ไม่มีค่าใช้จ่าย (ไม่ออกใบเสร็จ)'
+          : `รับชำระ ${fmtB(total)} แล้ว` + (deducted > 0 ? ` · ตัดสต็อก ${deducted} รายการ` : ''));
+    if (status === 'paid' && !noCharge) celebrate({ big: total >= 3000 });
   };
 
   const payFromBoard = (method, total, billEdits) => {
-    const receipt = nextReceiptNo();
-    const { no } = receipt;
     const petObj = pets.find((p) => p.hn === payFor.hn) || { owner: {} };
     const charges = (payFor.charges || []).map((c) =>
       Array.isArray(c) ? [c[0] || '', Number(c[1]) || 1, Number(c[2]) || 0, c[3] || null, c[4] || null]
         : [String(c.name || ''), Number(c.qty) || 1, Number(c.price) || 0, c.stockId || null, c.origin || null]
     );
+    // ไม่มีรายการ = ไม่ออกใบเสร็จ (กันใบเปล่ายอด ฿0 เหมือนเส้นทางปิดเคสในหน้าตรวจ)
+    const noCharge = charges.length === 0;
+    const receipt = noCharge ? null : nextReceiptNo();
+    const no = receipt ? receipt.no : null;
     const clinicCharges = charges.filter((c) => c[3] && c[4] !== 'shop').map((c) => ({ stockId: c[3], qty: c[1] }));
     const shopCharges = charges.filter((c) => c[3] && c[4] === 'shop').map((c) => ({ stockId: c[3], qty: c[1] }));
     // นับจำนวนรายการที่ตัดสต็อก — ใช้แสดง toast เท่านั้น (คำนวณก่อน setState เพราะ updater รันตอน render)
     const deducted = charges.filter((c) => c[3]).length;
     setState((s) => {
-      const con = consumeReceipt(receipt, s);
+      const con = receipt ? consumeReceipt(receipt, s) : { receiptSeq: s.receiptSeq || {}, receiptVoids: s.receiptVoids || {} };
       // ตัดสต็อกจาก state ล่าสุด (s) ไม่ใช่ closure — กันข้อมูลอีกเครื่องที่ sync เข้ามาหาย
       const [newStock] = deductStock(s.stock || [], clinicCharges);
       const [newShopStock] = deductStock(s.shopStock || s.stock || [], shopCharges);
@@ -794,8 +814,8 @@ function App() {
         ...s,
         stock: newStock,
         shopStock: newShopStock,
-        queue: s.queue.map((x) => x.q === payFor.q ? { ...x, status: 'done', paid: total, doneDate: todayISO() } : x),
-        receipts: [...(s.receipts || []), applyBillEdits({
+        queue: s.queue.map((x) => x.q === payFor.q ? { ...x, status: 'done', paid: noCharge ? 0 : total, doneDate: todayISO() } : x),
+        receipts: noCharge ? (s.receipts || []) : [...(s.receipts || []), applyBillEdits({
           no, date: todayISO(), type: 'opd',
           petName: payFor.petName, ownerName: petObj.owner?.name || '-',
           hn: payFor.hn, q: payFor.q,
@@ -807,8 +827,10 @@ function App() {
         receiptVoids: con.receiptVoids,
       };
     });
-    pushToast(`รับชำระ ${fmtB(total)} (${method}) — ${payFor.petName}` + (deducted > 0 ? ` · ตัดสต็อก ${deducted} รายการ` : ''));
-    celebrate({ big: total >= 3000 });
+    pushToast(noCharge
+      ? `ปิดเคสแล้ว — ไม่มีค่าใช้จ่าย (ไม่ออกใบเสร็จ) — ${payFor.petName}`
+      : `รับชำระ ${fmtB(total)} (${method}) — ${payFor.petName}` + (deducted > 0 ? ` · ตัดสต็อก ${deducted} รายการ` : ''));
+    if (!noCharge) celebrate({ big: total >= 3000 });
     setPayFor(null);
   };
 
