@@ -8359,6 +8359,82 @@ const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJ
 const supa = (typeof supabase !== 'undefined') ? supabase.createClient(SB_URL, SB_KEY) : null;
 let sbSaveTimer = null;
 
+// ════════ กันข้อมูลชนกันหลายเครื่อง: 3-way merge (base / mine / theirs) ════════
+// หลักการ: รวมของทั้งสองเครื่องโดยดูจาก "ฐาน" (สถานะที่ sync ล่าสุด) เพื่อแยกว่าอันไหน "เพิ่มใหม่" (เก็บ)
+// กับ "ถูกลบ" (เอาออก) — เคสจริงส่วนใหญ่คือคนละเครื่องเพิ่มคนละรายการ → เก็บครบทั้งคู่ ไม่ทับกัน
+function _indexBy(arr, keyFn) { const m = {}; (arr || []).forEach((x) => { const k = keyFn(x); if (k != null && k !== '') m[String(k)] = x; }); return m; }
+// รวม array ที่มี key: เก็บของที่ "ฝ่ายใดฝ่ายหนึ่งเพิ่มใหม่" · เอาออกเฉพาะที่ "เคยมีในฐานแล้วถูกลบ"
+function mergeArrayById(base, mine, theirs, keyFn, mergeItem) {
+  const b = _indexBy(base, keyFn), m = _indexBy(mine, keyFn), t = _indexBy(theirs, keyFn);
+  const keys = []; const seen = {};
+  (mine || []).concat(theirs || []).forEach((x) => { const k = keyFn(x); if (k != null && k !== '' && !seen[k]) { seen[k] = 1; keys.push(String(k)); } });
+  const out = [];
+  keys.forEach((k) => {
+    const bi = b[k], mi = m[k], ti = t[k];
+    if (mi && ti) out.push(mergeItem ? mergeItem(bi, mi, ti) : mi);   // อยู่ทั้งคู่ → merge (ค่าเริ่ม = ของเรา)
+    else if (mi && !ti) { if (!bi) out.push(mi); }                     // มีแต่ของเรา: เพิ่งเพิ่ม→เก็บ / เขาลบ (เคยมีในฐาน)→เอาออก
+    else if (!mi && ti) { if (!bi) out.push(ti); }                     // มีแต่ของเขา: เขาเพิ่ง add→เก็บ / เราลบ→เอาออก
+  });
+  return out;
+}
+function _visitKey(v) { return `${v.q || ''}|${v.date || ''}`; }
+function mergePet(b, m, t) { return { ...m, visits: mergeArrayById((b && b.visits) || [], m.visits || [], t.visits || [], _visitKey) }; }
+function mergeAdmitted(b, m, t) {
+  return { ...m,
+    dailyRecords: mergeArrayById((b && b.dailyRecords) || [], m.dailyRecords || [], t.dailyRecords || [], (r) => `${r.date}|${(r.charges || []).length}|${r.note || ''}|${(r.cc || '')}`),
+    payments: mergeArrayById((b && b.payments) || [], m.payments || [], t.payments || [], (p) => p.id),
+  };
+}
+function _mergeSeq(m, t) { const out = { ...(t || {}) }; Object.keys(m || {}).forEach((y) => { out[y] = Math.max(Number(out[y] || 0), Number((m || {})[y] || 0)); }); return out; }
+function _mergeVoids(m, t) { const out = {}; const ys = new Set([...Object.keys(m || {}), ...Object.keys(t || {})]); ys.forEach((y) => { out[y] = [...new Set([...(((m || {})[y]) || []), ...(((t || {})[y]) || [])])]; }); return out; }
+function _union(a, b) { return [...new Set([...(a || []), ...(b || [])])]; }
+// รวมทั้ง state: scalar/ตั้งค่า = ของเราชนะ · collection = 3-way merge · เลขใบเสร็จ = เอาค่ามากสุด · voids = union
+function mergeState(base, mine, theirs) {
+  base = base || {}; const M = mine || {}, T = theirs || {};
+  return {
+    ...T, ...M,
+    pets: mergeArrayById(base.pets, M.pets, T.pets, (p) => p.hn, mergePet),
+    queue: mergeArrayById(base.queue, M.queue, T.queue, (q) => q.q),
+    receipts: mergeArrayById(base.receipts, M.receipts, T.receipts, (r) => r.no),
+    appointments: mergeArrayById(base.appointments, M.appointments, T.appointments, (a) => a.id),
+    admitted: mergeArrayById(base.admitted, M.admitted, T.admitted, (a) => a.id, mergeAdmitted),
+    stock: mergeArrayById(base.stock, M.stock, T.stock, (s) => s.id),
+    shopStock: mergeArrayById(base.shopStock, M.shopStock, T.shopStock, (s) => s.id),
+    services: mergeArrayById(base.services, M.services, T.services, (s) => s.id),
+    vets: _union(M.vets, T.vets),
+    assistants: _union(M.assistants, T.assistants),
+    receiptSeq: _mergeSeq(M.receiptSeq, T.receiptSeq),
+    receiptVoids: _mergeVoids(M.receiptVoids, T.receiptVoids),
+  };
+}
+if (typeof window !== 'undefined') window.__mergeState = mergeState;
+
+// ════════ เซฟขึ้นคลาวด์แบบกันชน (optimistic lock) ════════
+// เขียนทับได้เฉพาะเมื่อ updated_at บนคลาวด์ยังตรงกับที่เรารู้ (expectedTs) — ถ้ามีเครื่องอื่นเขียนแซง
+// (0 แถวถูกอัปเดต) → ดึงของเขามา merge กับของเรา แล้วลองเขียนใหม่ (retry) จนสำเร็จ → ไม่มีใครโดนทับ
+// คืน { ok, state (ผลสุดท้ายที่อยู่บนคลาวด์), ts (updated_at รูปแบบ canonical จากคลาวด์) }
+async function cloudSave(client, expectedTs, baseState, myState, depth) {
+  depth = depth || 0;
+  const ts = new Date().toISOString();
+  let q = client.from('app_state').update({ data: myState, updated_at: ts }).eq('id', 'main');
+  if (expectedTs) q = q.eq('updated_at', expectedTs);
+  const { data: rows, error } = await q.select('updated_at');
+  if (error) return { ok: false, error };
+  if (rows && rows.length >= 1) return { ok: true, state: myState, ts: rows[0].updated_at || ts };
+  // 0 แถว → คลาวด์ไม่มีแถว (เขียนครั้งแรก) หรือมีเครื่องอื่นเขียนแซง
+  const { data: cur, error: e1 } = await client.from('app_state').select('data, updated_at').eq('id', 'main').maybeSingle();
+  if (e1) return { ok: false, error: e1 };
+  if (!cur) {
+    const insTs = new Date().toISOString();
+    const { data: ins, error: e2 } = await client.from('app_state').insert({ id: 'main', data: myState, updated_at: insTs }).select('updated_at');
+    return e2 ? { ok: false, error: e2 } : { ok: true, state: myState, ts: (ins && ins[0] && ins[0].updated_at) || insTs };
+  }
+  if (depth >= 5) return { ok: false, error: new Error('merge retry เกินกำหนด') };  // กันวนไม่จบ
+  const merged = mergeState(baseState, myState, cur.data || {});
+  return cloudSave(client, cur.updated_at, cur.data || {}, merged, depth + 1);  // base = ของเขา, mine = merged
+}
+if (typeof window !== 'undefined') window.__cloudSave = cloudSave;
+
 function loadState() {
   try {
     const raw = localStorage.getItem(LS_KEY);
@@ -8561,6 +8637,11 @@ function App() {
   const hadLocal = useRef(!!localStorage.getItem(LS_KEY));
   // เวลาอัปเดตล่าสุดที่เครื่องนี้รับรู้/เขียนเอง — ใช้เทียบว่ามีเครื่องอื่นแก้มาใหม่ไหม
   const lastSyncedAt = useRef(null);
+  // "ฐาน" = สถานะที่ sync ตรงกับคลาวด์ล่าสุด — ใช้ทำ 3-way merge เวลาชนกัน (กันข้อมูลหาย)
+  const baseRef = useRef(null);
+  const baseStrRef = useRef(null);   // เก็บ JSON ของฐานไว้ เทียบเร็ว ไม่ต้อง stringify ซ้ำทุกครั้ง
+  const savingRef = useRef(false);   // กันเซฟซ้อนกันเอง
+  const setBase = (obj) => { baseRef.current = obj; try { baseStrRef.current = JSON.stringify(obj); } catch (e) { baseStrRef.current = null; } };
 
   // sync Supabase → local on first load
   useEffect(() => {
@@ -8580,6 +8661,7 @@ function App() {
         setState(data.data);
         try { localStorage.setItem(LS_KEY, JSON.stringify(data.data)); } catch (e) {}
         lastSyncedAt.current = data.updated_at || null;
+        setBase(data.data);                          // ฐานสำหรับ merge = สิ่งที่โหลดมาจากคลาวด์
       } else {
         console.log('[SB] no data in Supabase yet, using localStorage');
       }
@@ -8588,20 +8670,29 @@ function App() {
     });
   }, []);
 
-  // save to localStorage + Supabase on every state change
+  // save to localStorage + Supabase on every state change (แบบกันชน)
   useEffect(() => {
-    try { localStorage.setItem(LS_KEY, JSON.stringify(state)); } catch (e) {}
-    if (supa && hydrated.current) {
-      clearTimeout(sbSaveTimer);
-      sbSaveTimer = setTimeout(() => {
-        const ts = new Date().toISOString();
-        supa.from('app_state').upsert({ id: 'main', data: state, updated_at: ts })
-          .then(({ error }) => {
-            if (error) console.error('[SB] save error:', error.message);
-            else { lastSyncedAt.current = ts; console.log('[SB] saved to Supabase ✓'); }
-          });
-      }, 2000);
-    }
+    let stateStr = null;
+    try { stateStr = JSON.stringify(state); localStorage.setItem(LS_KEY, stateStr); } catch (e) {}
+    if (!(supa && hydrated.current)) return;
+    // ไม่มีอะไรใหม่จากฐาน (เช่นเพิ่งโหลด/merge เสร็จ) → ไม่ต้องเซฟซ้ำ
+    if (stateStr && baseStrRef.current && stateStr === baseStrRef.current) return;
+    clearTimeout(sbSaveTimer);
+    sbSaveTimer = setTimeout(async () => {
+      if (savingRef.current) { clearTimeout(sbSaveTimer); sbSaveTimer = setTimeout(() => setState((s) => ({ ...s })), 800); return; } // มีเซฟค้างอยู่ → เลื่อนไปก่อน
+      savingRef.current = true;
+      const mine = state, mineStr = stateStr;
+      const res = await cloudSave(supa, lastSyncedAt.current, baseRef.current || {}, mine);
+      savingRef.current = false;
+      if (!res.ok) { console.error('[SB] save error:', res.error && res.error.message); return; }
+      lastSyncedAt.current = res.ts;
+      setBase(res.state);
+      // ถ้ามีการ merge (ผลต่างจากที่เราเซฟไป) → เอาผล merge มาแสดง เพื่อไม่ให้ของเครื่องอื่นหาย
+      try {
+        if (baseStrRef.current !== mineStr) { setState(res.state); console.log('[SB] saved + merged changes from another device ✓'); }
+        else { console.log('[SB] saved to Supabase ✓'); }
+      } catch (e) { console.log('[SB] saved ✓'); }
+    }, 2000);
   }, [state]);
 
   // live-sync หลายเครื่อง: ดึงข้อมูลจากเครื่องอื่นมาแสดงทุก 12 วิ (เฉพาะเมื่อมีการแก้ใหม่จริง)
@@ -8615,15 +8706,19 @@ function App() {
         if (!lastSyncedAt.current) { lastSyncedAt.current = data.updated_at; return; }
         // ไม่ใหม่กว่าที่เรารู้ (รวมถึงงานที่เราเพิ่งเขียนเอง) → ข้าม
         if (data.updated_at <= lastSyncedAt.current) return;
-        // มีเครื่องอื่นแก้มาใหม่ → ดึงข้อมูลเต็มมาลง
+        if (savingRef.current) return;   // กำลังเซฟอยู่ → รอบนี้ข้ามไปก่อน (เดี๋ยว cloudSave merge ให้เอง)
+        // มีเครื่องอื่นแก้มาใหม่ → ดึงของเขามา "merge" กับของเรา (ไม่ทับงานที่เรายังไม่เซฟ)
         supa.from('app_state').select('data, updated_at').eq('id', 'main').maybeSingle().then(({ data: full }) => {
           if (!full?.data?.pets || !full?.data?.queue) return;
-          lastSyncedAt.current = full.updated_at || lastSyncedAt.current;
           setState((cur) => {
-            try { if (JSON.stringify(cur) === JSON.stringify(full.data)) return cur; } catch (e) {}
-            try { localStorage.setItem(LS_KEY, JSON.stringify(full.data)); } catch (e) {}
-            console.log('[SB] synced changes from another device ✓');
-            return full.data;
+            let next;
+            try { next = mergeState(baseRef.current || cur, cur, full.data); } catch (e) { next = full.data; }
+            setBase(full.data);                        // ฐานใหม่ = เวอร์ชันคลาวด์ที่เพิ่ง merge ด้วย
+            lastSyncedAt.current = full.updated_at || lastSyncedAt.current;
+            try { if (JSON.stringify(cur) === JSON.stringify(next)) return cur; } catch (e) {}
+            try { localStorage.setItem(LS_KEY, JSON.stringify(next)); } catch (e) {}
+            console.log('[SB] merged changes from another device ✓');
+            return next;   // ถ้ามีของเราที่ยังไม่เซฟ → save effect จะ push ขึ้นคลาวด์ต่อเอง
           });
         });
       });
