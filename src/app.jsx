@@ -1,6 +1,15 @@
 // ── App root: state, nav, routing ───────────────────────────
 var { useState, useEffect, useRef, useMemo } = React;
 const LS_KEY = 'wnvet_opd_v1';
+const BACKUP_AT_KEY = 'wnvet_backup_at';   // วันที่กดสำรองข้อมูลล่าสุด (เก็บต่อเครื่อง ไม่ขึ้นคลาวด์)
+// จำนวนวันตั้งแต่วันที่ (YYYY-MM-DD) — คำนวณแบบ local ไม่ใช้ toISOString (กันวันเพี้ยนเพราะ timezone)
+function daysSince(ymd) {
+  if (!ymd) return null;
+  const [y, m, d] = String(ymd).split('-').map(Number);
+  if (!y || !m || !d) return null;
+  const then = new Date(y, m - 1, d), now = new Date();
+  return Math.max(0, Math.round((new Date(now.getFullYear(), now.getMonth(), now.getDate()) - then) / 86400000));
+}
 const SB_URL = 'https://lvybmnzuzsefsizgszaf.supabase.co';
 const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imx2eWJtbnp1enNlZnNpemdzemFmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODEyMTk1NjAsImV4cCI6MjA5Njc5NTU2MH0.h2lu10nj9z8aZwREVUsU8b5cnooQSScZ_QhbfC2kuTQ';
 const supa = (typeof supabase !== 'undefined') ? supabase.createClient(SB_URL, SB_KEY) : null;
@@ -130,6 +139,7 @@ function App() {
   const [caseCtx, setCaseCtx] = useState(null);
   const [payFor, setPayFor] = useState(null);
   const [showBackup, setShowBackup] = useState(false);
+  const [backupAt, setBackupAt] = useState(() => { try { return localStorage.getItem(BACKUP_AT_KEY) || ''; } catch (e) { return ''; } });
   const [booted, setBooted] = useState(false);   // โหลดคลาวด์ครั้งแรกเสร็จหรือยัง (ใช้โชว์ skeleton ตอนเครื่องใหม่)
   const [pushToast, toastRack] = useToasts();
 
@@ -876,6 +886,7 @@ function App() {
       a.href = url; a.download = `OPD-วังน้อย-สำรองข้อมูล-${todayISO()}.json`;
       document.body.appendChild(a); a.click(); a.remove();
       setTimeout(() => URL.revokeObjectURL(url), 1000);
+      try { localStorage.setItem(BACKUP_AT_KEY, todayISO()); setBackupAt(todayISO()); } catch (e) {}  // จำวันที่สำรองล่าสุด (เครื่องนี้)
       pushToast('ส่งออกข้อมูลทั้งหมดแล้ว (.json) — เก็บไฟล์นี้ไว้สำรอง');
     } catch (e) { pushToast('ส่งออกไม่สำเร็จ: ' + e.message); }
   };
@@ -942,11 +953,23 @@ function App() {
           <span className="page-title" style={{ fontSize: "21px" }}>{titles[page]}</span>
           <span className="date-chip" style={{ fontSize: "15px" }}>{todayTH()}</span>
           <div style={{ flex: 1 }}></div>
-          <button className="btn btn-sm no-print" onClick={() => setShowBackup(true)}
-            style={{ color: 'var(--navy)', borderColor: 'var(--navy)', marginRight: 10 }}
-            title="สำรอง / กู้ข้อมูลทั้งระบบ">
-            💾 <span className="nav-label">สำรอง/กู้ข้อมูล</span>
-          </button>
+          {(() => {
+            // เตือนสำรองข้อมูล: เกิน 7 วัน = ส้ม · เกิน 14 วัน = แดง (กันลืมสำรองลงคอม)
+            const dz = daysSince(backupAt);
+            const stale = dz == null || dz >= 7;
+            const urgent = dz == null ? false : dz >= 14;
+            const col = urgent ? 'var(--blush-deep)' : stale ? '#A05A00' : 'var(--navy)';
+            const label = dz == null ? 'ยังไม่เคยสำรอง' : dz === 0 ? 'สำรองแล้ววันนี้' : `สำรองล่าสุด ${dz} วันก่อน`;
+            return (
+              <button className="btn btn-sm no-print" onClick={() => setShowBackup(true)}
+                style={{ color: col, borderColor: col, marginRight: 10, fontWeight: stale ? 800 : 600,
+                  background: urgent ? 'var(--blush-soft)' : stale ? 'var(--butter-soft)' : undefined }}
+                title={`สำรอง / กู้ข้อมูลทั้งระบบ — ${label}`}>
+                {stale ? '⚠️' : '💾'} <span className="nav-label">สำรอง/กู้ข้อมูล</span>
+                <span className="nav-label" style={{ fontSize: 11, opacity: .85, marginLeft: 5 }}>· {label}</span>
+              </button>
+            );
+          })()}
           <span className="chip chip-mint nav-label">
             <span style={{ width: 7, height: 7, borderRadius: 99, background: 'var(--mint-deep)', display: 'inline-block' }}></span>
             พร้อมใช้งาน
@@ -997,7 +1020,7 @@ function App() {
       null}
 
       {showBackup ? (
-        <BackupModal state={state} onClose={() => setShowBackup(false)} onExport={exportAllData} onImport={applyImport} />
+        <BackupModal state={state} backupAt={backupAt} onClose={() => setShowBackup(false)} onExport={exportAllData} onImport={applyImport} />
       ) : null}
 
       {toastRack}
@@ -1009,7 +1032,7 @@ function App() {
 }
 
 // ── สำรอง / กู้ข้อมูลทั้งระบบ (JSON) ──────────────────────────
-function BackupModal({ state, onClose, onExport, onImport }) {
+function BackupModal({ state, onClose, onExport, onImport, backupAt }) {
   const [pending, setPending] = useState(null); // ข้อมูลจากไฟล์ที่รอยืนยันเขียนทับ
   const [err, setErr] = useState('');
   const fileRef = useRef(null);
@@ -1051,6 +1074,19 @@ function BackupModal({ state, onClose, onExport, onImport }) {
       <button className="btn" onClick={onClose}>ปิด</button>
     </>}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+        {/* แถบเตือน: สำรองล่าสุดเมื่อไหร่ */}
+        {(() => {
+          const dz = daysSince(backupAt);
+          const stale = dz == null || dz >= 7;
+          if (!stale) return <div style={{ background: 'var(--mint-soft)', border: '1px solid var(--mint)', borderRadius: 'var(--radius-sm)', padding: '9px 13px', fontSize: 13, color: 'var(--mint-deep)', fontWeight: 700 }}>✓ สำรองข้อมูลล่าสุด {dz === 0 ? 'วันนี้' : `${dz} วันก่อน`} — เรียบร้อยดี</div>;
+          const urgent = dz != null && dz >= 14;
+          return (
+            <div style={{ background: urgent ? 'var(--blush-soft)' : 'var(--butter-soft)', border: `1px solid ${urgent ? 'var(--blush)' : 'var(--butter)'}`, borderRadius: 'var(--radius-sm)', padding: '10px 13px', fontSize: 13, color: urgent ? 'var(--blush-deep)' : 'var(--butter-deep)' }}>
+              <b>⚠️ {dz == null ? 'เครื่องนี้ยังไม่เคยสำรองข้อมูล' : `สำรองข้อมูลล่าสุด ${dz} วันก่อน`}</b>
+              <div style={{ marginTop: 3, opacity: .9 }}>แนะนำสำรองสัปดาห์ละครั้ง แล้วเก็บไฟล์ไว้ 2 ที่ (คอม + ไดรฟ์/แฟลชไดรฟ์)</div>
+            </div>
+          );
+        })()}
         {/* ── ส่งออก ── */}
         <div style={{ border: '1.5px solid var(--line)', borderRadius: 'var(--radius)', padding: '14px 16px' }}>
           <div style={{ fontWeight: 800, marginBottom: 4 }}>📤 ส่งออก (สำรองข้อมูล)</div>
