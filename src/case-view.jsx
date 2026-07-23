@@ -353,6 +353,8 @@ function CaseView({ pet, queueItem, vets, assistants = [], services, stock, shop
   const [showApptForm, setShowApptForm] = useState(false);
   const [editPetInfo, setEditPetInfo] = useState(null);
   const [editVisit, setEditVisit] = useState(null);
+  const [editDaily, setEditDaily] = useState(null);   // บันทึกรายวันของเคสแอดมิดที่กำลังแก้ไข (มี _i = ลำดับวัน)
+  const [delDaily, setDelDaily] = useState(null);     // ลำดับวันที่กำลังยืนยันลบ
   const [showVaccineHistory, setShowVaccineHistory] = useState(false);
   const [newPay, setNewPay] = useState({ amount: '', method: 'เงินสด', note: 'มัดจำ' });   // มัดจำ/จ่ายล่วงหน้า (แอดมิด)
   const [showServiceMgr, setShowServiceMgr] = useState(false);
@@ -383,6 +385,16 @@ function CaseView({ pet, queueItem, vets, assistants = [], services, stock, shop
     pushToast && pushToast(`บันทึกการรักษา ${pet.name} (${today}) เรียบร้อย`);
     onBack();
   };
+  // เปิด modal แก้ไข "บันทึกรายวัน" ของเคสแอดมิด (ยังไม่จำหน่าย → ยังไม่ตัดสต็อก/ยังไม่ออกใบเสร็จ แก้ได้อิสระ)
+  const openEditDaily = (r, i) => setEditDaily({
+    _i: i, date: r.date || todayISO(), vet: r.vet || '', weight: r.weight ?? '',
+    cc: r.cc || r.note || '', pe: r.pe || '', dx: r.dx || '', plan: r.plan || '', media: r.media || [],
+    items: (r.charges || []).map((c) => Array.isArray(c)
+      ? { name: c[0] || '', qty: Number(c[1]) || 1, price: Number(c[2]) || 0, stockId: c[3] || null, origin: c[4] || null }
+      : { name: (c && c.name) || '', qty: Number(c && c.qty) || 1, price: Number(c && c.price) || 0, stockId: (c && c.stockId) || null, origin: (c && c.origin) || null }),
+  });
+  // เขียนทับ dailyRecords ทั้งชุด (แก้/ลบวันใดวันหนึ่ง)
+  const putDailyRecords = (list) => onUpdateAdmitted && onUpdateAdmitted(queueItem.id, { ...queueItem, dailyRecords: list });
   // ใบเสร็จตอนจำหน่าย = รายการสะสมทุกวัน + รายการที่คีย์ค้างอยู่วันนี้ (ยังไม่กดบันทึก)
   const pendingCharges = charges.filter((c) => String(c[0] || '').trim());
   const admittedItems = isAdmittedMode ? [
@@ -617,8 +629,18 @@ function CaseView({ pet, queueItem, vets, assistants = [], services, stock, shop
                 <div className="card-pad" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                   {(queueItem.dailyRecords || []).map((r, i) => (
                     <div key={i} style={{ background: '#FFFAF4', border: '1px solid #F0D0A0', borderRadius: 'var(--radius-sm)', padding: '8px 11px' }}>
-                      <div style={{ fontWeight: 700, color: '#7A5500', fontSize: 13, marginBottom: 3 }}>
-                        {typeof dateTH !== 'undefined' ? dateTH(r.date) : r.date}{r.vet ? ` · ${r.vet}` : ''}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 3 }}>
+                        <div style={{ fontWeight: 700, color: '#7A5500', fontSize: 13, flex: 1, minWidth: 0 }}>
+                          {typeof dateTH !== 'undefined' ? dateTH(r.date) : r.date}{r.vet ? ` · ${r.vet}` : ''}
+                        </div>
+                        {/* แก้ไข/ลบบันทึกรายวันได้ก่อนจำหน่าย — ยังไม่ออกใบเสร็จ ยังไม่ตัดสต็อก จึงไม่กระทบอะไร */}
+                        <button className="btn btn-sm no-print" style={{ padding: '2px 8px', fontSize: 12 }} onClick={() => openEditDaily(r, i)}>แก้ไข</button>
+                        {delDaily === i ? (
+                          <button className="btn btn-sm no-print" style={{ padding: '2px 8px', fontSize: 12, background: 'var(--blush-deep)', color: '#fff', fontWeight: 700 }}
+                            onClick={() => { putDailyRecords((queueItem.dailyRecords || []).filter((_, ix) => ix !== i)); setDelDaily(null); pushToast && pushToast(`ลบบันทึกวันที่ ${r.date} แล้ว`); }}>ยืนยันลบ</button>
+                        ) : (
+                          <button className="btn btn-sm no-print" style={{ padding: '2px 8px', fontSize: 12, color: 'var(--blush-deep)' }} onClick={() => setDelDaily(i)}>🗑</button>
+                        )}
                       </div>
                       {[r.cc, r.dx].filter(Boolean).length ? <div style={{ fontSize: 12.5, color: 'var(--ink-soft)', marginBottom: 3 }}>{[r.cc, r.dx].filter(Boolean).join(' · ')}</div> : null}
                       {(r.charges || []).length === 0 ? <div style={{ fontSize: 12.5, color: 'var(--ink-faint)' }}>— ไม่มีค่าใช้จ่าย —</div> : null}
@@ -629,7 +651,7 @@ function CaseView({ pet, queueItem, vets, assistants = [], services, stock, shop
                       ))}
                     </div>
                   ))}
-                  <div style={{ fontSize: 11.5, color: 'var(--ink-faint)' }}>💡 รายการด้านล่างที่คีย์ใหม่ กด “บันทึกการรักษาวันนี้” แล้วจะมาต่อท้ายตรงนี้ · ยอดทั้งหมดคิดตอนจำหน่าย</div>
+                  <div style={{ fontSize: 11.5, color: 'var(--ink-faint)' }}>💡 รายการด้านล่างที่คีย์ใหม่ กด “บันทึกการรักษาวันนี้” แล้วจะมาต่อท้ายตรงนี้ · กด “แก้ไข” เพื่อแก้วันที่คีย์ไปแล้ว · ยอดทั้งหมดคิดรวมทุกวันตอนจำหน่าย</div>
                 </div>
               </div>
             );
@@ -1132,6 +1154,70 @@ function CaseView({ pet, queueItem, vets, assistants = [], services, stock, shop
             <div>
               <div style={{ fontWeight: 700, fontSize: 13, color: 'var(--ink-soft)', marginBottom: 8 }}>📷 รูปภาพ / วิดีโอ</div>
               <MediaUpload media={editVisit.media || []} onChange={(m) => setEditVisit({ ...editVisit, media: m })} />
+            </div>
+          </div>
+        </Modal>
+      ) : null}
+      {editDaily ? (
+        <Modal title={`แก้ไขบันทึกวันที่ ${typeof dateTH !== 'undefined' ? dateTH(editDaily.date) : editDaily.date}`} onClose={() => setEditDaily(null)} footer={<>
+          <button className="btn" onClick={() => setEditDaily(null)}>ยกเลิก</button>
+          <button className="btn btn-primary" onClick={() => {
+            const d = editDaily;
+            const cleanCharges = (d.items || []).filter((it) => String(it.name || '').trim())
+              .map((it) => [String(it.name).trim(), Number(it.qty) || 1, Number(it.price) || 0, it.stockId || null, it.origin || null]);
+            const next = (queueItem.dailyRecords || []).map((r, ix) => ix === d._i
+              ? { ...r, date: d.date || r.date, vet: d.vet, weight: d.weight, cc: d.cc, pe: d.pe, dx: d.dx, plan: d.plan, media: d.media || [], charges: cleanCharges }
+              : r);
+            putDailyRecords(next);
+            setEditDaily(null);
+            pushToast && pushToast(`แก้ไขบันทึกวันที่ ${d.date} แล้ว`);
+          }}>บันทึก</button>
+        </>}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 13 }}>
+            <div className="form-grid" style={{ gridTemplateColumns: '1fr 1fr', gap: 13 }}>
+              <Field label="วันที่"><input className="input" type="date" value={editDaily.date || ''} onChange={(e) => setEditDaily({ ...editDaily, date: e.target.value })} /></Field>
+              <Field label="น้ำหนัก (kg)"><input className="input" type="number" step="0.1" value={editDaily.weight ?? ''} onChange={(e) => setEditDaily({ ...editDaily, weight: e.target.value })} /></Field>
+              <Field label="สัตวแพทย์" style={{ gridColumn: '1/-1' }}>
+                <select className="select" value={editDaily.vet || ''} onChange={(e) => setEditDaily({ ...editDaily, vet: e.target.value })}>
+                  <option value="">— ไม่ระบุ —</option>
+                  {vets.map((v) => <option key={v} value={v}>{v}</option>)}
+                  {editDaily.vet && !vets.includes(editDaily.vet) ? <option value={editDaily.vet}>{editDaily.vet}</option> : null}
+                </select>
+              </Field>
+              <Field label="อาการสำคัญ (CC)" style={{ gridColumn: '1/-1' }}><textarea className="textarea" rows="2" value={editDaily.cc || ''} onChange={(e) => setEditDaily({ ...editDaily, cc: e.target.value })} /></Field>
+              <Field label="ผลการตรวจร่างกาย (PE)" style={{ gridColumn: '1/-1' }}><textarea className="textarea" rows="2" value={editDaily.pe || ''} onChange={(e) => setEditDaily({ ...editDaily, pe: e.target.value })} /></Field>
+              <Field label="การวินิจฉัย (Dx)" style={{ gridColumn: '1/-1' }}><textarea className="textarea" rows="2" value={editDaily.dx || ''} onChange={(e) => setEditDaily({ ...editDaily, dx: e.target.value })} /></Field>
+              <Field label="แผนการรักษา (Plan)" style={{ gridColumn: '1/-1' }}><textarea className="textarea" rows="2" value={editDaily.plan || ''} onChange={(e) => setEditDaily({ ...editDaily, plan: e.target.value })} /></Field>
+            </div>
+            <div>
+              <div style={{ fontWeight: 700, fontSize: 13, color: 'var(--ink-soft)', marginBottom: 8 }}>💊 รายการค่าใช้จ่ายของวันนี้</div>
+              <div className="no-print" style={{ marginBottom: 10 }}>
+                <ChargePicker services={services || []} stock={stock || []} shopStock={shopStock || []}
+                  onAdd={(x) => setEditDaily((ed) => ({ ...ed, items: [...(ed.items || []), { name: x.name, qty: 1, price: Number(x.price) || 0, stockId: (x.kind === 'svc' ? null : x.id) || null, origin: x.kind === 'shop' ? 'shop' : null }] }))} />
+              </div>
+              <table className="tbl">
+                <thead><tr><th>รายการ</th><th className="num" style={{ width: 78 }}>จำนวน</th><th className="num" style={{ width: 96 }}>ราคา/หน่วย</th><th className="num" style={{ width: 96 }}>รวม</th><th style={{ width: 36 }}></th></tr></thead>
+                <tbody>
+                  {(editDaily.items || []).length === 0 ? (
+                    <tr><td colSpan={5} style={{ textAlign: 'center', color: 'var(--ink-faint)', fontSize: 12.5, padding: '10px 0' }}>ไม่มีค่าใช้จ่ายในวันนี้</td></tr>
+                  ) : (editDaily.items || []).map((it, i) => (
+                    <tr key={i}>
+                      <td><input className="input" style={{ padding: '5px 8px', fontSize: 13 }} value={it.name} onChange={(e) => setEditDaily((ed) => ({ ...ed, items: ed.items.map((x, ix) => ix === i ? { ...x, name: e.target.value } : x) }))} placeholder="ชื่อรายการ" /></td>
+                      <td><input className="input" style={{ padding: '5px 8px', fontSize: 13, textAlign: 'right' }} type="number" value={it.qty} onChange={(e) => setEditDaily((ed) => ({ ...ed, items: ed.items.map((x, ix) => ix === i ? { ...x, qty: e.target.value } : x) }))} /></td>
+                      <td><input className="input" style={{ padding: '5px 8px', fontSize: 13, textAlign: 'right' }} type="number" value={it.price} onChange={(e) => setEditDaily((ed) => ({ ...ed, items: ed.items.map((x, ix) => ix === i ? { ...x, price: e.target.value } : x) }))} /></td>
+                      <td className="num" style={{ fontWeight: 700 }}>{fmtB((Number(it.qty) || 0) * (Number(it.price) || 0))}</td>
+                      <td style={{ textAlign: 'center' }}><button className="btn btn-sm" style={{ color: 'var(--blush-deep)', padding: '2px 7px' }} onClick={() => setEditDaily((ed) => ({ ...ed, items: ed.items.filter((_, ix) => ix !== i) }))}>🗑</button></td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot><tr style={{ background: 'var(--paper)' }}><td colSpan={3} style={{ fontWeight: 700, textAlign: 'right', padding: '7px 12px' }}>รวมวันนี้</td><td className="num" style={{ fontWeight: 800 }}>{fmtB((editDaily.items || []).reduce((s, it) => s + (Number(it.qty) || 0) * (Number(it.price) || 0), 0))}</td><td></td></tr></tfoot>
+              </table>
+              <button className="btn btn-sm" style={{ marginTop: 8 }} onClick={() => setEditDaily((ed) => ({ ...ed, items: [...(ed.items || []), { name: '', qty: 1, price: 0, stockId: null, origin: null }] }))}><Icon name="plus" size={13} /> เพิ่มรายการ</button>
+              <div style={{ fontSize: 11.5, color: 'var(--ink-faint)', marginTop: 5 }}>* เคสยังไม่จำหน่าย → ยังไม่ออกใบเสร็จและยังไม่ตัดสต็อก แก้ตรงนี้ได้เลย ยอดจะไปคิดรวมทุกวันตอนจำหน่าย</div>
+            </div>
+            <div>
+              <div style={{ fontWeight: 700, fontSize: 13, color: 'var(--ink-soft)', marginBottom: 8 }}>📷 รูปภาพ / วิดีโอ</div>
+              <MediaUpload media={editDaily.media || []} onChange={(m) => setEditDaily({ ...editDaily, media: m })} />
             </div>
           </div>
         </Modal>
