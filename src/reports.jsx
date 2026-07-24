@@ -556,6 +556,162 @@ function exportToExcel(visits, receipts, rangeLabel, stock = [], dateRange = nul
   document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
 }
 
+// ── รายงานผลงาน/ค่าคอมรายคน (หมอ + ผู้ช่วย ในการกดครั้งเดียว · พิมพ์แยกคนละหน้า) ──
+// ประเภทบริการที่พบจริงในชุดข้อมูล — ใช้เป็นคอลัมน์ของตารางหมอ
+function svcColumnsOf(people) {
+  const order = ['ตรวจรักษา', 'วัคซีน', 'ผ่าตัด', 'อาบน้ำตัดขน'];
+  const found = new Set();
+  people.forEach((p) => Object.keys(p.byService || {}).forEach((k) => found.add(k)));
+  return [...order.filter((k) => found.has(k)), ...[...found].filter((k) => !order.includes(k)).sort()];
+}
+function exportStaffCSV(vetPeople, asstPeople, pct, rangeLabel) {
+  const cols = svcColumnsOf(vetPeople);
+  const rows = [];
+  rows.push([`รายงานผลงานรายคน — ${rangeLabel}`]);
+  rows.push([]);
+  rows.push(['🩺 สัตวแพทย์']);
+  rows.push(['ลำดับ', 'ชื่อ', 'จำนวนเคส', ...cols.map((c) => `${c} (บาท)`), 'ยอดรวม (บาท)']);
+  vetPeople.forEach((p, i) => rows.push([i + 1, p.name, p.cases,
+    ...cols.map((c) => (p.byService[c] ? Math.round(p.byService[c].revenue) : 0)), Math.round(p.revenue)]));
+  rows.push(['', 'รวมทั้งหมด', vetPeople.reduce((a, p) => a + p.cases, 0),
+    ...cols.map((c) => Math.round(vetPeople.reduce((a, p) => a + (p.byService[c] ? p.byService[c].revenue : 0), 0))),
+    Math.round(vetPeople.reduce((a, p) => a + p.revenue, 0))]);
+  rows.push([]); rows.push([]);
+  rows.push(['🛁 ผู้ช่วย (ค่าคอมอาบน้ำ)']);
+  rows.push(['ลำดับ', 'ชื่อ', 'จำนวนเคส', 'ยอดอาบน้ำ (บาท)', `ค่าคอม ${pct}% (บาท)`]);
+  asstPeople.forEach((p, i) => rows.push([i + 1, p.name, p.cases, Math.round(p.groom), Math.round(p.groom * pct) / 100]));
+  const groomSum = asstPeople.reduce((a, p) => a + p.groom, 0);
+  rows.push(['', 'รวมทั้งหมด', asstPeople.reduce((a, p) => a + p.cases, 0), Math.round(groomSum), Math.round(groomSum * pct) / 100]);
+  const csv = '﻿' + rows.map((r) => r.map((c) => `"${String(c ?? '').replace(/"/g, '""')}"`).join(',')).join('\n');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a'); a.href = url; a.download = `ผลงานรายคน_${rangeLabel}_${todayISO()}.csv`;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
+}
+function PayrollSheet({ heading, sub, children }) {
+  return (
+    <div className="print-receipt" style={{ background: '#fff', color: '#000', padding: '26px 28px', border: '1px solid var(--line)', borderRadius: 8, marginBottom: 18 }}>
+      <div style={{ textAlign: 'center', marginBottom: 14 }}>
+        <div style={{ fontWeight: 800, fontSize: 17 }}>{CLINIC.nameTH}</div>
+        <div style={{ fontSize: 11.5, color: '#555' }}>{CLINIC.addr}</div>
+        <div style={{ fontWeight: 800, fontSize: 16, marginTop: 10 }}>{heading}</div>
+        <div style={{ fontSize: 12.5, color: '#444' }}>{sub}</div>
+      </div>
+      {children}
+      <div style={{ display: 'flex', gap: 30, marginTop: 34, fontSize: 12, color: '#333' }}>
+        {['ผู้จัดทำ', 'ผู้ตรวจสอบ', 'ผู้อนุมัติ'].map((t) => (
+          <div key={t} style={{ flex: 1, textAlign: 'center' }}>
+            <div style={{ borderBottom: '1px dotted #666', height: 30 }} />
+            <div style={{ marginTop: 5 }}>({t})</div>
+            <div style={{ color: '#777', marginTop: 2 }}>วันที่ ......../......../........</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+function StaffPayrollModal({ vetPeople, asstPeople, pct, rangeLabel, onClose }) {
+  const cols = svcColumnsOf(vetPeople);
+  const cell = { padding: '6px 8px', borderBottom: '1px solid #ddd', fontSize: 12.5 };
+  const th = { ...cell, background: '#f3f1ec', fontWeight: 800, borderBottom: '1.5px solid #bbb' };
+  const numc = { ...cell, textAlign: 'right', fontVariantNumeric: 'tabular-nums' };
+  const foot = { ...numc, fontWeight: 800, background: '#faf8f4', borderTop: '1.5px solid #bbb' };
+  const money = (n) => (n ? Math.round(n).toLocaleString('th-TH') : '—');
+  const vetTotal = vetPeople.reduce((a, p) => a + p.revenue, 0);
+  const groomTotal = asstPeople.reduce((a, p) => a + p.groom, 0);
+  const commTotal = Math.round(groomTotal * pct) / 100;
+  return (
+    <Modal title="🧑‍⚕️ รายงานผลงาน / ค่าคอมรายคน" onClose={onClose} wide
+      footer={<>
+        <button className="btn" onClick={onClose}>ปิด</button>
+        <button className="btn btn-soft" style={{ color: 'var(--mint-deep)', borderColor: 'var(--mint-deep)' }}
+          onClick={() => exportStaffCSV(vetPeople, asstPeople, pct, rangeLabel)}>📅 Excel (.csv)</button>
+        <button className="btn btn-primary" onClick={() => window.print()}><Icon name="printer" size={16} /> พิมพ์ PDF (2 หน้า)</button>
+      </>}>
+      <div className="no-print" style={{ fontSize: 12.5, color: 'var(--ink-soft)', marginBottom: 12, padding: '8px 12px', background: 'var(--mint-soft)', border: '1px solid var(--mint)', borderRadius: 'var(--radius-sm)' }}>
+        💡 กดพิมพ์ครั้งเดียวได้ทั้ง <b>หมอ (หน้า 1)</b> และ <b>ผู้ช่วย (หน้า 2)</b> · ยอดตามช่วงเวลาที่เลือกในหน้าสรุปรายรับ
+      </div>
+      <div className="print-batch">
+        {/* ── หน้า 1: สัตวแพทย์ ── */}
+        <PayrollSheet heading="รายงานผลงานรายคน — สัตวแพทย์" sub={`ช่วง ${rangeLabel} · พิมพ์เมื่อ ${dateTH(todayISO())}`}>
+          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <thead>
+              <tr>
+                <th style={{ ...th, width: 34, textAlign: 'center' }}>#</th>
+                <th style={{ ...th, textAlign: 'left' }}>ชื่อ</th>
+                <th style={{ ...th, textAlign: 'right', width: 62 }}>เคส</th>
+                {cols.map((c) => <th key={c} style={{ ...th, textAlign: 'right' }}>{c}</th>)}
+                <th style={{ ...th, textAlign: 'right', width: 92 }}>ยอดรวม</th>
+              </tr>
+            </thead>
+            <tbody>
+              {vetPeople.length === 0 ? (
+                <tr><td style={cell} colSpan={4 + cols.length}>ไม่มีข้อมูลในช่วงนี้</td></tr>
+              ) : vetPeople.map((p, i) => (
+                <tr key={p.name}>
+                  <td style={{ ...cell, textAlign: 'center', color: '#777' }}>{i + 1}</td>
+                  <td style={{ ...cell, fontWeight: 700 }}>{p.name}</td>
+                  <td style={numc}>{p.cases || '—'}</td>
+                  {cols.map((c) => <td key={c} style={numc}>{money(p.byService[c] ? p.byService[c].revenue : 0)}</td>)}
+                  <td style={{ ...numc, fontWeight: 800 }}>{money(p.revenue)}</td>
+                </tr>
+              ))}
+            </tbody>
+            <tfoot>
+              <tr>
+                <td style={{ ...foot, textAlign: 'center' }}></td>
+                <td style={{ ...foot, textAlign: 'left' }}>รวมทั้งหมด</td>
+                <td style={foot}>{vetPeople.reduce((a, p) => a + p.cases, 0)}</td>
+                {cols.map((c) => <td key={c} style={foot}>{money(vetPeople.reduce((a, p) => a + (p.byService[c] ? p.byService[c].revenue : 0), 0))}</td>)}
+                <td style={foot}>{money(vetTotal)}</td>
+              </tr>
+            </tfoot>
+          </table>
+          <div style={{ fontSize: 11, color: '#666', marginTop: 8 }}>* ยอดคิดจากใบเสร็จจริงในช่วง โดยนับเข้าชื่อที่เลือกในช่อง “สัตวแพทย์ผู้ตรวจ” ของแต่ละเคส</div>
+        </PayrollSheet>
+
+        {/* ── หน้า 2: ผู้ช่วย + ค่าคอม ── */}
+        <PayrollSheet heading="รายงานค่าคอมมิชชั่น — ผู้ช่วย (อาบน้ำ/ตัดขน)" sub={`ช่วง ${rangeLabel} · อัตราค่าคอม ${pct}% ของยอดอาบน้ำ · พิมพ์เมื่อ ${dateTH(todayISO())}`}>
+          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <thead>
+              <tr>
+                <th style={{ ...th, width: 34, textAlign: 'center' }}>#</th>
+                <th style={{ ...th, textAlign: 'left' }}>ชื่อ</th>
+                <th style={{ ...th, textAlign: 'right', width: 70 }}>เคส</th>
+                <th style={{ ...th, textAlign: 'right', width: 120 }}>ยอดอาบน้ำ</th>
+                <th style={{ ...th, textAlign: 'right', width: 120 }}>ค่าคอม {pct}%</th>
+              </tr>
+            </thead>
+            <tbody>
+              {asstPeople.length === 0 ? (
+                <tr><td style={cell} colSpan={5}>ยังไม่มีรายชื่อผู้ช่วย</td></tr>
+              ) : asstPeople.map((p, i) => (
+                <tr key={p.name}>
+                  <td style={{ ...cell, textAlign: 'center', color: '#777' }}>{i + 1}</td>
+                  <td style={{ ...cell, fontWeight: 700 }}>{p.name}</td>
+                  <td style={numc}>{p.cases || '—'}</td>
+                  <td style={numc}>{money(p.groom)}</td>
+                  <td style={{ ...numc, fontWeight: 800 }}>{money(p.groom * pct / 100)}</td>
+                </tr>
+              ))}
+            </tbody>
+            <tfoot>
+              <tr>
+                <td style={{ ...foot, textAlign: 'center' }}></td>
+                <td style={{ ...foot, textAlign: 'left' }}>รวมต้องจ่ายทั้งหมด</td>
+                <td style={foot}>{asstPeople.reduce((a, p) => a + p.cases, 0)}</td>
+                <td style={foot}>{money(groomTotal)}</td>
+                <td style={{ ...foot, fontSize: 14 }}>{money(commTotal)}</td>
+              </tr>
+            </tfoot>
+          </table>
+          <div style={{ fontSize: 11, color: '#666', marginTop: 8 }}>* ยอดอาบน้ำ = เฉพาะรายการที่มีคำว่า “อาบน้ำ” หรืออยู่ในหมวดอาบน้ำ — ค่ายา/สินค้าอื่นในบิลเดียวกันไม่ถูกนับ</div>
+        </PayrollSheet>
+      </div>
+    </Modal>
+  );
+}
+
 function SimpleBar({ label, value, max, color }) {
   const pct = max > 0 ? Math.round(value / max * 100) : 0;
   return (
@@ -690,6 +846,7 @@ function ReportsView({ pets, queue, stock, shopStock = [], services = [], receip
   const [staffTab, setStaffTab] = useState('vet');  // ผลงานรายคน: 'vet' หมอ | 'asst' ผู้ช่วย
   const [staffSel, setStaffSel] = useState(null);   // ชื่อคนที่กดดูรายละเอียด
   const [staffModalCat, setStaffModalCat] = useState(null); // ประเภทที่กดในโดนัทรายคน → เปิดป๊อปอัพรายชื่อเคส
+  const [showPayroll, setShowPayroll] = useState(false);    // รายงานผลงาน/ค่าคอม (หมอ+ผู้ช่วย กดปุ่มเดียว)
   const [pctInput, setPctInput] = useState(String(commissionPct));   // % ค่าคอมอาบน้ำ (พิมพ์ได้ · จำค่าไว้ในระบบ)
   const pct = Math.max(0, Math.min(100, parseFloat(pctInput) || 0));
   const commOf = (groom) => Math.round(groom * pct) / 100;
@@ -799,16 +956,19 @@ function ReportsView({ pets, queue, stock, shopStock = [], services = [], receip
     return per;
   }, [visits, queue, stock, shopStock, pets, receipts]);
   // รายชื่อคนตามแท็บ: หมอ = รายชื่อหมอ + ชื่อที่พบในบันทึก (ที่ไม่ใช่ผู้ช่วย) · ผู้ช่วย = รายชื่อผู้ช่วยเท่านั้น
-  const staffPeople = useMemo(() => {
+  // คำนวณทั้งสองชุดเสมอ เพื่อให้ปุ่ม "ออกรายงาน" ดึงได้ทั้งหมอและผู้ช่วยในการกดครั้งเดียว
+  const asstPeople = useMemo(() => {
     const empty = { cases: 0, revenue: 0, groom: 0, byService: {}, byServiceCases: {}, list: [] };
-    if (staffTab === 'asst') {
-      return (assistants || []).map((n) => ({ name: n, ...(staffPerf[n] || empty) })).sort((a, b) => b.groom - a.groom);
-    }
+    return (assistants || []).map((n) => ({ name: n, ...(staffPerf[n] || empty) })).sort((a, b) => b.groom - a.groom);
+  }, [staffPerf, assistants]);
+  const vetPeople = useMemo(() => {
+    const empty = { cases: 0, revenue: 0, groom: 0, byService: {}, byServiceCases: {}, list: [] };
     const asstSet = new Set((assistants || []).map((a) => String(a).trim()));
     const names = new Set((vets || []).map((v) => String(v).trim()).filter(Boolean));
     Object.keys(staffPerf).forEach((n) => { if (!asstSet.has(n)) names.add(n); });
     return [...names].map((n) => ({ name: n, ...(staffPerf[n] || empty) })).sort((a, b) => b.revenue - a.revenue);
-  }, [staffTab, staffPerf, vets, assistants]);
+  }, [staffPerf, vets, assistants]);
+  const staffPeople = staffTab === 'asst' ? asstPeople : vetPeople;
   const selPerf = staffSel ? (staffPerf[staffSel] || { cases: 0, revenue: 0, groom: 0, byService: {}, byServiceCases: {}, list: [] }) : null;
 
   const chg = m.revenueChangePct;
@@ -1145,8 +1305,12 @@ function ReportsView({ pets, queue, stock, shopStock = [], services = [], receip
       <div className="card" style={{ marginTop: 14 }}>
         <div className="card-head">
           <span style={{ fontWeight: 800 }}>🧑‍⚕️ ผลงานรายคน</span>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
             <span className="chip">{rangeLabel}</span>
+            {/* ปุ่มเดียว = ได้ทั้งหมอและผู้ช่วย (แยกคนละหน้าเวลาพิมพ์) */}
+            <button className="btn btn-sm" onClick={() => setShowPayroll(true)} style={{ color: 'var(--navy)', borderColor: 'var(--navy)', fontWeight: 700 }}>
+              📄 ออกรายงาน / ค่าคอม
+            </button>
             <div className="seg">
               <button className={staffTab === 'vet' ? 'on' : ''} onClick={() => { setStaffTab('vet'); setStaffSel(null); setStaffModalCat(null); }}>🩺 หมอ</button>
               <button className={staffTab === 'asst' ? 'on' : ''} onClick={() => { setStaffTab('asst'); setStaffSel(null); setStaffModalCat(null); }}>🛁 ผู้ช่วย</button>
@@ -1272,6 +1436,10 @@ function ReportsView({ pets, queue, stock, shopStock = [], services = [], receip
           cases={selPerf.byServiceCases} selected={staffModalCat}
           onSelectCat={setStaffModalCat} onOpenPet={onOpenPet} onClose={() => setStaffModalCat(null)}
         />
+      ) : null}
+
+      {showPayroll ? (
+        <StaffPayrollModal vetPeople={vetPeople} asstPeople={asstPeople} pct={pct} rangeLabel={rangeLabel} onClose={() => setShowPayroll(false)} />
       ) : null}
 
       {showExport ? <ReceiptExportModal receipts={receipts} onClose={() => setShowExport(false)} /> : null}

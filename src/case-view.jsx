@@ -1,6 +1,65 @@
 // ── Case view: pet profile + today record + charges + history ──
 var { useState, useEffect, useRef, useMemo } = React;
 
+// ── กราฟน้ำหนักย้อนหลัง (เส้น) — จุดสุดท้ายคือน้ำหนักที่กำลังคีย์วันนี้ (ถ้ามี) ──
+// rows = [{ date, w, today? }] เรียงเก่า→ใหม่แล้ว
+function WeightChart({ rows, height = 190 }) {
+  const ref = useRef(null);
+  const [w, setW] = useState(560);
+  const [hover, setHover] = useState(null);
+  useEffect(() => {
+    if (ref.current) setW(ref.current.offsetWidth);
+    const ro = new ResizeObserver((e) => setW(e[0].contentRect.width));
+    if (ref.current) ro.observe(ref.current);
+    return () => ro.disconnect();
+  }, []);
+  const pad = { l: 44, r: 16, t: 14, b: 30 };
+  const cw = Math.max(60, w - pad.l - pad.r), ch = height - pad.t - pad.b;
+  const ws = rows.map((r) => r.w);
+  // แกน Y เผื่อหัวท้าย 10% เพื่อไม่ให้เส้นแตะขอบ · น้ำหนักเท่ากันทุกครั้ง ให้เส้นอยู่กลาง
+  const lo = Math.min(...ws), hi = Math.max(...ws);
+  const span = hi - lo || Math.max(hi * 0.2, 1);
+  const yMin = lo - span * 0.15, yMax = hi + span * 0.15;
+  const X = (i) => pad.l + (rows.length === 1 ? cw / 2 : (cw * i) / (rows.length - 1));
+  const Y = (v) => pad.t + ch * (1 - (v - yMin) / (yMax - yMin));
+  const line = rows.map((r, i) => `${i === 0 ? 'M' : 'L'}${X(i).toFixed(1)},${Y(r.w).toFixed(1)}`).join(' ');
+  const area = rows.length > 1 ? `${line} L${X(rows.length - 1).toFixed(1)},${pad.t + ch} L${X(0).toFixed(1)},${pad.t + ch} Z` : '';
+  const ticks = [0, 0.5, 1].map((g) => yMin + (yMax - yMin) * g);
+  const labelEvery = Math.max(1, Math.ceil(rows.length / 7));
+  return (
+    <div ref={ref} style={{ width: '100%', position: 'relative' }}>
+      <svg width={w} height={height} style={{ overflow: 'visible', fontFamily: 'inherit', display: 'block' }}>
+        {ticks.map((t, i) => (
+          <g key={i}>
+            <line x1={pad.l} x2={pad.l + cw} y1={Y(t)} y2={Y(t)} stroke="var(--line)" strokeWidth={1} />
+            <text x={pad.l - 7} y={Y(t) + 4} textAnchor="end" fontSize={10.5} fill="var(--ink-faint)">{(Math.round(t * 10) / 10).toFixed(1)}</text>
+          </g>
+        ))}
+        {area ? <path d={area} fill="var(--powder-soft)" opacity={0.75} /> : null}
+        {rows.length > 1 ? <path d={line} fill="none" stroke="var(--powder-deep)" strokeWidth={2.4} strokeLinejoin="round" strokeLinecap="round" /> : null}
+        {rows.map((r, i) => (
+          <g key={i} onMouseEnter={() => setHover(i)} onMouseLeave={() => setHover(null)} style={{ cursor: 'pointer' }}>
+            <circle cx={X(i)} cy={Y(r.w)} r={hover === i ? 6.5 : r.today ? 5.5 : 4}
+              fill={r.today ? 'var(--mint-deep)' : 'var(--surface)'} stroke={r.today ? 'var(--mint-deep)' : 'var(--powder-deep)'} strokeWidth={2.2} />
+            <circle cx={X(i)} cy={Y(r.w)} r={13} fill="transparent" />
+            {i % labelEvery === 0 || i === rows.length - 1 ? (
+              <text x={X(i)} y={height - 9} textAnchor="middle" fontSize={10.5} fill="var(--ink-faint)">
+                {String(r.date || '').slice(8, 10)}/{String(r.date || '').slice(5, 7)}
+              </text>
+            ) : null}
+          </g>
+        ))}
+      </svg>
+      {hover != null ? (
+        <div style={{ position: 'absolute', left: Math.min(Math.max(X(hover), 52), w - 52), top: Y(rows[hover].w) - 44, transform: 'translateX(-50%)',
+          background: 'var(--ink)', color: '#fff', padding: '5px 10px', borderRadius: 8, fontSize: 12, whiteSpace: 'nowrap', pointerEvents: 'none', fontWeight: 600 }}>
+          {rows[hover].w} kg · {dateTH(rows[hover].date)}{rows[hover].today ? ' (วันนี้)' : ''}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 // ── Vet selector with inline "add" and per-vet delete ──
 // ใช้เลือกได้ทั้ง "หมอ" และ "ผู้ช่วย" (เคสอาบน้ำตัดขน) — เปลี่ยนป้ายผ่าน personWord/addLabel
 function VetSelector({ vets, value, onChange, onAddVet, onDeleteVet, personWord = 'สัตวแพทย์', addLabel = 'เพิ่มหมอ' }) {
@@ -355,6 +414,7 @@ function CaseView({ pet, queueItem, vets, assistants = [], services, stock, shop
   const [editVisit, setEditVisit] = useState(null);
   const [editDaily, setEditDaily] = useState(null);   // บันทึกรายวันของเคสแอดมิดที่กำลังแก้ไข (มี _i = ลำดับวัน)
   const [delDaily, setDelDaily] = useState(null);     // ลำดับวันที่กำลังยืนยันลบ
+  const [showWeightChart, setShowWeightChart] = useState(false); // ป๊อปอัพกราฟน้ำหนักย้อนหลัง
   const [showVaccineHistory, setShowVaccineHistory] = useState(false);
   const [newPay, setNewPay] = useState({ amount: '', method: 'เงินสด', note: 'มัดจำ' });   // มัดจำ/จ่ายล่วงหน้า (แอดมิด)
   const [showServiceMgr, setShowServiceMgr] = useState(false);
@@ -377,6 +437,28 @@ function CaseView({ pet, queueItem, vets, assistants = [], services, stock, shop
   });
   const isEditMode = queueItem && (queueItem.status === 'cashier' || queueItem.status === 'done');
   const isAdmittedMode = queueItem?.status === 'admitted';
+  // ── ประวัติน้ำหนัก (เรียงเก่า→ใหม่) — ใช้ทั้งกราฟและลูกศรเทียบครั้งก่อน ──
+  // ตัด "ครั้งนี้" ออก (เปิดเคสเดิมกลับเข้ามาแก้) ไม่งั้นจะเทียบกับตัวเอง = ไม่เปลี่ยนแปลงเสมอ
+  const weightHistory = useMemo(() => {
+    const rows = [];
+    (pet.visits || []).forEach((v) => {
+      const n = parseFloat(v.weight);
+      if (!n || !isFinite(n)) return;
+      if (queueItem?.q && String(v.q || '') === String(queueItem.q)) return;
+      rows.push({ date: v.date, w: n });
+    });
+    if (isAdmittedMode) (queueItem.dailyRecords || []).forEach((r) => {
+      const n = parseFloat(r.weight);
+      if (n && isFinite(n)) rows.push({ date: r.date, w: n });
+    });
+    return rows.sort((a, b) => String(a.date).localeCompare(String(b.date)));
+  }, [pet.visits, queueItem, isAdmittedMode]);
+  const prevWeight = weightHistory.length ? weightHistory[weightHistory.length - 1] : null;
+  const curWeight = parseFloat(rec.weight);
+  const hasCurWeight = !!curWeight && isFinite(curWeight);
+  const weightDiff = (prevWeight && hasCurWeight) ? Math.round((curWeight - prevWeight.w) * 100) / 100 : null;
+  // จุดบนกราฟ = ประวัติ + น้ำหนักที่กำลังคีย์วันนี้ (ถ้ายังไม่ได้บันทึก)
+  const weightPoints = hasCurWeight ? [...weightHistory, { date: todayISO(), w: curWeight, today: true }] : weightHistory;
   const saveAdmittedRecord = () => {
     if (!onUpdateAdmitted) return;
     const today = todayISO();
@@ -602,7 +684,32 @@ function CaseView({ pet, queueItem, vets, assistants = [], services, stock, shop
                   </Field>
                 ) : null}
                 <Field label="น้ำหนักวันนี้ (kg)">
-                  <input className="input" type="number" step="0.1" value={rec.weight} onChange={setR('weight')} />
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+                    <input className="input" type="number" step="0.1" value={rec.weight} onChange={setR('weight')} style={{ flex: 1, minWidth: 0 }} />
+                    {/* ปุ่มกราฟ — มีประวัติน้ำหนักเมื่อไหร่ถึงกดได้ */}
+                    {weightHistory.length > 0 ? (
+                      <button type="button" onClick={() => setShowWeightChart(true)} title="ดูกราฟน้ำหนักย้อนหลัง"
+                        style={{ flexShrink: 0, width: 38, height: 38, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer',
+                          borderRadius: 'var(--radius-sm)', border: '1.5px solid var(--powder-deep)', background: 'var(--powder-soft)', color: 'var(--powder-deep)' }}>
+                        <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                          <polyline points="3 17 9 11 13 15 21 7" /><polyline points="15 7 21 7 21 13" />
+                        </svg>
+                      </button>
+                    ) : null}
+                  </div>
+                  {/* ลูกศรเทียบครั้งก่อน — ขึ้น/ลง/เท่าเดิม */}
+                  {weightDiff != null ? (
+                    <div style={{ marginTop: 5, fontSize: 12, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                      {weightDiff === 0 ? (
+                        <span style={{ fontWeight: 700, color: 'var(--ink-faint)' }}>= เท่าเดิม</span>
+                      ) : (
+                        <span style={{ fontWeight: 800, color: weightDiff > 0 ? 'var(--mint-deep)' : 'var(--blush-deep)' }}>
+                          {weightDiff > 0 ? '▲' : '▼'} {weightDiff > 0 ? '+' : ''}{weightDiff} kg
+                        </span>
+                      )}
+                      <span style={{ color: 'var(--ink-faint)' }}>จากครั้งก่อน {prevWeight.w} kg · {dateTH(prevWeight.date)}</span>
+                    </div>
+                  ) : null}
                 </Field>
               </div>
               <Field label="อาการสำคัญ (CC)"><textarea className="textarea" rows="2" value={rec.cc} onChange={setR('cc')} placeholder="อาการที่เจ้าของพามา..." /></Field>
@@ -1158,6 +1265,46 @@ function CaseView({ pet, queueItem, vets, assistants = [], services, stock, shop
           </div>
         </Modal>
       ) : null}
+      {showWeightChart ? (() => {
+        const first = weightPoints[0], last = weightPoints[weightPoints.length - 1];
+        const netto = Math.round((last.w - first.w) * 100) / 100;
+        return (
+          <Modal title={`📈 กราฟน้ำหนัก — ${pet.name}`} onClose={() => setShowWeightChart(false)}
+            footer={<button className="btn" onClick={() => setShowWeightChart(false)}>ปิด</button>}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                <span className="chip">{weightPoints.length} ครั้ง</span>
+                <span className="chip">ต่ำสุด {Math.min(...weightPoints.map((r) => r.w))} kg</span>
+                <span className="chip">สูงสุด {Math.max(...weightPoints.map((r) => r.w))} kg</span>
+                {weightPoints.length > 1 ? (
+                  <span className="chip" style={{ fontWeight: 700, color: netto > 0 ? 'var(--mint-deep)' : netto < 0 ? 'var(--blush-deep)' : 'var(--ink-faint)' }}>
+                    ตลอดช่วง {netto > 0 ? '▲ +' : netto < 0 ? '▼ ' : '= '}{netto !== 0 ? netto + ' kg' : 'เท่าเดิม'}
+                  </span>
+                ) : null}
+              </div>
+              <WeightChart rows={weightPoints} />
+              <div style={{ maxHeight: 200, overflowY: 'auto', border: '1px solid var(--line-soft)', borderRadius: 'var(--radius-sm)' }}>
+                {[...weightPoints].reverse().map((r, i, arr) => {
+                  const before = arr[i + 1];   // รายการถัดไปในลิสต์ที่กลับด้าน = ครั้งก่อนหน้า
+                  const d = before ? Math.round((r.w - before.w) * 100) / 100 : null;
+                  return (
+                    <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '7px 12px', borderBottom: '1px solid var(--line-soft)', fontSize: 13 }}>
+                      <span style={{ color: 'var(--ink-faint)', width: 96, flexShrink: 0 }}>{dateTH(r.date)}</span>
+                      {r.today ? <span className="chip chip-mint" style={{ fontSize: 10.5 }}>วันนี้ (ยังไม่บันทึก)</span> : null}
+                      <span style={{ flex: 1 }} />
+                      <span style={{ fontWeight: 800, fontVariantNumeric: 'tabular-nums' }}>{r.w} kg</span>
+                      <span style={{ width: 78, textAlign: 'right', fontSize: 12, fontWeight: 700, fontVariantNumeric: 'tabular-nums',
+                        color: d == null ? 'var(--ink-faint)' : d > 0 ? 'var(--mint-deep)' : d < 0 ? 'var(--blush-deep)' : 'var(--ink-faint)' }}>
+                        {d == null ? '—' : d === 0 ? 'เท่าเดิม' : (d > 0 ? '▲ +' : '▼ ') + d}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </Modal>
+        );
+      })() : null}
       {editDaily ? (
         <Modal title={`แก้ไขบันทึกวันที่ ${typeof dateTH !== 'undefined' ? dateTH(editDaily.date) : editDaily.date}`} onClose={() => setEditDaily(null)} footer={<>
           <button className="btn" onClick={() => setEditDaily(null)}>ยกเลิก</button>
