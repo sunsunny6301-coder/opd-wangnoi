@@ -7790,16 +7790,20 @@ const THAI_MONTHS = ['มกราคม','กุมภาพันธ์','ม�
   'กรกฎาคม','สิงหาคม','กันยายน','ตุลาคม','พฤศจิกายน','ธันวาคม'];
 const DAYS_SHORT = ['อา','จ','อ','พ','พฤ','ศ','ส'];
 
-function classifyVisit(items) {
-  const cats = { วัคซีน: 0, ผ่าตัด: 0, แล็บ: 0, OPD: 0 };
-  (items || []).forEach(([name]) => {
-    const n = name.toLowerCase();
-    if (n.includes('วัคซีน') || n.includes('vaccine')) cats['วัคซีน']++;
-    else if (n.includes('ผ่าตัด') || n.includes('ทำหมัน') || n.includes('surgery')) cats['ผ่าตัด']++;
-    else if (n.includes('เลือด') || n.includes('x-ray') || n.includes('แล็บ') || n.includes('cbc')) cats['แล็บ']++;
-    else cats['OPD']++;
-  });
-  return cats;
+// จัดประเภท "รายเคส" (1 เคส = 1 ประเภท) ให้ตรงกับหน้าสรุปรายรับ — ยึด type ของคิวก่อน ไม่งั้นเดาจากรายการแรก
+const CAT_COLORS = { วัคซีน: '#3A8F6A', ผ่าตัด: '#8C3028', อาบน้ำตัดขน: '#A87B2F', ซื้อสินค้า: '#5E8A93', ตรวจรักษา: '#2D4B72' };
+function caseCategory(visit, queueByQ) {
+  const q = visit.q && queueByQ[visit.q];
+  if (q && q.type) return q.type;
+  const first = (visit.items || [])[0];
+  const n = first ? String(Array.isArray(first) ? first[0] : (first.name || '')).toLowerCase() : '';
+  if (n.includes('วัคซีน') || n.includes('vaccine')) return 'วัคซีน';
+  if (n.includes('ผ่าตัด') || n.includes('ทำหมัน') || n.includes('surgery')) return 'ผ่าตัด';
+  if (n.includes('อาบน้ำ') || n.includes('ตัดขน') || n.includes('groom')) return 'อาบน้ำตัดขน';
+  return 'ตรวจรักษา';
+}
+function itemTotal(items) {
+  return (items || []).reduce((s, c) => s + (Number(Array.isArray(c) ? c[1] : c.qty) || 1) * (Number(Array.isArray(c) ? c[2] : c.price) || 0), 0);
 }
 
 function heatColor(count) {
@@ -7815,11 +7819,26 @@ function heatText(count) {
   return '#fff';
 }
 
-function HistoryView({ pets, onOpenPet }) {
+function HistoryView({ pets, receipts = [], queue = [], onOpenPet }) {
   const today = new Date();
   const [year, setYear] = useState(today.getFullYear());
   const [month, setMonth] = useState(today.getMonth());
   const [selDate, setSelDate] = useState(todayISO());
+
+  // คิวสำหรับดูประเภทเคส (type)
+  const queueByQ = useMemo(() => { const m = {}; (queue || []).forEach((q) => { if (q && q.q) m[q.q] = q; }); return m; }, [queue]);
+  // ใบเสร็จ OPD ที่ยังไม่ถูกยกเลิก: key = HN|คิว|วันที่ (แหล่งความจริงเดียวกับหน้าคิว/สรุปรายรับ)
+  const rcptKeys = useMemo(() => {
+    const s = new Set();
+    (receipts || []).forEach((r) => { if ((r.type || 'opd') === 'opd') s.add(`${r.hn}|${r.q || ''}|${r.date}`); });
+    return s;
+  }, [receipts]);
+  // รายรับ "ตามใบเสร็จ" รายวัน (ตรงกับหน้าแดชบอร์ด/สรุปรายรับ)
+  const receiptRevByDate = useMemo(() => {
+    const m = {};
+    (receipts || []).forEach((r) => { if ((r.type || 'opd') === 'opd') m[r.date] = (m[r.date] || 0) + (Number(r.total) || 0); });
+    return m;
+  }, [receipts]);
 
   // Build date → visits map from all pets
   const visitsByDate = useMemo(() => {
@@ -7847,19 +7866,18 @@ function HistoryView({ pets, onOpenPet }) {
 
   const selVisits = visitsByDate[selDate] || [];
 
-  // Day stats
-  const daySummary = (entries) => {
-    const cats = { วัคซีน: 0, ผ่าตัด: 0, แล็บ: 0, OPD: 0 };
-    entries.forEach(({ visit }) => {
-      const c = classifyVisit(visit.items);
-      Object.keys(cats).forEach((k) => cats[k] += c[k]);
-    });
+  // ── สถิติรายวัน (นับ "รายเคส" 1 เคส 1 ประเภท ให้ตรงกับหน้าสรุปรายรับ) ──
+  const hasReceipt = (pet, visit) => rcptKeys.has(`${pet.hn}|${visit.q || ''}|${visit.date}`);
+  const selStats = useMemo(() => {
+    const cats = {};
+    selVisits.forEach(({ visit }) => { const c = caseCategory(visit, queueByQ); cats[c] = (cats[c] || 0) + 1; });
     return cats;
-  };
-
-  const selStats = daySummary(selVisits);
-  const selTotal = selVisits.reduce((s, { visit }) =>
-    s + (visit.items || []).reduce((ss, c) => ss + (c[1] || 1) * (c[2] || 0), 0), 0);
+  }, [selVisits, queueByQ]);
+  // รายรับตามใบเสร็จ = แหล่งความจริง (ตรงกับแดชบอร์ด/สรุปรายรับ)
+  const receiptTotal = receiptRevByDate[selDate] || 0;
+  // เคสที่ทำ+คิดเงินแล้วแต่ "ยังไม่มีใบเสร็จ" (ต้นเหตุยอดไม่ตรงกับอีก 2 หน้า)
+  const noReceiptVisits = selVisits.filter(({ pet, visit }) => itemTotal(visit.items) > 0 && !hasReceipt(pet, visit));
+  const noReceiptSum = noReceiptVisits.reduce((s, { visit }) => s + itemTotal(visit.items), 0);
 
   const fmt = (d) => {
     const [y, m2, day] = d.split('-');
@@ -7933,23 +7951,43 @@ function HistoryView({ pets, onOpenPet }) {
                 <div style={{ fontSize: 26, fontWeight: 800 }}>{selVisits.length}</div>
                 <div style={{ fontSize: 12, opacity: .8 }}>เคสทั้งหมด</div>
               </div>
-              {Object.entries(selStats).filter(([, v]) => v > 0).map(([k, v]) => (
+              {Object.entries(selStats).sort((a, b) => b[1] - a[1]).map(([k, v]) => (
                 <div key={k} style={{ textAlign: 'center' }}>
                   <div style={{ fontSize: 22, fontWeight: 700 }}>{v}</div>
                   <div style={{ fontSize: 12, opacity: .8 }}>{k}</div>
                 </div>
               ))}
-              {selTotal > 0 && (
-                <div style={{ textAlign: 'center', marginLeft: 'auto' }}>
-                  <div style={{ fontSize: 22, fontWeight: 700 }}>{fmtB(selTotal)}</div>
-                  <div style={{ fontSize: 12, opacity: .8 }}>รายรับรวม</div>
-                </div>
-              )}
+              <div style={{ textAlign: 'center', marginLeft: 'auto' }}>
+                <div style={{ fontSize: 22, fontWeight: 700 }}>{fmtB(receiptTotal)}</div>
+                <div style={{ fontSize: 12, opacity: .8 }}>รายรับ (ตามใบเสร็จ)</div>
+              </div>
             </div>
           ) : (
             <div style={{ marginTop: 8, fontSize: 13, color: 'var(--ink-faint)' }}>ไม่มีเคสในวันนี้</div>
           )}
         </div>
+
+        {/* เตือนเมื่อมีเคสที่คิดเงินแล้วแต่ยังไม่ออกใบเสร็จ — ต้นเหตุยอดไม่ตรงกับแดชบอร์ด/สรุปรายรับ */}
+        {noReceiptVisits.length > 0 ? (
+          <div className="card card-pad" style={{ background: 'var(--butter-soft)', border: '1px solid var(--butter)', display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <div style={{ fontWeight: 800, fontSize: 14, color: '#A05A00' }}>
+              ⚠️ {noReceiptVisits.length} เคสยังไม่ออกใบเสร็จ — {fmtB(noReceiptSum)}
+            </div>
+            <div style={{ fontSize: 12.5, color: 'var(--ink-soft)' }}>
+              เคสเหล่านี้บันทึกประวัติ+คิดเงินแล้ว แต่ยังไม่มีใบเสร็จ จึง<b>ไม่ถูกนับเป็นรายรับ</b>ในหน้าแดชบอร์ด/สรุปรายรับ
+              (ยอดตามใบเสร็จ {fmtB(receiptTotal)} · ถ้ารวมส่วนนี้ = {fmtB(receiptTotal + noReceiptSum)}).
+              แก้โดยเปิดเคส → กด “ชำระเงิน + ใบเสร็จ” เพื่อออกใบย้อนหลัง
+            </div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 2 }}>
+              {noReceiptVisits.map(({ pet, visit }, i) => (
+                <button key={i} onClick={() => onOpenPet && onOpenPet(pet.hn)}
+                  style={{ fontSize: 12, fontWeight: 700, cursor: 'pointer', border: '1px solid var(--butter)', background: 'var(--surface)', color: '#A05A00', borderRadius: 99, padding: '3px 10px' }}>
+                  {pet.name} · {fmtB(itemTotal(visit.items))} ›
+                </button>
+              ))}
+            </div>
+          </div>
+        ) : null}
 
         {/* Case list */}
         {selVisits.length > 0 && (
@@ -7960,10 +7998,10 @@ function HistoryView({ pets, onOpenPet }) {
             </div>
             <div style={{ display: 'flex', flexDirection: 'column' }}>
               {selVisits.map(({ pet, visit }, i) => {
-                const cats = classifyVisit(visit.items);
-                const total = (visit.items || []).reduce((s, c) => s + (c[1] || 1) * (c[2] || 0), 0);
-                const cat = Object.entries(cats).find(([, v]) => v > 0)?.[0] || 'OPD';
-                const catColors = { วัคซีน: '#3A8F6A', ผ่าตัด: '#8C3028', แล็บ: '#3A3F8F', OPD: '#5E8A93' };
+                const total = itemTotal(visit.items);
+                const cat = caseCategory(visit, queueByQ);
+                const catColors = CAT_COLORS;
+                const missingReceipt = total > 0 && !hasReceipt(pet, visit);
                 return (
                   <button key={i} onClick={() => onOpenPet && onOpenPet(pet.hn)}
                     style={{ padding: '12px 16px', borderBottom: i < selVisits.length - 1 ? '1px solid var(--line)' : 'none', display: 'flex', gap: 14, alignItems: 'flex-start', width: '100%', background: 'none', border: 'none', textAlign: 'left', cursor: onOpenPet ? 'pointer' : 'default', transition: 'background .12s' }}
@@ -7974,7 +8012,8 @@ function HistoryView({ pets, onOpenPet }) {
                       <div style={{ display: 'flex', gap: 8, alignItems: 'baseline', flexWrap: 'wrap' }}>
                         <span style={{ fontWeight: 700, fontSize: 14.5 }}>{pet.name}</span>
                         <span style={{ fontSize: 12.5, color: 'var(--ink-faint)' }}>HN {pet.hn} · {pet.species}</span>
-                        <span style={{ fontSize: 11.5, fontWeight: 700, color: catColors[cat], background: catColors[cat] + '18', borderRadius: 6, padding: '1px 7px' }}>{cat}</span>
+                        <span style={{ fontSize: 11.5, fontWeight: 700, color: catColors[cat] || '#5E8A93', background: (catColors[cat] || '#5E8A93') + '18', borderRadius: 6, padding: '1px 7px' }}>{cat}</span>
+                        {missingReceipt ? <span style={{ fontSize: 11, fontWeight: 800, color: '#A05A00', background: 'var(--butter-soft)', border: '1px solid var(--butter)', borderRadius: 6, padding: '1px 7px' }}>⚠️ ยังไม่ออกใบเสร็จ</span> : null}
                       </div>
                       <div style={{ fontSize: 13, color: 'var(--ink-soft)', marginTop: 3 }}>
                         {visit.cc && <span><b>CC:</b> {visit.cc}</span>}
@@ -9609,9 +9648,14 @@ function App() {
           const sq = parseInt(parts[2], 10) || 0;
           con = { receiptSeq: s.receiptSeq || {}, receiptVoids: { ...(s.receiptVoids || {}), [yr]: [...new Set([...(((s.receiptVoids || {})[yr]) || []), sq])] } };
         } else {
-          newReceipts = newReceipts.map((r) => r.no === prevReceipt.no
-            ? applyBillEdits({ ...r, petName: updatedPet.name, ownerName: r.ownerName || updatedPet.owner.name, items: receiptItems, method: payMethod || r.method || 'เงินสด', total, noVat: noVatAmt }, billEdits)
-            : r);
+          // อัปเดตใบเดิม — แต่ถ้าใบเดิมหลุดหายจาก state ล่าสุด (โดน merge หลายเครื่อง/ยกเลิกไปแล้ว)
+          // ห้าม map เฉยๆ เพราะจะกลายเป็น no-op → คิวเป็น "ชำระแล้ว" แต่ไม่มีใบเสร็จ (ต้นเหตุยอด 3 หน้าไม่ตรง)
+          // → ถ้าไม่เจอ ให้ออกใบใหม่ด้วยเลขเดิม (เคสนี้จ่ายเงินแล้ว ต้องมีใบเสร็จเสมอ)
+          const exists = newReceipts.some((r) => r.no === prevReceipt.no);
+          const built = applyBillEdits({ no: prevReceipt.no, date: prevReceipt.date || todayISO(), type: 'opd', svcType: queueItem?.type || prevReceipt.svcType || null, petName: updatedPet.name, ownerName: (prevReceipt.ownerName && prevReceipt.ownerName !== '-') ? prevReceipt.ownerName : updatedPet.owner.name, hn: updatedPet.hn, q: queueItem?.q || '', items: receiptItems, method: payMethod || prevReceipt.method || 'เงินสด', total, noVat: noVatAmt }, billEdits);
+          newReceipts = exists
+            ? newReceipts.map((r) => r.no === prevReceipt.no ? { ...r, ...built } : r)
+            : [...newReceipts, built];
         }
         newQueue = queueItem?.q ? newQueue.map((x) => x.q === queueItem.q ? { ...x, paid: noCharge ? 0 : total } : x) : newQueue;
       } else if (status === 'paid' && noCharge) {
@@ -9915,7 +9959,7 @@ function App() {
           {page === 'shop' ? <PetShop stock={shopStock} onCheckout={shopCheckout} previewReceiptNo={nextReceiptNo().no} onDeleteItem={deleteShopItem} onAddItem={addShopItem} onImportStock={importShopItems} onUpdateItem={updateShopItem} /> : null}
           {page === 'stock' ? <StockView stock={stock} onAdjust={adjustStock} onAddItem={addStockItem} onImportStock={importStockItems} onDeleteItem={deleteStockItem} onClearAll={clearStock} onUpdateItem={updateStockItem} /> : null}
           {page === 'reports' ? <ReportsView pets={pets} queue={queue} stock={stock} shopStock={shopStock} services={services} receipts={receipts} appointments={appointments} vets={vets} assistants={assistants} commissionPct={commissionPct} onSaveCommissionPct={saveCommissionPct} onCancelReceipt={cancelReceipt} onUpdateReceipt={updateReceipt} onOpenPet={openPet} /> : null}
-          {page === 'history' ? <HistoryView pets={pets} onOpenPet={openPet} /> : null}
+          {page === 'history' ? <HistoryView pets={pets} receipts={receipts} queue={queue} onOpenPet={openPet} /> : null}
           {page === 'tax' ? <TaxView pets={pets} receipts={receipts} /> : null}
         </main>
       </div>

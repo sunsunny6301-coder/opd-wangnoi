@@ -758,9 +758,14 @@ function App() {
           const sq = parseInt(parts[2], 10) || 0;
           con = { receiptSeq: s.receiptSeq || {}, receiptVoids: { ...(s.receiptVoids || {}), [yr]: [...new Set([...(((s.receiptVoids || {})[yr]) || []), sq])] } };
         } else {
-          newReceipts = newReceipts.map((r) => r.no === prevReceipt.no
-            ? applyBillEdits({ ...r, petName: updatedPet.name, ownerName: r.ownerName || updatedPet.owner.name, items: receiptItems, method: payMethod || r.method || 'เงินสด', total, noVat: noVatAmt }, billEdits)
-            : r);
+          // อัปเดตใบเดิม — แต่ถ้าใบเดิมหลุดหายจาก state ล่าสุด (โดน merge หลายเครื่อง/ยกเลิกไปแล้ว)
+          // ห้าม map เฉยๆ เพราะจะกลายเป็น no-op → คิวเป็น "ชำระแล้ว" แต่ไม่มีใบเสร็จ (ต้นเหตุยอด 3 หน้าไม่ตรง)
+          // → ถ้าไม่เจอ ให้ออกใบใหม่ด้วยเลขเดิม (เคสนี้จ่ายเงินแล้ว ต้องมีใบเสร็จเสมอ)
+          const exists = newReceipts.some((r) => r.no === prevReceipt.no);
+          const built = applyBillEdits({ no: prevReceipt.no, date: prevReceipt.date || todayISO(), type: 'opd', svcType: queueItem?.type || prevReceipt.svcType || null, petName: updatedPet.name, ownerName: (prevReceipt.ownerName && prevReceipt.ownerName !== '-') ? prevReceipt.ownerName : updatedPet.owner.name, hn: updatedPet.hn, q: queueItem?.q || '', items: receiptItems, method: payMethod || prevReceipt.method || 'เงินสด', total, noVat: noVatAmt }, billEdits);
+          newReceipts = exists
+            ? newReceipts.map((r) => r.no === prevReceipt.no ? { ...r, ...built } : r)
+            : [...newReceipts, built];
         }
         newQueue = queueItem?.q ? newQueue.map((x) => x.q === queueItem.q ? { ...x, paid: noCharge ? 0 : total } : x) : newQueue;
       } else if (status === 'paid' && noCharge) {
@@ -1064,7 +1069,7 @@ function App() {
           {page === 'shop' ? <PetShop stock={shopStock} onCheckout={shopCheckout} previewReceiptNo={nextReceiptNo().no} onDeleteItem={deleteShopItem} onAddItem={addShopItem} onImportStock={importShopItems} onUpdateItem={updateShopItem} /> : null}
           {page === 'stock' ? <StockView stock={stock} onAdjust={adjustStock} onAddItem={addStockItem} onImportStock={importStockItems} onDeleteItem={deleteStockItem} onClearAll={clearStock} onUpdateItem={updateStockItem} /> : null}
           {page === 'reports' ? <ReportsView pets={pets} queue={queue} stock={stock} shopStock={shopStock} services={services} receipts={receipts} appointments={appointments} vets={vets} assistants={assistants} commissionPct={commissionPct} onSaveCommissionPct={saveCommissionPct} onCancelReceipt={cancelReceipt} onUpdateReceipt={updateReceipt} onOpenPet={openPet} /> : null}
-          {page === 'history' ? <HistoryView pets={pets} onOpenPet={openPet} /> : null}
+          {page === 'history' ? <HistoryView pets={pets} receipts={receipts} queue={queue} onOpenPet={openPet} /> : null}
           {page === 'tax' ? <TaxView pets={pets} receipts={receipts} /> : null}
         </main>
       </div>
