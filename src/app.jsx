@@ -85,10 +85,72 @@ function healQueue(queue, receipts) {
   });
   return changed ? out : (queue || []);
 }
-// รวมทั้ง state: scalar/ตั้งค่า = ของเราชนะ · collection = 3-way merge · เลขใบเสร็จ = เอาค่ามากสุด · voids = union
+// ── ตัวช่วยเรื่องเลขใบเสร็จ ──
+function _voidSetOf(voids) { const s = {}; Object.keys(voids || {}).forEach((y) => { s[y] = new Set((voids[y] || []).map(Number)); }); return s; }
+function _parseNo(no) { const p = String(no).split('-'); return { year: parseInt(p[1], 10) || 0, seq: parseInt(p[2], 10) || 0 }; }
+function _rcptNatKey(r) { return `${r.hn}|${r.q || ''}|${r.date}|${r.type || 'opd'}`; }
+function _fmtNo(year, seq) { return `RCP-${year}-${String(seq).padStart(5, '0')}`; }
+// เดินเลขถัดไปที่ยังไม่ถูกใช้ (ข้ามเลขที่ used) แล้วอัปเดต seq
+function _nextFreeNo(year, seq, used) {
+  let n = Math.max(Number(seq[year] || 0), 0) + 1, no = _fmtNo(year, n);
+  while (used.has(no)) { n += 1; no = _fmtNo(year, n); }
+  seq[year] = n; used.add(no); return no;
+}
+
+// รวมใบเสร็จแบบกันหาย (hardened): ใบเสร็จหายได้เฉพาะ "ถูกยกเลิกจริง" (เลขอยู่ใน void pool) เท่านั้น
+// - เพิ่มใหม่คนละใบสองเครื่อง → เก็บครบทั้งคู่
+// - หายจากเครื่องหนึ่งแต่ไม่ได้อยู่ใน void → ถือว่าหลุด ไม่ใช่ตั้งใจลบ → เก็บไว้ (นี่คือจุดที่เคยทำใบตกหล่น)
+// - เลขซ้ำคนละเคส (สองเครื่องดึงเลขเดียวกันจาก pool) → เก็บทั้งคู่ ออกเลขใหม่ให้ใบหลัง
+// คืน { receipts, seq, log }
+function mergeReceipts(base, mine, theirs, voids, seqIn) {
+  const mi = _indexBy(mine, (r) => r.no), ti = _indexBy(theirs, (r) => r.no), bi = _indexBy(base, (r) => r.no);
+  const vset = _voidSetOf(voids);
+  const isVoided = (no) => { const { year, seq } = _parseNo(no); return !!(vset[year] && vset[year].has(seq)); };
+  const nos = []; const seen = {};
+  (mine || []).concat(theirs || []).forEach((r) => { if (r && r.no && !seen[r.no]) { seen[r.no] = 1; nos.push(r.no); } });
+  const kept = [], collisions = [], log = [];
+  nos.forEach((no) => {
+    const m = mi[no], t = ti[no], b = bi[no];
+    if (m && t) {
+      if (_rcptNatKey(m) === _rcptNatKey(t)) kept.push((b && JSON.stringify(m) === JSON.stringify(b)) ? t : m); // ใบเดียวกัน → 3-way
+      else { kept.push(m); collisions.push(t); }                                                                // เลขซ้ำคนละเคส
+    } else {                                    // มีข้างเดียว: ยกเลิกจริง(อยู่ใน void)→ตัด · ไม่งั้นเก็บ (กันหลุด)
+      if (isVoided(no)) log.push(`ยกเลิก ${no}`); else kept.push(m || t);
+    }
+  });
+  const seq = { ...(seqIn || {}) };
+  const used = new Set(kept.map((r) => r.no));
+  collisions.forEach((r) => { const { year } = _parseNo(r.no); const no = _nextFreeNo(year, seq, used); kept.push({ ...r, no }); log.push(`เลขซ้ำ ${r.no}(${r.petName || '-'})→${no}`); });
+  kept.forEach((r) => { const { year, seq: sq } = _parseNo(r.no); if (sq > (seq[year] || 0)) seq[year] = sq; }); // seq ต้องครอบเลขสูงสุดเสมอ
+  return { receipts: kept, seq, log };
+}
+// ซ่อมตอนโหลด: ใบเสร็จเลขซ้ำคนละเคส → ออกเลขใหม่ให้ใบหลัง · seq ครอบเลขสูงสุด · void pool ไม่ทับเลขที่ใช้อยู่
+function healReceipts(receipts, seqIn, voids) {
+  const seq = { ...(seqIn || {}) }; const used = new Set(); const out = []; let changed = false;
+  (receipts || []).forEach((r) => {
+    if (!r || !r.no) { out.push(r); return; }
+    if (!used.has(r.no)) { used.add(r.no); out.push(r); const { year, seq: sq } = _parseNo(r.no); if (sq > (seq[year] || 0)) seq[year] = sq; return; }
+    const { year } = _parseNo(r.no); const no = _nextFreeNo(year, seq, used); out.push({ ...r, no }); changed = true;
+  });
+  // void pool ต้องไม่มีเลขที่มีใบเสร็จใช้งานอยู่ (กันใบที่ยังใช้อยู่โดน merge ตัดเพราะ pool ค้าง)
+  const active = new Set(out.map((r) => r && r.no));
+  const voidsOut = {}; let vChanged = false;
+  Object.keys(voids || {}).forEach((y) => { const f = (voids[y] || []).filter((sq) => !active.has(_fmtNo(y, sq))); voidsOut[y] = f; if (f.length !== (voids[y] || []).length) vChanged = true; });
+  return { receipts: out, seq, voids: voidsOut, changed: changed || vChanged };
+}
+
+// รวมทั้ง state: scalar/ตั้งค่า = ของเราชนะ · collection = 3-way merge · เลขใบเสร็จ = กันหาย/กันซ้ำ · voids = union (ลบเลขที่ใช้อยู่)
 function mergeState(base, mine, theirs) {
   base = base || {}; const M = mine || {}, T = theirs || {};
-  const mergedReceipts = mergeArrayById(base.receipts, M.receipts, T.receipts, (r) => r.no);
+  const voidsMerged = _mergeVoids(M.receiptVoids, T.receiptVoids);
+  const seqMerged = _mergeSeq(M.receiptSeq, T.receiptSeq);
+  const mr = mergeReceipts(base.receipts, M.receipts, T.receipts, voidsMerged, seqMerged);
+  const mergedReceipts = mr.receipts;
+  if (mr.log.length && typeof console !== 'undefined') console.warn('[SB] merge ซ่อมใบเสร็จ: ' + mr.log.join(' · '));
+  // void pool: เอาเลขที่มีใบเสร็จใช้งานจริงออก (เลขเดียวกันจะเป็นได้อย่างเดียว: ใช้อยู่ หรือรอใช้ซ้ำ)
+  const activeNos = new Set(mergedReceipts.map((r) => r.no));
+  const voidsClean = {};
+  Object.keys(voidsMerged).forEach((y) => { voidsClean[y] = (voidsMerged[y] || []).filter((sq) => !activeNos.has(_fmtNo(y, sq))); });
   return {
     ...merge3obj(base, M, T),   // scalar/ตั้งค่า: เราไม่แก้ → เอาของเขา (กัน revert)
     pets: mergeArrayById(base.pets, M.pets, T.pets, (p) => p.hn, mergePet),
@@ -102,8 +164,8 @@ function mergeState(base, mine, theirs) {
     services: mergeArrayById(base.services, M.services, T.services, (s) => s.id),
     vets: _union(M.vets, T.vets),
     assistants: _union(M.assistants, T.assistants),
-    receiptSeq: _mergeSeq(M.receiptSeq, T.receiptSeq),
-    receiptVoids: _mergeVoids(M.receiptVoids, T.receiptVoids),
+    receiptSeq: mr.seq,
+    receiptVoids: voidsClean,
   };
 }
 if (typeof window !== 'undefined') window.__mergeState = mergeState;
@@ -358,10 +420,15 @@ function App() {
       }
       if (data?.data?.pets && data?.data?.queue) {
         console.log('[SB] loaded state from Supabase ✓');
-        // ซ่อมคิวที่ออกใบเสร็จแล้วแต่ยังไม่ปิด (ถ้ามี) ตั้งแต่ตอนเปิดแอป
+        // ซ่อมตอนเปิดแอป: (1) คิวที่ออกใบเสร็จแล้วแต่ยังไม่ปิด (2) ใบเสร็จเลขซ้ำ/void ทับเลขที่ใช้อยู่
         const healed = healQueue(data.data.queue, data.data.receipts);
-        const loaded = healed === data.data.queue ? data.data : { ...data.data, queue: healed };
-        if (loaded !== data.data) console.log('[SB] ซ่อมคิวที่ออกใบเสร็จแล้วแต่ยังไม่ปิด ✓');
+        const hr = healReceipts(data.data.receipts, data.data.receiptSeq, data.data.receiptVoids);
+        let loaded = data.data;
+        if (healed !== data.data.queue || hr.changed) {
+          loaded = { ...data.data, queue: healed, receipts: hr.receipts, receiptSeq: hr.seq, receiptVoids: hr.voids };
+          if (healed !== data.data.queue) console.log('[SB] ซ่อมคิวที่ออกใบเสร็จแล้วแต่ยังไม่ปิด ✓');
+          if (hr.changed) console.log('[SB] ซ่อมใบเสร็จเลขซ้ำ/void ✓');
+        }
         setState(loaded);
         try { localStorage.setItem(LS_KEY, JSON.stringify(loaded)); } catch (e) {}
         lastSyncedAt.current = data.updated_at || null;
