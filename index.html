@@ -7833,6 +7833,20 @@ function HistoryView({ pets, receipts = [], queue = [], onOpenPet }) {
     (receipts || []).forEach((r) => { if ((r.type || 'opd') === 'opd') s.add(`${r.hn}|${r.q || ''}|${r.date}`); });
     return s;
   }, [receipts]);
+  // วันที่ที่ถูกครอบด้วย "ใบเสร็จรวมตอนจำหน่าย" ของเคสแอดมิด — ดูจากชื่อรายการที่มี " (YYYY-MM-DD)" ต่อท้าย
+  // (ตอนจำหน่ายระบบรวมทุกวันเป็นใบเดียวลงวันกลับบ้าน visit รายวันจึงไม่มีใบเสร็จตรงวัน — ไม่ใช่ความผิดพลาด)
+  const admitCovered = useMemo(() => {
+    const s = new Set();
+    (receipts || []).forEach((r) => {
+      if ((r.type || 'opd') !== 'opd') return;
+      (r.items || []).forEach((it) => {
+        const nm = String(Array.isArray(it) ? it[0] : (it && it.name) || '');
+        const m = nm.match(/\((\d{4}-\d{2}-\d{2})\)\s*$/);
+        if (m) s.add(`${r.hn}|${m[1]}`);
+      });
+    });
+    return s;
+  }, [receipts]);
   // รายรับ "ตามใบเสร็จ" รายวัน (ตรงกับหน้าแดชบอร์ด/สรุปรายรับ)
   const receiptRevByDate = useMemo(() => {
     const m = {};
@@ -7867,7 +7881,9 @@ function HistoryView({ pets, receipts = [], queue = [], onOpenPet }) {
   const selVisits = visitsByDate[selDate] || [];
 
   // ── สถิติรายวัน (นับ "รายเคส" 1 เคส 1 ประเภท ให้ตรงกับหน้าสรุปรายรับ) ──
-  const hasReceipt = (pet, visit) => rcptKeys.has(`${pet.hn}|${visit.q || ''}|${visit.date}`);
+  // เคสมีใบเสร็จแล้ว = เจอ exact key หรือถูกครอบด้วยใบเสร็จจำหน่ายแอดมิด (วันนั้นอยู่ในบิลรวม)
+  const isAdmitDay = (pet, visit) => admitCovered.has(`${pet.hn}|${visit.date}`);
+  const hasReceipt = (pet, visit) => rcptKeys.has(`${pet.hn}|${visit.q || ''}|${visit.date}`) || isAdmitDay(pet, visit);
   const selStats = useMemo(() => {
     const cats = {};
     selVisits.forEach(({ visit }) => { const c = caseCategory(visit, queueByQ); cats[c] = (cats[c] || 0) + 1; });
@@ -8001,6 +8017,7 @@ function HistoryView({ pets, receipts = [], queue = [], onOpenPet }) {
                 const total = itemTotal(visit.items);
                 const cat = caseCategory(visit, queueByQ);
                 const catColors = CAT_COLORS;
+                const admitDay = isAdmitDay(pet, visit);
                 const missingReceipt = total > 0 && !hasReceipt(pet, visit);
                 return (
                   <button key={i} onClick={() => onOpenPet && onOpenPet(pet.hn)}
@@ -8013,7 +8030,8 @@ function HistoryView({ pets, receipts = [], queue = [], onOpenPet }) {
                         <span style={{ fontWeight: 700, fontSize: 14.5 }}>{pet.name}</span>
                         <span style={{ fontSize: 12.5, color: 'var(--ink-faint)' }}>HN {pet.hn} · {pet.species}</span>
                         <span style={{ fontSize: 11.5, fontWeight: 700, color: catColors[cat] || '#5E8A93', background: (catColors[cat] || '#5E8A93') + '18', borderRadius: 6, padding: '1px 7px' }}>{cat}</span>
-                        {missingReceipt ? <span style={{ fontSize: 11, fontWeight: 800, color: '#A05A00', background: 'var(--butter-soft)', border: '1px solid var(--butter)', borderRadius: 6, padding: '1px 7px' }}>⚠️ ยังไม่ออกใบเสร็จ</span> : null}
+                        {admitDay ? <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--powder-deep)', background: 'var(--powder-soft)', borderRadius: 6, padding: '1px 7px' }}>🏥 แอดมิด · รวมบิลวันจำหน่าย</span>
+                          : missingReceipt ? <span style={{ fontSize: 11, fontWeight: 800, color: '#A05A00', background: 'var(--butter-soft)', border: '1px solid var(--butter)', borderRadius: 6, padding: '1px 7px' }}>⚠️ ยังไม่ออกใบเสร็จ</span> : null}
                       </div>
                       <div style={{ fontSize: 13, color: 'var(--ink-soft)', marginTop: 3 }}>
                         {visit.cc && <span><b>CC:</b> {visit.cc}</span>}
