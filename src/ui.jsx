@@ -1,6 +1,34 @@
 // ── shared UI bits: icons, modal, toast, helpers ────────────
 var { useState, useEffect, useRef, useMemo } = React;
 
+// ── ธีมสว่าง/มืด: อ่านค่าเก่าตั้งแต่ตอนโหลดไฟล์ (ก่อน render) กันจอกระพริบ ──
+const THEME_KEY = 'wnvet_theme';
+function applyTheme(t) {
+  try { document.documentElement.setAttribute('data-theme', t === 'dark' ? 'dark' : 'light'); } catch (e) {}
+}
+try { applyTheme(localStorage.getItem(THEME_KEY) || 'light'); } catch (e) {}
+function ThemeToggle() {
+  const [theme, setTheme] = useState(() => {
+    try { return localStorage.getItem(THEME_KEY) || 'light'; } catch (e) { return 'light'; }
+  });
+  useEffect(() => { applyTheme(theme); try { localStorage.setItem(THEME_KEY, theme); } catch (e) {} }, [theme]);
+  const dark = theme === 'dark';
+  return (
+    <button className="theme-toggle no-print" onClick={() => setTheme(dark ? 'light' : 'dark')}
+      title={dark ? 'โหมดสว่าง' : 'โหมดมืด'} aria-label={dark ? 'สลับเป็นโหมดสว่าง' : 'สลับเป็นโหมดมืด'}>
+      {dark ? (
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <circle cx="12" cy="12" r="4.2" /><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" />
+        </svg>
+      ) : (
+        <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z" />
+        </svg>
+      )}
+    </button>
+  );
+}
+
 const IconPaths = {
   search: <><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></>,
   plus: <path d="M12 5v14M5 12h14"/>,
@@ -296,4 +324,4 @@ function FestivalFloat({ override }) {
   );
 }
 
-Object.assign(window, { Icon, Modal, useToasts, Field, SPECIES_EMOJI, TYPE_CHIP, fmtB, todayTH, dateTH, timeNow, calcAge, todayISO, imageToDataURL, CountUp, celebrate, playDing, ConfettiLayer, getFestival, FestivalFloat, InstallPrompt, isStandalone });
+Object.assign(window, { Icon, Modal, useToasts, Field, SPECIES_EMOJI, TYPE_CHIP, fmtB, todayTH, dateTH, timeNow, calcAge, todayISO, imageToDataURL, CountUp, celebrate, playDing, ConfettiLayer, getFestival, FestivalFloat, ThemeToggle, InstallPrompt, isStandalone });

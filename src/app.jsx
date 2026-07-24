@@ -1023,6 +1023,17 @@ function App() {
               </button>
             );
           })()}
+          {(() => {
+            // ทักทายตามเทศกาล (อัตโนมัติตามวันที่) — โผล่เฉพาะช่วงเทศกาล นอกนั้นซ่อน
+            const fes = getFestival();
+            if (!fes) return null;
+            return (
+              <span className="chip nav-label" title={`ช่วง${fes.label}`}
+                style={{ marginRight: 10, fontWeight: 700, background: 'var(--butter-soft)', color: fes.accent, border: '1px solid var(--butter)' }}>
+                {fes.emojis[0]} {fes.label}
+              </span>
+            );
+          })()}
           <span className="chip chip-mint nav-label">
             <span style={{ width: 7, height: 7, borderRadius: 99, background: 'var(--mint-deep)', display: 'inline-block' }}></span>
             พร้อมใช้งาน
@@ -1080,6 +1091,7 @@ function App() {
       <InstallPrompt />
       <ConfettiLayer />
       <FestivalFloat />
+      <ThemeToggle />
     </div>);
 
 }

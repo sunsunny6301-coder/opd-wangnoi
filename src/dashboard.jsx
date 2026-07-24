@@ -771,18 +771,32 @@ function Dashboard({ pets, queue, appointments, admitted, receipts = [], loading
   sort((a, b) => (a.time || '').localeCompare(b.time || ''));
 
   // เป้าวันนี้ = ค่าเฉลี่ยรายรับต่อวันที่ผ่านมา (เฉพาะวันที่เปิดทำการ) — ถึง/เกินเป้าแล้วการ์ดเรืองทอง + ฉลอง
-  const goalAvg = useMemo(() => {
+  // prevBest = ยอดวันที่ดีที่สุดที่ผ่านมา (ไม่รวมวันนี้) — วันนี้ทะลุ = สถิติใหม่ 🏆
+  const { goalAvg, prevBest } = useMemo(() => {
     const byDay = {};
     (receipts || []).forEach((r) => { if ((r.type || 'opd') === 'opd' && r.date && r.date < todayStr) byDay[r.date] = (byDay[r.date] || 0) + (Number(r.total) || 0); });
-    const days = Object.keys(byDay).sort().slice(-30).map((d) => byDay[d]);
-    return days.length ? Math.round(days.reduce((a, b) => a + b, 0) / days.length) : 0;
+    const vals = Object.values(byDay);
+    const last30 = Object.keys(byDay).sort().slice(-30).map((d) => byDay[d]);
+    return {
+      goalAvg: last30.length ? Math.round(last30.reduce((a, b) => a + b, 0) / last30.length) : 0,
+      prevBest: vals.length ? Math.max(...vals) : 0,
+    };
   }, [receipts, todayStr]);
   const goalHit = goalAvg > 0 && revenue >= goalAvg;
+  const isRecord = prevBest > 0 && revenue > prevBest;   // ทำลายสถิติเดิม
   const goalFired = useRef(false);
+  const recordFired = useRef(false);
   useEffect(() => {
-    if (goalHit && revenue > 0 && !goalFired.current) { goalFired.current = true; celebrate({ big: true }); }
+    // สถิติใหม่ = ฉลองใหญ่กว่า (ยิง 2 ระลอก) · ถึงเป้าเฉยๆ = ฉลองปกติ · ยิงครั้งเดียวจนกว่าจะหลุดแล้วกลับมา
+    if (isRecord && !recordFired.current) {
+      recordFired.current = true; goalFired.current = true;
+      celebrate({ big: true }); setTimeout(() => celebrate({ big: true }), 550);
+    } else if (goalHit && revenue > 0 && !goalFired.current) {
+      goalFired.current = true; celebrate({ big: true });
+    }
     if (!goalHit) goalFired.current = false;
-  }, [goalHit, revenue]);
+    if (!isRecord) recordFired.current = false;
+  }, [goalHit, isRecord, revenue]);
 
   const activeCount = byStatus('wait').length + byStatus('exam').length + byStatus('cashier').length;
   const nowHM = (typeof timeNow !== 'undefined' ? timeNow() : new Date().toTimeString().slice(0, 5));
@@ -792,8 +806,8 @@ function Dashboard({ pets, queue, appointments, admitted, receipts = [], loading
   { num: byStatus('exam').length, l: 'กำลังตรวจ', cls: 'tint-powder' },
   { num: byStatus('cashier').length, l: 'รอชำระเงิน', cls: 'tint-blush' },
   { num: byStatus('done').length, l: 'เสร็จแล้ววันนี้', cls: 'tint-mint' },
-  { num: revenue, fmt: fmtB, l: 'รายรับวันนี้ (OPD)', cls: 'tint-navy', goal: goalHit,
-    sub: goalAvg > 0 ? (goalHit ? '🎉 เกินค่าเฉลี่ย!' : `เป้า ~${fmtB(goalAvg)}`) : null }];
+  { num: revenue, fmt: fmtB, l: 'รายรับวันนี้ (OPD)', cls: 'tint-navy', goal: goalHit, record: isRecord,
+    sub: isRecord ? `🏆 สถิติใหม่! (เดิม ${fmtB(prevBest)})` : goalAvg > 0 ? (goalHit ? '🎉 เกินค่าเฉลี่ย!' : `เป้า ~${fmtB(goalAvg)}`) : null }];
 
 
   if (loading) {
@@ -910,8 +924,8 @@ function Dashboard({ pets, queue, appointments, admitted, receipts = [], loading
         <div>
           <div className="stats-row" style={{ marginBottom: 14 }}>
             {stats.map((s, i) =>
-            <div key={i} className={'stat-tile anim-pop ' + s.cls + (s.goal ? ' goal-hit' : '')} style={{ '--i': i }}>
-                {s.goal ? <span className="goal-badge" title="วันนี้ทำได้เกินค่าเฉลี่ย 🎉">🎉</span> : null}
+            <div key={i} className={'stat-tile anim-pop ' + s.cls + (s.goal ? ' goal-hit' : '') + (s.record ? ' record-hit' : '')} style={{ '--i': i }}>
+                {s.record ? <span className="goal-badge" title="วันนี้ทำลายสถิติรายรับสูงสุด! 🏆">🏆</span> : s.goal ? <span className="goal-badge" title="วันนี้ทำได้เกินค่าเฉลี่ย 🎉">🎉</span> : null}
                 <div className="v"><CountUp value={s.num} format={s.fmt ? (n) => s.fmt(Math.round(n)) : undefined} /></div>
                 <div className="l">{s.l}</div>
                 {s.sub ? <div style={{ fontSize: 11.5, marginTop: 2, opacity: .8, fontWeight: 600 }}>{s.sub}</div> : null}

@@ -35,6 +35,54 @@
   --font: 'Anuphan', sans-serif;
 }
 
+/* ── Dark mode ── ตั้งค่าที่ปุ่มมุมล่างขวา เก็บค่าไว้ในเครื่อง (ไม่ซิงก์คลาวด์)
+   ปรับแค่ token กลาง → ทั้งแอปที่ใช้ var(--...) สลับตาม · ใบเสร็จ/เอกสารพิมพ์ยังเป็นกระดาษขาวเสมอ (ตั้งใจ) */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --paper: #12161B;
+  --surface: #1B222B;
+  --ink: #E7ECF1;
+  --ink-soft: #A7B2BE;
+  --ink-faint: #6F7B87;
+
+  --navy: #6E97CF;
+  --navy-deep: #5C84BB;
+  --navy-soft: #263241;
+
+  --powder: #33444A;
+  --powder-soft: #202B31;
+  --powder-deep: #86B7C0;
+
+  --blush: #4A3330;
+  --blush-soft: #2C2320;
+  --blush-deep: #E28C7F;
+
+  --mint: #2A3D33;
+  --mint-soft: #1E2A24;
+  --mint-deep: #74C199;
+
+  --butter: #40361F;
+  --butter-soft: #2A2417;
+  --butter-deep: #D8AE58;
+
+  --line: #2E3742;
+  --line-soft: #232B34;
+  --shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 4px 16px rgba(0, 0, 0, .35);
+  --shadow-lift: 0 4px 10px rgba(0, 0, 0, .4), 0 12px 32px rgba(0, 0, 0, .5);
+}
+/* ปุ่มสลับธีม — ลอยมุมล่างขวา หลบๆ จางไว้ เด่นขึ้นตอนชี้ */
+.theme-toggle {
+  position: fixed; right: 16px; bottom: 16px; z-index: 70;
+  width: 42px; height: 42px; border-radius: 50%;
+  display: inline-flex; align-items: center; justify-content: center;
+  border: 1px solid var(--line); background: var(--surface); color: var(--ink-soft);
+  cursor: pointer; opacity: .38; box-shadow: var(--shadow);
+  transition: opacity .2s, transform .2s, box-shadow .2s;
+}
+.theme-toggle:hover { opacity: 1; transform: translateY(-2px); box-shadow: var(--shadow-lift); }
+.theme-toggle:active { transform: scale(.94); }
+@media print { .theme-toggle { display: none !important; } }
+
 * { box-sizing: border-box; }
 html, body { margin: 0; padding: 0; }
 body {
@@ -319,6 +367,10 @@ button, input, select, textarea { font-family: inherit; font-size: inherit; colo
 .stat-tile.goal-hit { position: relative; overflow: hidden; border-color: #E7C860; }
 .stat-tile.goal-hit::after { content: ""; position: absolute; inset: 0; background: linear-gradient(105deg, transparent 35%, rgba(255,225,140,.45) 50%, transparent 65%); background-size: 220% 100%; animation: goalShimmer 3.2s ease-in-out infinite; pointer-events: none; }
 .goal-badge { position: absolute; top: 8px; right: 10px; font-size: 15px; animation: catBreath 1.6s ease-in-out infinite; }
+/* สถิติใหม่: ขอบทองเรืองเข้มกว่าถึงเป้าปกติ + เต้นเบาๆ ดึงสายตา */
+.stat-tile.record-hit { border-color: #F0C63A !important; box-shadow: 0 0 0 1px #F0C63A, 0 6px 20px rgba(240,198,58,.32); animation: recordPulse 2s ease-in-out infinite; }
+.stat-tile.record-hit::after { content: ""; position: absolute; inset: 0; background: linear-gradient(105deg, transparent 30%, rgba(255,215,90,.6) 50%, transparent 70%); background-size: 220% 100%; animation: goalShimmer 2.4s ease-in-out infinite; pointer-events: none; }
+@keyframes recordPulse { 0%,100% { box-shadow: 0 0 0 1px #F0C63A, 0 6px 20px rgba(240,198,58,.30); } 50% { box-shadow: 0 0 0 2px #F0C63A, 0 8px 26px rgba(240,198,58,.55); } }
 
 /* เทศกาล: อีโมจิลอยขึ้นช้าๆ */
 @keyframes festDrift { 0% { transform: translateY(102vh) rotate(0); opacity: 0; } 8% { opacity: .55; } 92% { opacity: .55; } 100% { transform: translateY(-12vh) rotate(30deg); opacity: 0; } }
