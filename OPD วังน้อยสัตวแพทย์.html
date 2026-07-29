@@ -9463,17 +9463,32 @@ function App() {
     return { receiptSeq: s.receiptSeq || {}, receiptVoids: s.receiptVoids || {} };
   };
   // ยกเลิกใบเสร็จ: ลบออกจากรายการ (จึงไม่ถูกนับใน PDF/Excel) + คืนเลขเข้า pool เพื่อใช้ซ้ำ
+  // ยอดบนการ์ดคิว (paid) ต้องตามใบเสร็จเสมอ — เรียกหลังแก้/ยกเลิกใบเสร็จ หรือแก้ประวัติ
+  // ไม่งั้นการ์ดหน้าคิวค้างยอดเก่า → ยอดรวม "เสร็จแล้ว" ไม่ตรงกับใบเสร็จ
+  // (คิวเดียวอาจมีหลายใบ เช่นแยกบิล → รวมทุกใบของคิวนั้น)
+  const syncQueuePaid = (queue, receipts, hn, q) => {
+    if (!q) return queue || [];
+    const total = (receipts || [])
+      .filter((r) => (r.type || 'opd') === 'opd' && String(r.q || '') === String(q) && (!hn || r.hn === hn))
+      .reduce((sum, r) => sum + (Number(r.total) || 0), 0);
+    return (queue || []).map((x) => (String(x.q || '') === String(q) && x.status === 'done' && (Number(x.paid) || 0) !== total)
+      ? { ...x, paid: total } : x);
+  };
   const cancelReceipt = (no) => {
     const rcp = (receipts || []).find((r) => r.no === no);
     if (!rcp) return;
     const parts = String(no).split('-');
     const year = parseInt(parts[1], 10) || new Date().getFullYear();
     const seq = parseInt(parts[2], 10) || 0;
-    setState((s) => ({
-      ...s,
-      receipts: (s.receipts || []).filter((r) => r.no !== no),
-      receiptVoids: { ...(s.receiptVoids || {}), [year]: [...new Set([...(((s.receiptVoids || {})[year]) || []), seq])] },
-    }));
+    setState((s) => {
+      const receipts = (s.receipts || []).filter((r) => r.no !== no);
+      // การ์ดคิวต้องลดยอดตามใบที่ยกเลิก (ไม่งั้นหน้าคิวยังโชว์ว่าเก็บเงินแล้ว ทั้งที่ใบถูกยกเลิก)
+      const queue = rcp.q ? syncQueuePaid(s.queue, receipts, rcp.hn, rcp.q) : (s.queue || []);
+      return {
+        ...s, receipts, queue,
+        receiptVoids: { ...(s.receiptVoids || {}), [year]: [...new Set([...(((s.receiptVoids || {})[year]) || []), seq])] },
+      };
+    });
     pushToast(`ยกเลิกใบเสร็จ ${no} แล้ว — เลขนี้จะถูกนำกลับมาใช้ครั้งถัดไป`);
   };
   // แก้ไขใบเสร็จถาวร (ชื่อ/รายการ/ยอด ฯลฯ) — สะท้อนใน export PDF/Excel และยอดทันที
@@ -9507,7 +9522,9 @@ function App() {
           return { ...r, items: rItems, total, noVat, date: sync.newDate };
         });
       }
-      return { ...s, pets, receipts, stock, shopStock };
+      // การ์ดคิวต้องตามใบเสร็จที่เพิ่งซิงก์ (ไม่งั้นยอดบนหน้าคิวค้างค่าเก่า)
+      const queue = (sync && sync.q) ? syncQueuePaid(s.queue, receipts, sync.hn, sync.q) : (s.queue || []);
+      return { ...s, pets, receipts, queue, stock, shopStock };
     });
     pushToast('บันทึกประวัติแล้ว' + (deducted > 0 ? ` · ปรับสต็อก ${deducted} รายการ` : ''));
   };
@@ -9564,7 +9581,9 @@ function App() {
           });
         }
       }
-      return { ...s, receipts, pets, stock, shopStock };
+      // การ์ดคิวต้องตามยอดใบเสร็จที่แก้ (ไม่งั้นหน้าคิวโชว์ยอดเก่า — ยอดรวมการ์ดไม่ตรงใบเสร็จ)
+      const queue = (orig && orig.q) ? syncQueuePaid(s.queue, receipts, orig.hn, orig.q) : (s.queue || []);
+      return { ...s, receipts, pets, queue, stock, shopStock };
     });
     pushToast(`บันทึกการแก้ไขใบเสร็จ ${no} แล้ว` + (deducted > 0 ? ` · ปรับสต็อก ${deducted} รายการ` : ''));
   };
