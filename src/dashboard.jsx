@@ -80,6 +80,13 @@ function GlobalSearch({ pets, onOpenPet, onWalkIn, onDirectWalkIn }) {
                         {t}
                       </button>
                     ))}
+                    {/* สัตว์ตัวใหม่ของบ้านเดียวกัน — เปิด walk-in โหมดเจ้าของเดิม กรอกประวัติตัวใหม่แล้วส่งคิวได้เลย */}
+                    <span style={{ width: '100%', height: 0 }} />
+                    <button className="btn btn-sm" style={{ fontSize: 12.5, padding: '5px 12px', background: 'var(--navy-soft)', borderColor: 'var(--navy)', color: 'var(--navy)', fontWeight: 700 }}
+                      onClick={(e) => { e.stopPropagation(); setOpen(false); setQ(''); setSvcFor(null); onWalkIn({ newPetForOwner: p.owner }); }}>
+                      🐾 + เพิ่มสัตว์ตัวใหม่ของบ้านนี้
+                    </button>
+                    <span style={{ fontSize: 11.5, color: 'var(--ink-faint)' }}>เจ้าของ: {p.owner.name}</span>
                   </div>
                 ) : null}
               </div>
@@ -90,14 +97,15 @@ function GlobalSearch({ pets, onOpenPet, onWalkIn, onDirectWalkIn }) {
   );
 }
 
-function WalkInModal({ pets, onClose, onSubmit, prefillHn }) {
+// prefillOwner = เปิดเข้าโหมด "เพิ่มสัตว์ใหม่ให้เจ้าของเดิม" ทันที (กดมาจากผลค้นหาหน้าคิว)
+function WalkInModal({ pets, onClose, onSubmit, prefillHn, prefillOwner }) {
   const prefillPet = prefillHn ? pets.find((p) => p.hn === prefillHn) : null;
-  const [mode, setMode] = useState(prefillHn ? 'old' : 'new');
+  const [mode, setMode] = useState((prefillHn || prefillOwner) ? 'old' : 'new');
   const [oldQuery, setOldQuery] = useState('');
   const [pick, setPick] = useState(prefillPet || null);
   // addNewPet = เพิ่มสัตว์ใหม่ให้เจ้าของเดิม (ใช้เมื่อเจอเจ้าของแล้วแต่ไม่ใช่สัตว์เดิม)
-  const [addNewPet, setAddNewPet] = useState(false);
-  const [pickedOwner, setPickedOwner] = useState(null); // เจ้าของที่เลือกไว้ (ยังไม่มีสัตว์ตัวใหม่)
+  const [addNewPet, setAddNewPet] = useState(!!prefillOwner);
+  const [pickedOwner, setPickedOwner] = useState(prefillOwner || null); // เจ้าของที่เลือกไว้ (ยังไม่มีสัตว์ตัวใหม่)
   const [f, setF] = useState({ owner: '', phone: '', pet: '', species: 'สุนัข', sex: 'ผู้', ageY: '', ageM: '', weight: '', type: 'ตรวจรักษา', cc: '' });
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
 
@@ -736,6 +744,7 @@ function FgCats() {
 function Dashboard({ pets, queue, appointments, admitted, receipts = [], loading = false, onOpenCase, onOpenPet, onMove, onPay, onWalkIn, onUpdateAppointment, onDischargeAdmitted, onUpdateAdmitted, onOpenAdmittedCase, onCancelQueue, onCancelAdmit, notePresets, onSavePresets, pushToast }) {
   const [showWalkIn, setShowWalkIn] = useState(false);
   const [walkInPrefillHn, setWalkInPrefillHn] = useState(null);
+  const [walkInOwner, setWalkInOwner] = useState(null);   // เจ้าของที่กด "เพิ่มสัตว์ตัวใหม่ของบ้านนี้" จากผลค้นหา
   // วันที่ของแผงนัด (เลื่อนดูวันก่อน/ถัดไปได้ด้วยลูกศร) — เริ่มที่วันนี้
   const [apptDay, setApptDay] = useState(todayISO);
   const [editAppt, setEditAppt] = useState(null);   // นัดที่กำลังแก้ไข (ApptFormModal)
@@ -746,10 +755,13 @@ function Dashboard({ pets, queue, appointments, admitted, receipts = [], loading
     setApptDay(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`);
   };
   const openWalkIn = (opts) => {
-    if (opts && opts.prefill && opts.existingHn) {
-      setWalkInPrefillHn(opts.existingHn);
+    if (opts && opts.newPetForOwner) {
+      // มาจากผลค้นหา: เปิด walk-in เข้าโหมด "สัตว์ตัวใหม่ + เจ้าของเดิม" เลย ไม่ต้องค้นซ้ำ
+      setWalkInPrefillHn(null); setWalkInOwner(opts.newPetForOwner);
+    } else if (opts && opts.prefill && opts.existingHn) {
+      setWalkInPrefillHn(opts.existingHn); setWalkInOwner(null);
     } else {
-      setWalkInPrefillHn(null);
+      setWalkInPrefillHn(null); setWalkInOwner(null);
     }
     setShowWalkIn(true);
   };
@@ -1008,8 +1020,9 @@ function Dashboard({ pets, queue, appointments, admitted, receipts = [], loading
       {showWalkIn ?
       <WalkInModal pets={pets}
         prefillHn={walkInPrefillHn}
-        onClose={() => { setShowWalkIn(false); setWalkInPrefillHn(null); }}
-        onSubmit={(payload) => { setShowWalkIn(false); setWalkInPrefillHn(null); onWalkIn(payload); }} /> :
+        prefillOwner={walkInOwner}
+        onClose={() => { setShowWalkIn(false); setWalkInPrefillHn(null); setWalkInOwner(null); }}
+        onSubmit={(payload) => { setShowWalkIn(false); setWalkInPrefillHn(null); setWalkInOwner(null); onWalkIn(payload); }} /> :
       null}
 
       {editAppt && typeof ApptFormModal !== 'undefined' ? (
