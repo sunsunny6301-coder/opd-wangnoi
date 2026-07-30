@@ -139,6 +139,37 @@ function healReceipts(receipts, seqIn, voids) {
   return { receipts: out, seq, voids: voidsOut, changed: changed || vChanged };
 }
 
+// ── ปิดนัดที่เลยวันแล้วอัตโนมัติ ──
+// นโยบายคลินิก: เลยวันนัดแล้วถือว่าจบ ไม่ตามต่อ → ไม่ปล่อยให้ค้างรกหน้าจอ
+//   มาจริง (มีประวัติรักษาวันนั้น หรือภายใน 7 วันถัดมา / เคยกด "มาแล้ว") → 'done'
+//   ไม่มา → 'missed' (เก็บเป็นสถิติ ไม่ต้องตาม)
+function healAppointments(appointments, pets, todayStr) {
+  if (!(appointments || []).length) return appointments || [];
+  const visitsByHn = {};
+  (pets || []).forEach((p) => { visitsByHn[p.hn] = new Set((p.visits || []).map((v) => v.date)); });
+  const cameWithin = (hn, date, days) => {
+    const ds = visitsByHn[hn]; if (!ds) return false;
+    const [y, m, d] = String(date).split('-').map(Number);
+    if (!y || !m || !d) return false;
+    for (let i = 0; i <= days; i++) {
+      // บวกวันแบบ local (อย่าใช้ toISOString — UTC+7 ทำวันเพี้ยน)
+      const dt = new Date(y, m - 1, d + i);
+      if (ds.has(`${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`)) return true;
+    }
+    return false;
+  };
+  let changed = false;
+  const out = (appointments || []).map((a) => {
+    if (!a || !a.date || a.date >= todayStr) return a;
+    if (a.status === 'cancelled' || a.status === 'done' || a.status === 'missed') return a;
+    changed = true;
+    const came = a.status === 'arrived' || cameWithin(a.hn, a.date, 7);
+    return { ...a, status: came ? 'done' : 'missed', closedAuto: true };
+  });
+  return changed ? out : appointments;
+}
+if (typeof window !== 'undefined') window.__healAppointments = healAppointments;
+
 // รวมทั้ง state: scalar/ตั้งค่า = ของเราชนะ · collection = 3-way merge · เลขใบเสร็จ = กันหาย/กันซ้ำ · voids = union (ลบเลขที่ใช้อยู่)
 function mergeState(base, mine, theirs) {
   base = base || {}; const M = mine || {}, T = theirs || {};
@@ -151,13 +182,14 @@ function mergeState(base, mine, theirs) {
   const activeNos = new Set(mergedReceipts.map((r) => r.no));
   const voidsClean = {};
   Object.keys(voidsMerged).forEach((y) => { voidsClean[y] = (voidsMerged[y] || []).filter((sq) => !activeNos.has(_fmtNo(y, sq))); });
+  const mergedPets = mergeArrayById(base.pets, M.pets, T.pets, (p) => p.hn, mergePet);
   return {
     ...merge3obj(base, M, T),   // scalar/ตั้งค่า: เราไม่แก้ → เอาของเขา (กัน revert)
-    pets: mergeArrayById(base.pets, M.pets, T.pets, (p) => p.hn, mergePet),
+    pets: mergedPets,
     // heal: คิวที่มีใบเสร็จแล้วต้องปิดเสมอ (กันสถานะถูก revert แล้วพนักงานกดจบซ้ำ)
     queue: healQueue(mergeArrayById(base.queue, M.queue, T.queue, (q) => q.q), mergedReceipts),
     receipts: mergedReceipts,
-    appointments: mergeArrayById(base.appointments, M.appointments, T.appointments, (a) => a.id),
+    appointments: healAppointments(mergeArrayById(base.appointments, M.appointments, T.appointments, (a) => a.id), mergedPets, todayISO()),
     admitted: mergeArrayById(base.admitted, M.admitted, T.admitted, (a) => a.id, mergeAdmitted),
     stock: mergeArrayById(base.stock, M.stock, T.stock, (s) => s.id),
     shopStock: mergeArrayById(base.shopStock, M.shopStock, T.shopStock, (s) => s.id),
@@ -423,11 +455,13 @@ function App() {
         // ซ่อมตอนเปิดแอป: (1) คิวที่ออกใบเสร็จแล้วแต่ยังไม่ปิด (2) ใบเสร็จเลขซ้ำ/void ทับเลขที่ใช้อยู่
         const healed = healQueue(data.data.queue, data.data.receipts);
         const hr = healReceipts(data.data.receipts, data.data.receiptSeq, data.data.receiptVoids);
+        const ha = healAppointments(data.data.appointments, data.data.pets, todayISO());
         let loaded = data.data;
-        if (healed !== data.data.queue || hr.changed) {
-          loaded = { ...data.data, queue: healed, receipts: hr.receipts, receiptSeq: hr.seq, receiptVoids: hr.voids };
+        if (healed !== data.data.queue || hr.changed || ha !== data.data.appointments) {
+          loaded = { ...data.data, queue: healed, receipts: hr.receipts, receiptSeq: hr.seq, receiptVoids: hr.voids, appointments: ha };
           if (healed !== data.data.queue) console.log('[SB] ซ่อมคิวที่ออกใบเสร็จแล้วแต่ยังไม่ปิด ✓');
           if (hr.changed) console.log('[SB] ซ่อมใบเสร็จเลขซ้ำ/void ✓');
+          if (ha !== data.data.appointments) console.log('[SB] ปิดนัดที่เลยวันแล้วอัตโนมัติ ✓');
         }
         setState(loaded);
         try { localStorage.setItem(LS_KEY, JSON.stringify(loaded)); } catch (e) {}

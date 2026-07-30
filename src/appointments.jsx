@@ -529,8 +529,10 @@ function ApptSmsStatus({ a, past, style, onToggle }) {
 
 // ── Appointment Card ─────────────────────────────────────────
 function ApptCard({ appt, onUpdate, onEdit, onOpenPet, onSendSms, onDelete }) {
-  const statusCls = { scheduled: 'chip-butter', arrived: 'chip-mint', cancelled: '' };
-  const statusLabel = { scheduled: 'นัด', arrived: 'มาแล้ว', cancelled: 'ยกเลิก' };
+  const statusCls = { scheduled: 'chip-butter', arrived: 'chip-mint', done: 'chip-mint', missed: '', cancelled: '' };
+  const statusLabel = { scheduled: 'นัด', arrived: 'มาแล้ว', done: '✓ มาแล้ว', missed: '— ไม่มาตามนัด', cancelled: 'ยกเลิก' };
+  // นัดที่ปิดแล้ว (เลยวันนัด) = จบ ไม่ตามต่อ → ซ่อนปุ่มที่ใช้ตามลูกค้า
+  const closed = appt.status === 'done' || appt.status === 'missed' || appt.status === 'cancelled';
   return (
     <div className="appt-card" style={{ borderLeft: `4px solid ${APPT_COLORS[appt.type] || 'var(--line)'}` }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10 }}>
@@ -549,10 +551,11 @@ function ApptCard({ appt, onUpdate, onEdit, onOpenPet, onSendSms, onDelete }) {
       <div style={{ display: 'flex', gap: 6, marginTop: 8, flexWrap: 'wrap', alignItems: 'center' }}>
         <span className={`chip ${APPT_CHIP[appt.type] || ''}`}>{appt.type}</span>
         {appt.note ? <span style={{ fontSize: 13, color: 'var(--ink-soft)' }}>{appt.note}</span> : null}
-        {appt.status !== 'cancelled' ? <ApptSmsStatus a={appt} onToggle={() => onUpdate({ ...appt, smsAuto: appt.smsAuto === false })} /> : null}
+        {!closed ? <ApptSmsStatus a={appt} onToggle={() => onUpdate({ ...appt, smsAuto: appt.smsAuto === false })} /> : null}
+        {appt.closedAuto ? <span className="chip" style={{ fontSize: 10.5, color: 'var(--ink-faint)' }}>ปิดอัตโนมัติ (เลยวันนัด)</span> : null}
       </div>
       <div style={{ display: 'flex', gap: 7, marginTop: 10, flexWrap: 'wrap' }}>
-        {appt.status !== 'cancelled' && appt.status === 'scheduled' ? (
+        {!closed && appt.status === 'scheduled' ? (
           <button className="btn btn-primary btn-sm" onClick={() => onUpdate({ ...appt, status: 'arrived' })}>
             <Icon name="check" size={14} /> มาแล้ว
           </button>
@@ -563,8 +566,8 @@ function ApptCard({ appt, onUpdate, onEdit, onOpenPet, onSendSms, onDelete }) {
             <Icon name="doc" size={14} /> ดูประวัติ (OPD)
           </button>
         ) : null}
-        {/* ส่ง SMS เตือน (เฉพาะที่มีเบอร์ + ยังไม่ยกเลิก) */}
-        {appt.status !== 'cancelled' && onSendSms ? (
+        {/* ส่ง SMS เตือน — เฉพาะนัดที่ยังไม่ถึง/ยังเปิดอยู่ (เลยวันนัดแล้วไม่ตาม) */}
+        {!closed && onSendSms ? (
           appt.reminderSent ? (
             <button className="btn btn-sm" style={{ color: 'var(--mint-deep)', borderColor: 'var(--mint-deep)', background: 'var(--mint-soft)', fontWeight: 700 }} onClick={() => onSendSms(appt)}>
               ✓ ส่ง SMS แล้ว · ส่งอีกครั้ง
@@ -575,8 +578,8 @@ function ApptCard({ appt, onUpdate, onEdit, onOpenPet, onSendSms, onDelete }) {
             </button>
           )
         ) : null}
-        {appt.status !== 'cancelled' ? <button className="btn btn-sm" onClick={onEdit}><Icon name="edit" size={14} /> แก้ไข</button> : null}
-        {appt.status !== 'cancelled' ? <button className="btn btn-sm" style={{ color: 'var(--blush-deep)' }} onClick={() => onUpdate({ ...appt, status: 'cancelled' })}>ยกเลิกนัด</button> : null}
+        {!closed ? <button className="btn btn-sm" onClick={onEdit}><Icon name="edit" size={14} /> แก้ไข</button> : null}
+        {!closed ? <button className="btn btn-sm" style={{ color: 'var(--blush-deep)' }} onClick={() => onUpdate({ ...appt, status: 'cancelled' })}>ยกเลิกนัด</button> : null}
         {/* ลบถาวร (เผื่อทำนัดผิด) — ลบตาม id หายทั้งนัดหมาย+OPD */}
         {onDelete ? <button className="btn btn-sm" style={{ color: 'var(--blush-deep)', borderColor: 'var(--blush-deep)' }} onClick={() => { if (window.confirm(`ลบนัด ${appt.petName} (${appt.date})?\nนัดนี้จะหายถาวรทั้งในนัดหมายและ OPD`)) onDelete(appt.id); }}>🗑 ลบ</button> : null}
       </div>
@@ -707,15 +710,131 @@ function NotePresetField({ type, note, onChange, notePresets, onSavePresets, row
   );
 }
 
+// ── ตามวัคซีน (recall) ───────────────────────────────────────
+// นับเฉพาะตัวที่ "ยังไม่ได้นัด" — ตัวที่นัดไว้แล้วแต่ไม่มา (เลยวันนัด) ปล่อยไป ไม่ตาม (นโยบายคลินิก)
+const VAX_RE = /วัคซีน|vaccine|nobivac|rabisin|defensor|felocell|purevax|canigen|leucogen/i;
+function vaxRecallList(pets, appointments, todayStr) {
+  const dayDiff = (a, b) => Math.round((new Date(a + 'T00:00:00') - new Date(b + 'T00:00:00')) / 86400000);
+  const apptByHn = {};
+  (appointments || []).forEach((a) => {
+    if (!a || !a.hn || a.status === 'cancelled') return;
+    (apptByHn[a.hn] = apptByHn[a.hn] || []).push(a);
+  });
+  const out = [];
+  (pets || []).forEach((p) => {
+    const vaxDates = (p.visits || [])
+      .filter((v) => (v.items || []).some((it) => VAX_RE.test(String(Array.isArray(it) ? it[0] : (it && it.name) || ''))))
+      .map((v) => v.date).filter(Boolean).sort();
+    if (!vaxDates.length) return;
+    const last = vaxDates[vaxDates.length - 1];
+    const shots = vaxDates.length;
+    const days = dayDiff(todayStr, last);
+    const appts = apptByHn[p.hn] || [];
+    // นัดล่วงหน้าอยู่แล้ว → ไม่ต้องตาม
+    if (appts.some((a) => a.date >= todayStr)) return;
+    // เคยนัดไว้หลังฉีดเข็มล่าสุดแล้วเลยวันนัด (ไม่มา) → ปล่อยไป ไม่ตาม
+    if (appts.some((a) => a.date < todayStr && a.date >= last)) return;
+    let cat = null;
+    if (days >= 365) cat = 'annual';                             // ครบรอบปี
+    else if (days >= 335) cat = 'soon';                          // ใกล้ครบรอบปี (เตือนล่วงหน้า ~1 เดือน)
+    else if (shots < 3 && days >= 28 && days <= 120) cat = 'series';  // ชุดลูกสัตว์ยังไม่ครบ (เลย 4 สัปดาห์)
+    if (!cat) return;
+    out.push({ cat, hn: p.hn, pet: p.name, species: p.species, owner: (p.owner || {}).name || '-', phone: (p.owner || {}).phone || '', last, shots, days });
+  });
+  return out;
+}
+function VaccineRecallPanel({ pets, appointments, todayStr, onOpenPet, onSms, onCreateAppt }) {
+  const [open, setOpen] = useState(true);
+  const [tab, setTab] = useState('series');
+  const rows = useMemo(() => vaxRecallList(pets, appointments, todayStr), [pets, appointments, todayStr]);
+  const groups = useMemo(() => {
+    const inTab = rows.filter((r) => r.cat === tab);
+    const m = {};
+    inTab.forEach((r) => { const k = r.phone || ('ไม่มีเบอร์|' + r.owner); (m[k] = m[k] || { owner: r.owner, phone: r.phone, pets: [] }).pets.push(r); });
+    return Object.values(m).sort((a, b) => b.pets.length - a.pets.length || (b.pets[0].days - a.pets[0].days));
+  }, [rows, tab]);
+  const cnt = (c) => rows.filter((r) => r.cat === c).length;
+  const TABS = [
+    { id: 'series', label: '🔵 ชุดยังไม่ครบ', hint: 'ลูกสัตว์ที่เลย 4 สัปดาห์แล้วยังไม่มาเข็มต่อไป' },
+    { id: 'annual', label: '🔴 ครบรอบปี', hint: 'ฉีดล่าสุดเกิน 1 ปี — ควรกระตุ้นประจำปี' },
+    { id: 'soon', label: '🟡 ใกล้ครบรอบปี', hint: 'อีกไม่เกิน 1 เดือนจะครบรอบปี' },
+  ];
+  const msgFor = (g) => {
+    const names = g.pets.map((p) => p.pet).join(' และ ');
+    return tab === 'series'
+      ? `สวัสดีค่ะ คลินิกวังน้อยสัตวแพทย์ ขอแจ้งว่า ${names} ถึงกำหนดฉีดวัคซีนเข็มต่อไปแล้วค่ะ สะดวกเข้ามาวันไหนแจ้งได้เลยค่ะ โทร ${CLINIC.phone}`
+      : `สวัสดีค่ะ คลินิกวังน้อยสัตวแพทย์ ขอแจ้งว่า ${names} ถึงกำหนดฉีดวัคซีนกระตุ้นประจำปีแล้วค่ะ สะดวกเข้ามาวันไหนแจ้งได้เลยค่ะ โทร ${CLINIC.phone}`;
+  };
+  return (
+    <div className="card">
+      <div className="card-head" style={{ background: 'var(--powder-soft)', borderBottom: '2px solid var(--powder-deep)', cursor: 'pointer' }} onClick={() => setOpen((v) => !v)}>
+        <span style={{ fontWeight: 800, fontSize: 14.5, color: 'var(--powder-deep)', display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+          <span style={{ background: 'var(--powder-deep)', color: '#fff', borderRadius: 8, width: 28, height: 28, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>💉</span>
+          ตามวัคซีน
+        </span>
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+          {rows.length ? <span className="chip chip-powder" style={{ fontWeight: 700 }}>{rows.length} ตัว</span> : <span className="chip" style={{ color: 'var(--ink-faint)' }}>ไม่มีตัวต้องตาม</span>}
+          <span style={{ color: 'var(--ink-faint)', fontSize: 12 }}>{open ? '▲' : '▼'}</span>
+        </span>
+      </div>
+      {open ? (
+        <div className="card-pad" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <div className="seg" style={{ alignSelf: 'flex-start', flexWrap: 'wrap' }}>
+            {TABS.map((t) => (
+              <button key={t.id} className={tab === t.id ? 'on' : ''} onClick={() => setTab(t.id)} title={t.hint} style={{ fontSize: 12.5 }}>
+                {t.label} {cnt(t.id) ? <b>({cnt(t.id)})</b> : '(0)'}
+              </button>
+            ))}
+          </div>
+          <div style={{ fontSize: 11.5, color: 'var(--ink-faint)' }}>
+            {TABS.find((t) => t.id === tab).hint} · แสดงเฉพาะตัวที่<b>ยังไม่ได้นัด</b> (ตัวที่นัดแล้วไม่มาตามนัด ไม่ตามต่อ)
+          </div>
+          {groups.length === 0 ? (
+            <div className="queue-empty">ไม่มีตัวที่ต้องตามในกลุ่มนี้</div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 7, maxHeight: 420, overflowY: 'auto' }}>
+              {groups.map((g, gi) => (
+                <div key={gi} style={{ border: '1px solid var(--line)', borderRadius: 'var(--radius-sm)', padding: '9px 11px', background: 'var(--surface)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 6 }}>
+                    <span style={{ fontWeight: 700, fontSize: 13.5 }}>👤 {g.owner}</span>
+                    <span style={{ fontSize: 12.5, color: 'var(--ink-soft)' }}>{g.phone || '— ไม่มีเบอร์ —'}</span>
+                    {g.pets.length > 1 ? <span className="chip chip-butter" style={{ fontSize: 11 }}>{g.pets.length} ตัวในบ้านเดียวกัน</span> : null}
+                    <div style={{ flex: 1 }} />
+                    {g.phone && onSms ? (
+                      <button className="btn btn-sm btn-primary" style={{ fontSize: 12 }} onClick={() => onSms(g.phone, msgFor(g))}>📱 ส่ง SMS</button>
+                    ) : null}
+                  </div>
+                  {g.pets.map((r) => (
+                    <div key={r.hn} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, padding: '3px 0', flexWrap: 'wrap' }}>
+                      <span style={{ fontSize: 15 }}>{SPECIES_EMOJI[r.species] || '🐾'}</span>
+                      <span style={{ fontWeight: 700 }}>{r.pet}</span>
+                      <span style={{ color: 'var(--ink-faint)', fontSize: 11.5 }}>HN {r.hn}</span>
+                      <span className="chip" style={{ fontSize: 11 }}>ฉีดมา {r.shots} เข็ม</span>
+                      <span style={{ fontSize: 12, color: 'var(--ink-soft)' }}>ล่าสุด {dateTH(r.last)} · {r.days} วันก่อน</span>
+                      <div style={{ flex: 1 }} />
+                      {onCreateAppt ? <button className="btn btn-sm" style={{ fontSize: 11.5, padding: '3px 9px' }} onClick={() => onCreateAppt(r.hn)}>+ นัด</button> : null}
+                      {onOpenPet ? <button className="btn btn-sm" style={{ fontSize: 11.5, padding: '3px 9px' }} onClick={() => onOpenPet(r.hn)}>ประวัติ</button> : null}
+                    </div>
+                  ))}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 // ── Appointment Form Modal ───────────────────────────────────
-function ApptFormModal({ pets, defaultDate, defaultPet, editAppt, onClose, onSave, notePresets, onSavePresets }) {
+function ApptFormModal({ pets, defaultDate, defaultPet, defaultType, editAppt, onClose, onSave, notePresets, onSavePresets }) {
   const initPet = defaultPet || (editAppt ? { hn: editAppt.hn, name: editAppt.petName, species: editAppt.species, owner: { name: editAppt.ownerName, phone: editAppt.phone } } : null);
   const [f, setF] = useState(editAppt ? { ...editAppt } : {
     hn: initPet?.hn || '', petName: initPet?.name || '',
     species: initPet?.species || 'สุนัข',
     ownerName: initPet?.owner?.name || '', phone: initPet?.owner?.phone || '',
     date: defaultDate || todayISO(),
-    time: '09:00', type: 'ติดตามอาการ', note: '', status: 'scheduled', smsAuto: true,
+    time: '09:00', type: defaultType || 'ติดตามอาการ', note: '', status: 'scheduled', smsAuto: true,
   });
   const smsOn = f.smsAuto !== false; // ค่าเริ่มต้น = เปิด
   // แก้ประเภท/หมายเหตุ/วันที่ → ล้าง smsText ที่แก้เอง (กันข้อความค้างวันเก่า/เนื้อหาเก่า)
@@ -906,6 +1025,7 @@ function AppointmentsView({ appointments, pets, onAdd, onUpdate, onDelete, onOpe
   const [selectedDay, setSelectedDay] = useState(todayStr);
   const [showForm, setShowForm] = useState(false);
   const [editAppt, setEditAppt] = useState(null);
+  const [prefillPet, setPrefillPet] = useState(null);   // สัตว์ที่กด "+ นัด" มาจากรายการตามวัคซีน
   // วันพรุ่งนี้ (local — ไม่ใช้ toISOString กัน UTC+7 เพี้ยน)
   const tmr = new Date(); tmr.setDate(tmr.getDate() + 1);
   const tomorrowStr = `${tmr.getFullYear()}-${String(tmr.getMonth() + 1).padStart(2, '0')}-${String(tmr.getDate()).padStart(2, '0')}`;
@@ -932,8 +1052,8 @@ function AppointmentsView({ appointments, pets, onAdd, onUpdate, onDelete, onOpe
     return upcoming.filter((a) => a.date <= endISO).length;
   }, [upcoming]);
 
-  const openAdd = () => { setEditAppt(null); setShowForm(true); };
-  const openEdit = (a) => { setEditAppt(a); setShowForm(true); };
+  const openAdd = () => { setEditAppt(null); setPrefillPet(null); setShowForm(true); };
+  const openEdit = (a) => { setEditAppt(a); setPrefillPet(null); setShowForm(true); };
 
   return (
     <div>
@@ -948,9 +1068,14 @@ function AppointmentsView({ appointments, pets, onAdd, onUpdate, onDelete, onOpe
             <div className="v">{thisWeek}</div>
             <div className="l">สัปดาห์นี้</div>
           </div>
+          {/* สถิติเดือนนี้ (นัดที่เลยวันแล้วถูกปิดอัตโนมัติ → ตัวเลขนี้สะท้อนของจริง) */}
           <div className="stat-tile tint-mint" style={{ minWidth: 0, flex: 1 }}>
-            <div className="v">{appointments.filter((a) => a.status === 'arrived').length}</div>
-            <div className="l">มาแล้ว</div>
+            <div className="v">{appointments.filter((a) => a.date.startsWith(todayStr.slice(0, 7)) && (a.status === 'done' || a.status === 'arrived')).length}</div>
+            <div className="l">มาแล้ว (เดือนนี้)</div>
+          </div>
+          <div className="stat-tile" style={{ minWidth: 0, flex: 1 }}>
+            <div className="v">{appointments.filter((a) => a.date.startsWith(todayStr.slice(0, 7)) && a.status === 'missed').length}</div>
+            <div className="l">ไม่มาตามนัด (เดือนนี้)</div>
           </div>
         </div>
         <div style={{ flex: 1 }}></div>
@@ -966,6 +1091,13 @@ function AppointmentsView({ appointments, pets, onAdd, onUpdate, onDelete, onOpe
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 360px', gap: 16, alignItems: 'start' }}>
         {/* left: calendar + day detail */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          {/* ตามวัคซีน — ดึงลูกค้ากลับมาฉีดเข็มที่ค้าง (เฉพาะตัวที่ยังไม่ได้นัด) */}
+          <VaccineRecallPanel
+            pets={pets} appointments={appointments} todayStr={todayStr}
+            onOpenPet={onOpenPet}
+            onSms={(phone, msg) => setSmsModal({ appt: null, phone, msg })}
+            onCreateAppt={(hn) => { const p = (pets || []).find((x) => x.hn === hn); if (p) { setEditAppt(null); setPrefillPet(p); setShowForm(true); } }}
+          />
           <div className="card card-pad">
             <MiniCalendar appointments={appointments} selectedDay={selectedDay} onSelectDay={setSelectedDay} />
           </div>
@@ -1051,12 +1183,13 @@ function AppointmentsView({ appointments, pets, onAdd, onUpdate, onDelete, onOpe
 
       {showForm ? (
         <ApptFormModal
-          pets={pets} defaultDate={selectedDay} editAppt={editAppt}
+          pets={pets} defaultDate={selectedDay} editAppt={editAppt} defaultPet={prefillPet || undefined}
+          defaultType={prefillPet ? 'วัคซีน' : undefined}
           notePresets={notePresets} onSavePresets={onSavePresets}
-          onClose={() => { setShowForm(false); setEditAppt(null); }}
+          onClose={() => { setShowForm(false); setEditAppt(null); setPrefillPet(null); }}
           onSave={(appt) => {
             if (editAppt) onUpdate(appt); else onAdd(appt);
-            setShowForm(false); setEditAppt(null);
+            setShowForm(false); setEditAppt(null); setPrefillPet(null);
           }}
         />
       ) : null}
@@ -1067,8 +1200,8 @@ function AppointmentsView({ appointments, pets, onAdd, onUpdate, onDelete, onOpe
           appt={smsModal.appt || undefined}
           notePresets={notePresets} onSavePresets={onSavePresets}
           smsPresets={smsPresets} onSaveSmsPresets={onSaveSmsPresets}
-          initPhone={smsModal.appt ? smsModal.appt.phone : ''}
-          initMsg={smsModal.appt ? buildReminderMsg(smsModal.appt) : ''}
+          initPhone={smsModal.appt ? smsModal.appt.phone : (smsModal.phone || '')}
+          initMsg={smsModal.appt ? buildReminderMsg(smsModal.appt) : (smsModal.msg || '')}
           onClose={() => setSmsModal(null)}
           onSaveAppt={(d) => { onUpdate(d); pushToast && pushToast('บันทึกนัดแล้ว'); }}
           onSend={(phone, msgList, draft, result) => {
