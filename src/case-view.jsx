@@ -1386,7 +1386,8 @@ function CaseView({ pet, queueItem, vets, assistants = [], services, stock, shop
               <Field label="เพศ"><select className="select" value={editPetInfo.sex} onChange={(e) => setEditPetInfo({ ...editPetInfo, sex: e.target.value })}><option value="ผู้">ผู้</option><option value="เมีย">เมีย</option><option value="ไม่ระบุ">ไม่ระบุ</option></select></Field>
               <Field label="ทำหมันแล้ว?"><select className="select" value={editPetInfo.sterilized} onChange={(e) => setEditPetInfo({ ...editPetInfo, sterilized: e.target.value })}><option value="">ไม่ระบุ</option><option value="false">ยังไม่ได้ทำหมัน</option><option value="true">ทำหมันแล้ว</option></select></Field>
               <Field label="สี/ตำหนิ"><input className="input" value={editPetInfo.color} onChange={(e) => setEditPetInfo({ ...editPetInfo, color: e.target.value })} placeholder="เช่น สีขาว มีจุดดำ" /></Field>
-              <Field label="วันเกิด (ถ้ามี)"><input className="input" type="date" value={editPetInfo.birth || ''} onChange={(e) => setEditPetInfo({ ...editPetInfo, birth: e.target.value })} /></Field>
+              {/* max = วันนี้ — กันเลือกวันเกิดล้ำอนาคต (ทำให้อายุที่แสดงเพี้ยน) */}
+              <Field label="วันเกิด (ถ้ามี)"><input className="input" type="date" max={todayISO()} value={editPetInfo.birth || ''} onChange={(e) => setEditPetInfo({ ...editPetInfo, birth: e.target.value })} /></Field>
               <div style={{ gridColumn: '1 / -1' }}>
                 <Field label="⚠️ ข้อควรระวัง (สีเหลือง)"><input className="input" value={editPetInfo.caution || ''} onChange={(e) => setEditPetInfo({ ...editPetInfo, caution: e.target.value })} placeholder="เช่น ป้อนยายาก, ดุ ต้องใส่ปลอกปาก" /></Field>
               </div>

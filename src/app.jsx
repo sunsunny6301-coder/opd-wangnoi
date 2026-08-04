@@ -708,9 +708,10 @@ function App() {
     if (!hn) {
       const f = payload.newPet;
       hn = nextHN(); isNew = true; petName = f.pet; species = f.species;
+      // อายุติดลบ = วันเกิดล้ำอนาคต → อายุที่แสดงเพี้ยน · บังคับไม่ต่ำกว่า 0
       const d = new Date();
-      d.setFullYear(d.getFullYear() - (parseInt(f.ageY) || 0));
-      d.setMonth(d.getMonth() - (parseInt(f.ageM) || 0));
+      d.setFullYear(d.getFullYear() - Math.max(0, parseInt(f.ageY) || 0));
+      d.setMonth(d.getMonth() - Math.max(0, parseInt(f.ageM) || 0));
       // keepOwner = สัตว์ใหม่ให้เจ้าของเดิม → ใช้ข้อมูลเจ้าของที่ส่งมา
       const ownerObj = payload.keepOwner
         ? { name: payload.keepOwner.name, phone: payload.keepOwner.phone || '-' }

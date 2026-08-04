@@ -104,10 +104,15 @@ const timeNow = () => new Date().toLocaleTimeString('th-TH', { hour: '2-digit', 
 function calcAge(birth) {
   if (!birth) return '';
   const b = new Date(birth), n = new Date();
+  if (isNaN(b.getTime())) return '';
+  // วันเกิดล้ำอนาคต (คีย์ผิด) — สูตรลบเดือนจะติดลบแล้วพลิกเป็น "11 เดือน" ทั้งที่เพิ่งเกิด
+  if (b > n) return 'แรกเกิด';
   let y = n.getFullYear() - b.getFullYear();
   let m = n.getMonth() - b.getMonth();
+  // ยังไม่ถึงวันครบเดือน → ยังไม่นับเดือนนั้น (ไม่งั้นเกิด 31 ก.ค. พอขึ้น 1 ส.ค. กลายเป็น "1 เดือน" ทันที)
+  if (n.getDate() < b.getDate()) m--;
   if (m < 0) { y--; m += 12; }
-  if (y <= 0) return `${m} เดือน`;
+  if (y <= 0) return m > 0 ? `${m} เดือน` : 'แรกเกิด';
   return m > 0 ? `${y} ปี ${m} ด.` : `${y} ปี`;
 }
 
