@@ -572,6 +572,12 @@ button, input, select, textarea { font-family: inherit; font-size: inherit; colo
 .qty-stepper button { width: 26px; height: 26px; border: none; background: none; cursor: pointer; font-weight: 700; color: var(--ink-soft); border-radius: 6px; }
 .qty-stepper button:hover { background: var(--paper); color: var(--ink); }
 .qty-stepper .qv { min-width: 26px; text-align: center; font-weight: 700; font-size: 13.5px; font-variant-numeric: tabular-nums; }
+/* ช่องจำนวนที่พิมพ์ได้ — หน้าตาเหมือนตัวเลขเดิม จะเห็นว่าเป็นช่องกรอกตอนโฟกัส */
+.qty-stepper .qv-input { border: none; background: none; padding: 2px 0; border-radius: 5px; -moz-appearance: textfield; }
+.qty-stepper .qv-input::-webkit-outer-spin-button,
+.qty-stepper .qv-input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+.qty-stepper .qv-input:hover { background: var(--paper); }
+.qty-stepper .qv-input:focus { outline: none; background: var(--surface); box-shadow: 0 0 0 2px var(--navy); }
 
 /* ── toast ── */
 .toast-rack { position: fixed; bottom: 22px; left: 50%; transform: translateX(-50%); z-index: 200; display: flex; flex-direction: column; gap: 8px; align-items: center; }
@@ -1415,6 +1421,43 @@ function calcAge(birth) {
   return m > 0 ? `${y} ปี ${m} ด.` : `${y} ปี`;
 }
 
+// ── ช่องจำนวนในตัวเพิ่ม/ลด — พิมพ์ตัวเลขลงไปตรงๆ ได้ (ไม่ต้องกด + ทีละครั้ง) ──
+// ระหว่างพิมพ์ปล่อยให้ค่าว่างชั่วคราวได้ แต่ค่าที่ส่งออกเป็นตัวเลขเสมอ (กันยอดรวมกลายเป็น NaN)
+// max = เพดาน (เช่น จำนวนคงเหลือในสต็อก) · ปล่อยว่างถ้าไม่จำกัด
+function QtyInput({ value, onChange, min = 1, max, width = 30 }) {
+  const [raw, setRaw] = useState(String(value));
+  const [editing, setEditing] = useState(false);
+  useEffect(() => { if (!editing) setRaw(String(value)); }, [value, editing]);
+  const clamp = (n) => {
+    let v = n;
+    if (min != null && v < min) v = min;
+    if (max != null && v > max) v = max;
+    return v;
+  };
+  return (
+    <input
+      className="qv qv-input" inputMode="numeric" value={editing ? raw : String(value)}
+      onFocus={(e) => { setEditing(true); setRaw(String(value)); setTimeout(() => e.target.select(), 0); }}
+      onChange={(e) => {
+        const t = e.target.value.replace(/[^\d]/g, '');
+        const n = parseInt(t, 10);
+        if (t !== '' && !isNaN(n)) {
+          const v = clamp(n);
+          // เกินเพดาน (เช่นพิมพ์เกินจำนวนคงเหลือ) → ตรึงที่เพดานทันที ให้เลขที่เห็น = เลขที่คิดเงินจริง
+          setRaw(String(v)); onChange(v);
+        } else setRaw(t);
+      }}
+      onBlur={() => {
+        setEditing(false);
+        const n = parseInt(raw, 10);
+        onChange((!raw || isNaN(n)) ? (min != null ? min : 0) : clamp(n));
+      }}
+      onKeyDown={(e) => { if (e.key === 'Enter') e.target.blur(); }}
+      style={{ width }}
+    />
+  );
+}
+
 function Modal({ title, onClose, children, footer, wide }) {
   useEffect(() => {
     const fn = (e) => { if (e.key === 'Escape') onClose && onClose(); };
@@ -1628,7 +1671,7 @@ function FestivalFloat({ override }) {
   );
 }
 
-Object.assign(window, { Icon, Modal, useToasts, Field, SPECIES_EMOJI, TYPE_CHIP, fmtB, todayTH, dateTH, timeNow, calcAge, todayISO, imageToDataURL, CountUp, celebrate, playDing, ConfettiLayer, getFestival, FestivalFloat, ThemeToggle, InstallPrompt, isStandalone });
+Object.assign(window, { Icon, Modal, useToasts, Field, QtyInput, SPECIES_EMOJI, TYPE_CHIP, fmtB, todayTH, dateTH, timeNow, calcAge, todayISO, imageToDataURL, CountUp, celebrate, playDing, ConfettiLayer, getFestival, FestivalFloat, ThemeToggle, InstallPrompt, isStandalone });
 
 </script>
 
@@ -3906,9 +3949,9 @@ function CaseView({ pet, queueItem, vets, assistants = [], services, stock, shop
                               style={{ fontSize: 13, padding: '4px 8px' }} />
                           </td>
                           <td style={{ padding: '6px 8px', textAlign: 'center' }}>
-                            <div className="qty-stepper" style={{ width: 76, margin: '0 auto' }}>
+                            <div className="qty-stepper" style={{ width: 84, margin: '0 auto' }}>
                               <button onClick={() => patchCharge(i, 1, Math.max(1, c[1] - 1))} disabled={c[1] <= 1}>−</button>
-                              <span className="qv" style={{ minWidth: 26 }}>{c[1]}</span>
+                              <QtyInput value={c[1]} onChange={(n) => patchCharge(i, 1, n)} min={1} width={34} />
                               <button onClick={() => patchCharge(i, 1, c[1] + 1)}>+</button>
                             </div>
                           </td>
@@ -4855,6 +4898,12 @@ function PetShop({ stock, onCheckout, previewReceiptNo, onDeleteItem, onAddItem,
       return { ...c, qty: next };
     })
     .filter((c) => c.qty > 0));
+  // ตั้งจำนวนตรงๆ (พิมพ์เอง) — ไม่ให้เกินจำนวนคงเหลือในสต็อก และไม่ต่ำกว่า 1
+  const setQty = (id, n) => setCart(cart.map((c) => {
+    if (c.id !== id) return c;
+    const have = stock.find((s) => s.id === id);
+    return { ...c, qty: Math.max(1, have ? Math.min(n, have.qty) : n) };
+  }));
   const total = cart.reduce((s, c) => s + c.qty * c.price, 0);
 
   return (
@@ -4931,7 +4980,8 @@ function PetShop({ stock, onCheckout, previewReceiptNo, onDeleteItem, onAddItem,
                   </div>
                   <div className="qty-stepper">
                     <button onClick={() => step(c.id, -1)}>−</button>
-                    <span className="qv">{c.qty}</span>
+                    <QtyInput value={c.qty} onChange={(n) => setQty(c.id, n)} min={1}
+                      max={(stock.find((s) => s.id === c.id) || {}).qty} width={34} />
                     <button onClick={() => step(c.id, 1)}>+</button>
                   </div>
                   <div style={{ width: 64, textAlign: 'right', fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>{(c.qty * c.price).toLocaleString()}</div>

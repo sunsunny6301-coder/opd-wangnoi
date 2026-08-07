@@ -796,9 +796,9 @@ function CaseView({ pet, queueItem, vets, assistants = [], services, stock, shop
                               style={{ fontSize: 13, padding: '4px 8px' }} />
                           </td>
                           <td style={{ padding: '6px 8px', textAlign: 'center' }}>
-                            <div className="qty-stepper" style={{ width: 76, margin: '0 auto' }}>
+                            <div className="qty-stepper" style={{ width: 84, margin: '0 auto' }}>
                               <button onClick={() => patchCharge(i, 1, Math.max(1, c[1] - 1))} disabled={c[1] <= 1}>−</button>
-                              <span className="qv" style={{ minWidth: 26 }}>{c[1]}</span>
+                              <QtyInput value={c[1]} onChange={(n) => patchCharge(i, 1, n)} min={1} width={34} />
                               <button onClick={() => patchCharge(i, 1, c[1] + 1)}>+</button>
                             </div>
                           </td>

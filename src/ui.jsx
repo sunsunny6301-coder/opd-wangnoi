@@ -116,6 +116,43 @@ function calcAge(birth) {
   return m > 0 ? `${y} ปี ${m} ด.` : `${y} ปี`;
 }
 
+// ── ช่องจำนวนในตัวเพิ่ม/ลด — พิมพ์ตัวเลขลงไปตรงๆ ได้ (ไม่ต้องกด + ทีละครั้ง) ──
+// ระหว่างพิมพ์ปล่อยให้ค่าว่างชั่วคราวได้ แต่ค่าที่ส่งออกเป็นตัวเลขเสมอ (กันยอดรวมกลายเป็น NaN)
+// max = เพดาน (เช่น จำนวนคงเหลือในสต็อก) · ปล่อยว่างถ้าไม่จำกัด
+function QtyInput({ value, onChange, min = 1, max, width = 30 }) {
+  const [raw, setRaw] = useState(String(value));
+  const [editing, setEditing] = useState(false);
+  useEffect(() => { if (!editing) setRaw(String(value)); }, [value, editing]);
+  const clamp = (n) => {
+    let v = n;
+    if (min != null && v < min) v = min;
+    if (max != null && v > max) v = max;
+    return v;
+  };
+  return (
+    <input
+      className="qv qv-input" inputMode="numeric" value={editing ? raw : String(value)}
+      onFocus={(e) => { setEditing(true); setRaw(String(value)); setTimeout(() => e.target.select(), 0); }}
+      onChange={(e) => {
+        const t = e.target.value.replace(/[^\d]/g, '');
+        const n = parseInt(t, 10);
+        if (t !== '' && !isNaN(n)) {
+          const v = clamp(n);
+          // เกินเพดาน (เช่นพิมพ์เกินจำนวนคงเหลือ) → ตรึงที่เพดานทันที ให้เลขที่เห็น = เลขที่คิดเงินจริง
+          setRaw(String(v)); onChange(v);
+        } else setRaw(t);
+      }}
+      onBlur={() => {
+        setEditing(false);
+        const n = parseInt(raw, 10);
+        onChange((!raw || isNaN(n)) ? (min != null ? min : 0) : clamp(n));
+      }}
+      onKeyDown={(e) => { if (e.key === 'Enter') e.target.blur(); }}
+      style={{ width }}
+    />
+  );
+}
+
 function Modal({ title, onClose, children, footer, wide }) {
   useEffect(() => {
     const fn = (e) => { if (e.key === 'Escape') onClose && onClose(); };
@@ -329,4 +366,4 @@ function FestivalFloat({ override }) {
   );
 }
 
-Object.assign(window, { Icon, Modal, useToasts, Field, SPECIES_EMOJI, TYPE_CHIP, fmtB, todayTH, dateTH, timeNow, calcAge, todayISO, imageToDataURL, CountUp, celebrate, playDing, ConfettiLayer, getFestival, FestivalFloat, ThemeToggle, InstallPrompt, isStandalone });
+Object.assign(window, { Icon, Modal, useToasts, Field, QtyInput, SPECIES_EMOJI, TYPE_CHIP, fmtB, todayTH, dateTH, timeNow, calcAge, todayISO, imageToDataURL, CountUp, celebrate, playDing, ConfettiLayer, getFestival, FestivalFloat, ThemeToggle, InstallPrompt, isStandalone });

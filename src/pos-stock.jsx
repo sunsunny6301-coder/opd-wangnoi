@@ -224,6 +224,12 @@ function PetShop({ stock, onCheckout, previewReceiptNo, onDeleteItem, onAddItem,
       return { ...c, qty: next };
     })
     .filter((c) => c.qty > 0));
+  // ตั้งจำนวนตรงๆ (พิมพ์เอง) — ไม่ให้เกินจำนวนคงเหลือในสต็อก และไม่ต่ำกว่า 1
+  const setQty = (id, n) => setCart(cart.map((c) => {
+    if (c.id !== id) return c;
+    const have = stock.find((s) => s.id === id);
+    return { ...c, qty: Math.max(1, have ? Math.min(n, have.qty) : n) };
+  }));
   const total = cart.reduce((s, c) => s + c.qty * c.price, 0);
 
   return (
@@ -300,7 +306,8 @@ function PetShop({ stock, onCheckout, previewReceiptNo, onDeleteItem, onAddItem,
                   </div>
                   <div className="qty-stepper">
                     <button onClick={() => step(c.id, -1)}>−</button>
-                    <span className="qv">{c.qty}</span>
+                    <QtyInput value={c.qty} onChange={(n) => setQty(c.id, n)} min={1}
+                      max={(stock.find((s) => s.id === c.id) || {}).qty} width={34} />
                     <button onClick={() => step(c.id, 1)}>+</button>
                   </div>
                   <div style={{ width: 64, textAlign: 'right', fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>{(c.qty * c.price).toLocaleString()}</div>
