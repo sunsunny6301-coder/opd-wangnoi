@@ -902,7 +902,7 @@ function ApptFormModal({ pets, defaultDate, defaultPet, defaultType, editAppt, o
               <div className="search-pop">
                 {petResults.map((p) => (
                   <button key={p.hn} className="search-row" onClick={() => selectPet(p)}>
-                    <div className="pet-avatar" style={{ width: 36, height: 36, fontSize: 18 }}>{SPECIES_EMOJI[p.species]}</div>
+                    <div className="pet-avatar" style={{ width: 36, height: 36, fontSize: 18 }}>{SPECIES_EMOJI[p.species] || '🐾'}</div>
                     <div>
                       <div style={{ fontWeight: 700 }}>{p.name} <span style={{ color: 'var(--ink-faint)', fontWeight: 400, fontSize: 12 }}>HN {p.hn}</span></div>
                       <div style={{ fontSize: 12.5, color: 'var(--ink-soft)' }}>{p.owner.name} · {p.owner.phone}</div>
@@ -916,7 +916,7 @@ function ApptFormModal({ pets, defaultDate, defaultPet, defaultType, editAppt, o
 
         {f.hn ? (
           <div style={{ padding: '9px 13px', background: 'var(--mint-soft)', borderRadius: 'var(--radius-sm)', fontSize: 13, color: 'var(--mint-deep)', display: 'flex', alignItems: 'center', gap: 8 }}>
-            <Icon name="check" size={15} /> {SPECIES_EMOJI[f.species]} {f.petName} · HN {f.hn} · {f.ownerName} · {f.phone}
+            <Icon name="check" size={15} /> {SPECIES_EMOJI[f.species] || '🐾'} {f.petName} · HN {f.hn} · {f.ownerName} · {f.phone}
           </div>
         ) : null}
 

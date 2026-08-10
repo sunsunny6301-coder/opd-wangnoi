@@ -387,12 +387,24 @@ function App() {
     const newName = String((updated.owner && updated.owner.name) || '').trim();
     const renamed = oldName && newName && oldName !== newName;
     const affected = renamed ? (receipts || []).filter((r) => r.hn === updated.hn && String(r.ownerName || '').trim() === oldName).length : 0;
+    // ชื่อสัตว์/ชนิดเปลี่ยน → คิว·นัด·เคสแอดมิด เก็บสำเนาไว้ตอนสร้าง ต้องอัปเดตตาม
+    // ไม่งั้นการ์ดคิวยังโชว์ชื่อเดิม/อีโมจิสัตว์เดิม (เช่นแก้หมาเป็นแมวแล้วการ์ดยังเป็น 🐶)
+    const petRenamed = String((prevPet && prevPet.name) || '').trim() !== String(updated.name || '').trim();
+    const speciesChanged = String((prevPet && prevPet.species) || '') !== String(updated.species || '');
+    const syncCopies = petRenamed || speciesChanged;
     setState((s) => {
       const nextPets = s.pets.map((p) => p.hn === updated.hn ? updated : p);
       const nextReceipts = renamed
         ? (s.receipts || []).map((r) => (r.hn === updated.hn && String(r.ownerName || '').trim() === oldName) ? { ...r, ownerName: newName } : r)
         : (s.receipts || []);
-      return { ...s, pets: nextPets, receipts: nextReceipts };
+      if (!syncCopies) return { ...s, pets: nextPets, receipts: nextReceipts };
+      const patch = (x) => (x.hn === updated.hn ? { ...x, petName: updated.name, species: updated.species } : x);
+      return {
+        ...s, pets: nextPets, receipts: nextReceipts,
+        queue: (s.queue || []).map(patch),
+        appointments: (s.appointments || []).map(patch),
+        admitted: (s.admitted || []).map(patch),
+      };
     });
     if (affected > 0) pushToast(`อัปเดตชื่อเจ้าของในใบเสร็จ ${affected} ใบแล้ว`);
   };

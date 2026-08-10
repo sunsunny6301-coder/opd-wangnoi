@@ -208,7 +208,7 @@ function WalkInModal({ pets, onClose, onSubmit, prefillHn, prefillOwner }) {
 
           {pick ? (
             <div className="card card-pad" style={{ display: 'flex', gap: 12, alignItems: 'center', borderColor: 'var(--navy)', borderWidth: 1.5 }}>
-              <div className="pet-avatar" style={{ width: 46, height: 46, fontSize: 22 }}>{SPECIES_EMOJI[pick.species]}</div>
+              <div className="pet-avatar" style={{ width: 46, height: 46, fontSize: 22 }}>{SPECIES_EMOJI[pick.species] || '🐾'}</div>
               <div style={{ flex: 1 }}>
                 <div style={{ fontWeight: 700 }}>{pick.name} · HN {pick.hn}</div>
                 <div style={{ fontSize: 13, color: 'var(--ink-soft)' }}>{pick.species} {pick.breed} · {pick.owner.name} · {pick.owner.phone}</div>
@@ -223,7 +223,7 @@ function WalkInModal({ pets, onClose, onSubmit, prefillHn, prefillOwner }) {
                   {grp.pets.map((p) => (
                     <button key={p.hn} className="search-row" style={{ width: '100%', border: 'none', background: 'none', display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px', cursor: 'pointer', borderBottom: '1px solid var(--line-soft)' }}
                       onClick={() => setPick(p)}>
-                      <div className="pet-avatar" style={{ width: 38, height: 38, fontSize: 18 }}>{SPECIES_EMOJI[p.species]}</div>
+                      <div className="pet-avatar" style={{ width: 38, height: 38, fontSize: 18 }}>{SPECIES_EMOJI[p.species] || '🐾'}</div>
                       <div style={{ flex: 1, textAlign: 'left' }}>
                         <div style={{ fontWeight: 700, fontSize: 14 }}>{p.name} <span style={{ fontWeight: 500, color: 'var(--ink-faint)', fontSize: 12 }}>HN {p.hn}</span></div>
                         <div style={{ fontSize: 12.5, color: 'var(--ink-soft)' }}>{p.owner.name} · {p.owner.phone}</div>

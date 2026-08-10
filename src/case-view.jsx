@@ -426,7 +426,7 @@ function CaseView({ pet, queueItem, vets, assistants = [], services, stock, shop
   const [editApptData, setEditApptData] = useState(null); // นัดที่กำลังแก้ไข (เปิด ApptFormModal)
   const setR = (k) => (e) => setRec({ ...rec, [k]: e.target.value });
   // เปิดหน้าต่างแก้ไขข้อมูลสัตว์ (รวมข้อควรระวัง/แพ้ยา)
-  const openPetEdit = () => setEditPetInfo({ kind: 'pet', name: pet.name, breed: pet.breed || '', sex: pet.sex || 'ผู้', sterilized: pet.sterilized === true ? 'true' : pet.sterilized === false ? 'false' : '', color: pet.color || '', birth: pet.birth || '', caution: pet.caution || '', allergy: pet.allergy || '' });
+  const openPetEdit = () => setEditPetInfo({ kind: 'pet', name: pet.name, species: pet.species || 'สุนัข', breed: pet.breed || '', sex: pet.sex || 'ผู้', sterilized: pet.sterilized === true ? 'true' : pet.sterilized === false ? 'false' : '', color: pet.color || '', birth: pet.birth || '', caution: pet.caution || '', allergy: pet.allergy || '' });
   // เปิด modal แก้ไขประวัติ visit (normalize รายการเป็น object พร้อม stockId/origin)
   const openEditVisit = (v) => setEditVisit({
     date: v.date, weight: v.weight, cc: v.cc, pe: v.pe, dx: v.dx, plan: v.plan, media: v.media || [],
@@ -1374,7 +1374,7 @@ function CaseView({ pet, queueItem, vets, assistants = [], services, stock, shop
           <button className="btn" onClick={() => setEditPetInfo(null)}>ยกเลิก</button>
           <button className="btn btn-primary" onClick={() => {
             const f = editPetInfo;
-            if (f.kind === 'pet') onUpdatePet && onUpdatePet({ ...pet, name: f.name.trim() || pet.name, breed: f.breed, sex: f.sex, sterilized: f.sterilized === 'true' ? true : f.sterilized === 'false' ? false : null, color: f.color, birth: f.birth, caution: (f.caution || '').trim(), allergy: (f.allergy || '').trim() });
+            if (f.kind === 'pet') onUpdatePet && onUpdatePet({ ...pet, name: f.name.trim() || pet.name, species: f.species || pet.species, breed: f.breed, sex: f.sex, sterilized: f.sterilized === 'true' ? true : f.sterilized === 'false' ? false : null, color: f.color, birth: f.birth, caution: (f.caution || '').trim(), allergy: (f.allergy || '').trim() });
             else onUpdatePet && onUpdatePet({ ...pet, owner: { ...pet.owner, name: f.ownerName.trim() || pet.owner.name, phone: f.phone } });
             setEditPetInfo(null); pushToast && pushToast('บันทึกข้อมูลแล้ว');
           }}>บันทึก</button>
@@ -1382,6 +1382,12 @@ function CaseView({ pet, queueItem, vets, assistants = [], services, stock, shop
           {editPetInfo.kind === 'pet' ? (
             <div className="form-grid" style={{ gridTemplateColumns: '1fr 1fr', gap: 13 }}>
               <Field label="ชื่อสัตว์เลี้ยง"><input className="input" value={editPetInfo.name} onChange={(e) => setEditPetInfo({ ...editPetInfo, name: e.target.value })} placeholder="ชื่อสัตว์" /></Field>
+              {/* ชนิด — แก้ได้เผื่อกดผิดตอนรับเคส (เปลี่ยนแล้วอีโมจิ/รูปแทนตัวเปลี่ยนตามทุกหน้า) */}
+              <Field label="ชนิด">
+                <select className="select" value={editPetInfo.species || 'สุนัข'} onChange={(e) => setEditPetInfo({ ...editPetInfo, species: e.target.value })}>
+                  {['สุนัข', 'แมว', 'กระต่าย', 'นก', 'อื่นๆ'].map((sp) => <option key={sp} value={sp}>{(SPECIES_EMOJI[sp] || '🐾') + ' ' + sp}</option>)}
+                </select>
+              </Field>
               <Field label="สายพันธุ์"><input className="input" value={editPetInfo.breed} onChange={(e) => setEditPetInfo({ ...editPetInfo, breed: e.target.value })} placeholder="เช่น ปอมเมอเรเนียน" /></Field>
               <Field label="เพศ"><select className="select" value={editPetInfo.sex} onChange={(e) => setEditPetInfo({ ...editPetInfo, sex: e.target.value })}><option value="ผู้">ผู้</option><option value="เมีย">เมีย</option><option value="ไม่ระบุ">ไม่ระบุ</option></select></Field>
               <Field label="ทำหมันแล้ว?"><select className="select" value={editPetInfo.sterilized} onChange={(e) => setEditPetInfo({ ...editPetInfo, sterilized: e.target.value })}><option value="">ไม่ระบุ</option><option value="false">ยังไม่ได้ทำหมัน</option><option value="true">ทำหมันแล้ว</option></select></Field>
