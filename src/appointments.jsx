@@ -532,7 +532,8 @@ function ApptCard({ appt, onUpdate, onEdit, onOpenPet, onSendSms, onDelete }) {
   const statusCls = { scheduled: 'chip-butter', arrived: 'chip-mint', done: 'chip-mint', missed: '', cancelled: '' };
   const statusLabel = { scheduled: 'นัด', arrived: 'มาแล้ว', done: '✓ มาแล้ว', missed: '— ไม่มาตามนัด', cancelled: 'ยกเลิก' };
   // นัดที่ปิดแล้ว (เลยวันนัด) = จบ ไม่ตามต่อ → ซ่อนปุ่มที่ใช้ตามลูกค้า
-  const closed = appt.status === 'done' || appt.status === 'missed' || appt.status === 'cancelled';
+  // สัตว์ที่เสียชีวิตแล้วก็เช่นกัน — ห้ามส่ง SMS เตือนนัดไปหาเจ้าของอีก
+  const closed = appt.status === 'done' || appt.status === 'missed' || appt.status === 'cancelled' || !!appt.deceased;
   return (
     <div className="appt-card" style={{ borderLeft: `4px solid ${APPT_COLORS[appt.type] || 'var(--line)'}` }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10 }}>
@@ -540,6 +541,7 @@ function ApptCard({ appt, onUpdate, onEdit, onOpenPet, onSendSms, onDelete }) {
           <div style={{ fontWeight: 800, fontSize: 15.5, display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' }}>
             {SPECIES_EMOJI[appt.species] || '🐾'} {appt.petName}
             {appt.hn ? <span className="chip" style={{ fontSize: 11 }}>HN {appt.hn}</span> : null}
+            <DeceasedTag pet={appt} />
           </div>
           <div style={{ fontSize: 13, color: 'var(--ink-soft)', marginTop: 2 }}>{appt.ownerName} · {appt.phone}</div>
         </div>
@@ -722,6 +724,7 @@ function vaxRecallList(pets, appointments, todayStr) {
   });
   const out = [];
   (pets || []).forEach((p) => {
+    if (p.deceased) return;   // เสียชีวิตแล้ว — ห้ามขึ้นรายการตามวัคซีน/ส่ง SMS หาเจ้าของ
     const vaxDates = (p.visits || [])
       .filter((v) => (v.items || []).some((it) => VAX_RE.test(String(Array.isArray(it) ? it[0] : (it && it.name) || ''))))
       .map((v) => v.date).filter(Boolean).sort();

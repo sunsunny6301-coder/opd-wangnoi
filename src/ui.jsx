@@ -116,6 +116,24 @@ function calcAge(birth) {
   return m > 0 ? `${y} ปี ${m} ด.` : `${y} ปี`;
 }
 
+// ── ป้ายบอกว่าสัตว์เสียชีวิตแล้ว — ใช้ทุกที่ที่แสดงชื่อสัตว์ ให้หน้าตาเหมือนกันหมด ──
+// รับได้ทั้ง pet object และ queue/appt ที่ก๊อปฟิลด์ deceased มา
+function DeceasedTag({ pet, size = 'sm' }) {
+  if (!pet || !pet.deceased) return null;
+  const small = size === 'sm';
+  const title = 'เสียชีวิตแล้ว'
+    + (pet.deceasedDate ? ` · ${dateTH(pet.deceasedDate)}` : '')
+    + (pet.deceasedCause ? ` · ${pet.deceasedCause}` : '');
+  return (
+    <span title={title} style={{
+      display: 'inline-flex', alignItems: 'center', gap: 4, flexShrink: 0,
+      background: 'var(--line-soft)', color: 'var(--ink-soft)', border: '1px solid var(--line)',
+      borderRadius: 99, padding: small ? '1px 8px' : '2px 11px',
+      fontSize: small ? 11 : 12.5, fontWeight: 700, whiteSpace: 'nowrap',
+    }}>🕊️ เสียชีวิตแล้ว</span>
+  );
+}
+
 // ── ช่องจำนวนในตัวเพิ่ม/ลด — พิมพ์ตัวเลขลงไปตรงๆ ได้ (ไม่ต้องกด + ทีละครั้ง) ──
 // ระหว่างพิมพ์ปล่อยให้ค่าว่างชั่วคราวได้ แต่ค่าที่ส่งออกเป็นตัวเลขเสมอ (กันยอดรวมกลายเป็น NaN)
 // max = เพดาน (เช่น จำนวนคงเหลือในสต็อก) · ปล่อยว่างถ้าไม่จำกัด
@@ -366,4 +384,4 @@ function FestivalFloat({ override }) {
   );
 }
 
-Object.assign(window, { Icon, Modal, useToasts, Field, QtyInput, SPECIES_EMOJI, TYPE_CHIP, fmtB, todayTH, dateTH, timeNow, calcAge, todayISO, imageToDataURL, CountUp, celebrate, playDing, ConfettiLayer, getFestival, FestivalFloat, ThemeToggle, InstallPrompt, isStandalone });
+Object.assign(window, { Icon, Modal, useToasts, Field, QtyInput, DeceasedTag, SPECIES_EMOJI, TYPE_CHIP, fmtB, todayTH, dateTH, timeNow, calcAge, todayISO, imageToDataURL, CountUp, celebrate, playDing, ConfettiLayer, getFestival, FestivalFloat, ThemeToggle, InstallPrompt, isStandalone });

@@ -391,14 +391,18 @@ function App() {
     // ไม่งั้นการ์ดคิวยังโชว์ชื่อเดิม/อีโมจิสัตว์เดิม (เช่นแก้หมาเป็นแมวแล้วการ์ดยังเป็น 🐶)
     const petRenamed = String((prevPet && prevPet.name) || '').trim() !== String(updated.name || '').trim();
     const speciesChanged = String((prevPet && prevPet.species) || '') !== String(updated.species || '');
-    const syncCopies = petRenamed || speciesChanged;
+    const deceasedChanged = !!(prevPet && prevPet.deceased) !== !!updated.deceased;
+    const syncCopies = petRenamed || speciesChanged || deceasedChanged;
     setState((s) => {
       const nextPets = s.pets.map((p) => p.hn === updated.hn ? updated : p);
       const nextReceipts = renamed
         ? (s.receipts || []).map((r) => (r.hn === updated.hn && String(r.ownerName || '').trim() === oldName) ? { ...r, ownerName: newName } : r)
         : (s.receipts || []);
       if (!syncCopies) return { ...s, pets: nextPets, receipts: nextReceipts };
-      const patch = (x) => (x.hn === updated.hn ? { ...x, petName: updated.name, species: updated.species } : x);
+      // deceased ติดไปด้วย เพื่อให้การ์ดนัด/คิวขึ้นป้ายและหยุดปุ่มตาม SMS ได้ทันที
+      const patch = (x) => (x.hn === updated.hn
+        ? { ...x, petName: updated.name, species: updated.species, deceased: !!updated.deceased, deceasedDate: updated.deceasedDate, deceasedCause: updated.deceasedCause }
+        : x);
       return {
         ...s, pets: nextPets, receipts: nextReceipts,
         queue: (s.queue || []).map(patch),

@@ -61,7 +61,9 @@ function GlobalSearch({ pets, onOpenPet, onWalkIn, onDirectWalkIn }) {
                 <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px' }}>
                   <div className="pet-avatar" style={{ width: 40, height: 40, fontSize: 19 }}>{SPECIES_EMOJI[p.species] || '🐾'}</div>
                   <div style={{ flex: 1, minWidth: 0, cursor: 'pointer' }} onClick={() => { setOpen(false); setQ(''); onOpenPet(p.hn); }}>
-                    <div style={{ fontWeight: 700 }}>{p.name} <span style={{ color: 'var(--ink-faint)', fontWeight: 500, fontSize: 12.5 }}>HN {p.hn}</span></div>
+                    <div style={{ fontWeight: 700, display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' }}>
+                      {p.name} <span style={{ color: 'var(--ink-faint)', fontWeight: 500, fontSize: 12.5 }}>HN {p.hn}</span> <DeceasedTag pet={p} />
+                    </div>
                     <div style={{ fontSize: 12.5, color: 'var(--ink-soft)' }}>{p.species} · {p.breed} · {p.owner.name} · {p.owner.phone}</div>
                   </div>
                   <button className="btn btn-sm btn-primary" style={{ fontSize: 12, whiteSpace: 'nowrap', flexShrink: 0 }}
@@ -307,6 +309,7 @@ function QueueCard({ item, pet, onOpen, onOpenCase, onMove, onPay, onCancel, zon
       </div>
       <div className="q-pet"><span className="anim-wiggle">{SPECIES_EMOJI[item.species] || '🐾'}</span> {item.petName}
         {item.isNew ? <span className="chip chip-blush" style={{ fontSize: 11 }}>ลูกค้าใหม่</span> : null}
+        <DeceasedTag pet={pet} />
       </div>
       <div className="q-meta">
         <span className={'chip ' + (TYPE_CHIP[item.type] || '')}>{item.type}</span>

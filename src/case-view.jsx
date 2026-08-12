@@ -426,7 +426,7 @@ function CaseView({ pet, queueItem, vets, assistants = [], services, stock, shop
   const [editApptData, setEditApptData] = useState(null); // นัดที่กำลังแก้ไข (เปิด ApptFormModal)
   const setR = (k) => (e) => setRec({ ...rec, [k]: e.target.value });
   // เปิดหน้าต่างแก้ไขข้อมูลสัตว์ (รวมข้อควรระวัง/แพ้ยา)
-  const openPetEdit = () => setEditPetInfo({ kind: 'pet', name: pet.name, species: pet.species || 'สุนัข', breed: pet.breed || '', sex: pet.sex || 'ผู้', sterilized: pet.sterilized === true ? 'true' : pet.sterilized === false ? 'false' : '', color: pet.color || '', birth: pet.birth || '', caution: pet.caution || '', allergy: pet.allergy || '' });
+  const openPetEdit = () => setEditPetInfo({ kind: 'pet', name: pet.name, species: pet.species || 'สุนัข', breed: pet.breed || '', sex: pet.sex || 'ผู้', sterilized: pet.sterilized === true ? 'true' : pet.sterilized === false ? 'false' : '', color: pet.color || '', birth: pet.birth || '', caution: pet.caution || '', allergy: pet.allergy || '', deceased: !!pet.deceased, deceasedDate: pet.deceasedDate || todayISO(), deceasedCause: pet.deceasedCause || '' });
   // เปิด modal แก้ไขประวัติ visit (normalize รายการเป็น object พร้อม stockId/origin)
   const openEditVisit = (v) => setEditVisit({
     date: v.date, weight: v.weight, cc: v.cc, pe: v.pe, dx: v.dx, plan: v.plan, media: v.media || [],
@@ -521,7 +521,9 @@ function CaseView({ pet, queueItem, vets, assistants = [], services, stock, shop
     <div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16, flexWrap: 'wrap' }}>
         <button className="btn btn-ghost" onClick={onBack}><Icon name="arrowL" size={17} /> กลับหน้าคิว</button>
-        <h1 style={{ fontSize: 20, margin: 0, flex: 1 }}>🐾 {pet.name} ({pet.species} {pet.breed})</h1>
+        <h1 style={{ fontSize: 20, margin: 0, flex: 1, display: 'inline-flex', alignItems: 'center', gap: 9, flexWrap: 'wrap' }}>
+          🐾 {pet.name} ({pet.species} {pet.breed}) <DeceasedTag pet={pet} size="lg" />
+        </h1>
       </div>
 
       {/* ── แถบเตือน: ข้อควรระวัง (เหลืองเข้ม) + แพ้ยา (แดงเข้ม) — กดเพื่อแก้ไข ── */}
@@ -562,11 +564,20 @@ function CaseView({ pet, queueItem, vets, assistants = [], services, stock, shop
             </div>
             <div className="card-pad" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               {/* ── Pet name highlight ── */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', background: 'var(--mint-soft)', borderRadius: 'var(--radius-sm)', border: '1.5px solid var(--mint-deep)' }}>
-                <span style={{ fontSize: 32, lineHeight: 1 }}>{SPECIES_EMOJI[pet.species] || '🐾'}</span>
-                <div>
-                  <div style={{ fontWeight: 900, fontSize: 22, letterSpacing: '-0.01em', color: 'var(--ink)', lineHeight: 1.1 }}>{pet.name}</div>
+              {/* เสียชีวิตแล้ว → การ์ดชื่อเปลี่ยนเป็นสีเทา ไม่ใช้เขียวสดใส */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', borderRadius: 'var(--radius-sm)',
+                background: pet.deceased ? 'var(--line-soft)' : 'var(--mint-soft)', border: '1.5px solid ' + (pet.deceased ? 'var(--line)' : 'var(--mint-deep)') }}>
+                <span style={{ fontSize: 32, lineHeight: 1, filter: pet.deceased ? 'grayscale(1)' : 'none', opacity: pet.deceased ? .75 : 1 }}>{SPECIES_EMOJI[pet.species] || '🐾'}</span>
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontWeight: 900, fontSize: 22, letterSpacing: '-0.01em', color: 'var(--ink)', lineHeight: 1.1, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                    {pet.name} <DeceasedTag pet={pet} />
+                  </div>
                   <div style={{ fontSize: 13, color: 'var(--ink-soft)', marginTop: 2 }}>{pet.species} · {pet.breed}</div>
+                  {pet.deceased ? (
+                    <div style={{ fontSize: 12, color: 'var(--ink-soft)', marginTop: 3 }}>
+                      {pet.deceasedDate ? dateTH(pet.deceasedDate) : ''}{pet.deceasedCause ? ' · ' + pet.deceasedCause : ''}
+                    </div>
+                  ) : null}
                 </div>
               </div>
               <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start' }}>
@@ -1374,7 +1385,9 @@ function CaseView({ pet, queueItem, vets, assistants = [], services, stock, shop
           <button className="btn" onClick={() => setEditPetInfo(null)}>ยกเลิก</button>
           <button className="btn btn-primary" onClick={() => {
             const f = editPetInfo;
-            if (f.kind === 'pet') onUpdatePet && onUpdatePet({ ...pet, name: f.name.trim() || pet.name, species: f.species || pet.species, breed: f.breed, sex: f.sex, sterilized: f.sterilized === 'true' ? true : f.sterilized === 'false' ? false : null, color: f.color, birth: f.birth, caution: (f.caution || '').trim(), allergy: (f.allergy || '').trim() });
+            if (f.kind === 'pet') onUpdatePet && onUpdatePet({ ...pet, name: f.name.trim() || pet.name, species: f.species || pet.species, breed: f.breed, sex: f.sex, sterilized: f.sterilized === 'true' ? true : f.sterilized === 'false' ? false : null, color: f.color, birth: f.birth, caution: (f.caution || '').trim(), allergy: (f.allergy || '').trim(),
+              // เสียชีวิต — ไม่ลบข้อมูลใดๆ แค่ทำเครื่องหมาย · ยกเลิกเครื่องหมายได้ถ้ากดผิด
+              deceased: !!f.deceased, deceasedDate: f.deceased ? (f.deceasedDate || todayISO()) : undefined, deceasedCause: f.deceased ? (f.deceasedCause || '').trim() : undefined });
             else onUpdatePet && onUpdatePet({ ...pet, owner: { ...pet.owner, name: f.ownerName.trim() || pet.owner.name, phone: f.phone } });
             setEditPetInfo(null); pushToast && pushToast('บันทึกข้อมูลแล้ว');
           }}>บันทึก</button>
@@ -1399,6 +1412,31 @@ function CaseView({ pet, queueItem, vets, assistants = [], services, stock, shop
               </div>
               <div style={{ gridColumn: '1 / -1' }}>
                 <Field label="🚫 แพ้ยา (สีแดง)"><input className="input" value={editPetInfo.allergy || ''} onChange={(e) => setEditPetInfo({ ...editPetInfo, allergy: e.target.value })} placeholder="เช่น แพ้วัคซีนยี่ห้อ Nobivac" /></Field>
+              </div>
+              {/* บันทึกการเสียชีวิต — ประวัติทั้งหมดยังอยู่ครบ แค่ทำเครื่องหมายและหยุดการตามนัด/วัคซีน */}
+              <div style={{ gridColumn: '1 / -1', borderTop: '1px solid var(--line)', paddingTop: 12, marginTop: 2 }}>
+                <label style={{ display: 'inline-flex', alignItems: 'center', gap: 9, cursor: 'pointer', fontWeight: 700, fontSize: 14 }}>
+                  <input type="checkbox" style={{ width: 17, height: 17, cursor: 'pointer' }}
+                    checked={!!editPetInfo.deceased}
+                    onChange={(e) => setEditPetInfo({ ...editPetInfo, deceased: e.target.checked })} />
+                  <span>🕊️ บันทึกว่าเสียชีวิตแล้ว</span>
+                </label>
+                {editPetInfo.deceased ? (
+                  <div className="form-grid" style={{ gridTemplateColumns: '1fr 2fr', gap: 13, marginTop: 11 }}>
+                    <Field label="วันที่เสียชีวิต">
+                      <input className="input" type="date" max={todayISO()} value={editPetInfo.deceasedDate || todayISO()}
+                        onChange={(e) => setEditPetInfo({ ...editPetInfo, deceasedDate: e.target.value })} />
+                    </Field>
+                    <Field label="สาเหตุ">
+                      <input className="input" value={editPetInfo.deceasedCause || ''}
+                        onChange={(e) => setEditPetInfo({ ...editPetInfo, deceasedCause: e.target.value })}
+                        placeholder="เช่น ไตวายเรื้อรัง, อุบัติเหตุ" />
+                    </Field>
+                    <div style={{ gridColumn: '1 / -1', fontSize: 11.5, color: 'var(--ink-faint)' }}>
+                      ประวัติการรักษาและใบเสร็จทั้งหมดยังอยู่ครบ · ระบบจะหยุดเตือนวัคซีนและไม่ตามนัดของตัวนี้ · ติ๊กออกได้ถ้ากดผิด
+                    </div>
+                  </div>
+                ) : null}
               </div>
             </div>
           ) : (

@@ -243,6 +243,7 @@ function HistoryView({ pets, receipts = [], queue = [], onOpenPet }) {
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ display: 'flex', gap: 8, alignItems: 'baseline', flexWrap: 'wrap' }}>
                         <span style={{ fontWeight: 700, fontSize: 14.5 }}>{pet.name}</span>
+                        <DeceasedTag pet={pet} />
                         <span style={{ fontSize: 12.5, color: 'var(--ink-faint)' }}>HN {pet.hn} · {pet.species}</span>
                         <span style={{ fontSize: 11.5, fontWeight: 700, color: catColors[cat] || '#5E8A93', background: (catColors[cat] || '#5E8A93') + '18', borderRadius: 6, padding: '1px 7px' }}>{cat}</span>
                         {admitDay ? <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--powder-deep)', background: 'var(--powder-soft)', borderRadius: 6, padding: '1px 7px' }}>🏥 แอดมิด · รวมบิลวันจำหน่าย</span>
