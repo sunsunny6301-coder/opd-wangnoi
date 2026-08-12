@@ -161,7 +161,15 @@ function healAppointments(appointments, pets, todayStr) {
   let changed = false;
   const out = (appointments || []).map((a) => {
     if (!a || !a.date || a.date >= todayStr) return a;
-    if (a.status === 'cancelled' || a.status === 'done' || a.status === 'missed') return a;
+    if (a.status === 'cancelled' || a.status === 'done') return a;
+    // นัดที่ปิดเป็น "ไม่มา" ไปแล้ว ยังต้องเช็คซ้ำ — ตอนปิด (วันถัดจากวันนัด) ลูกค้าอาจยังไม่มา
+    // แล้วมาช้าอีก 1-7 วันทีหลัง ถ้าไม่ทบทวนจะติดป้าย "ไม่มาตามนัด" ค้างทั้งที่มาแล้ว
+    // อัปเกรดได้ทางเดียว: ไม่มา → มาแล้ว (ไม่เคยลดกลับ)
+    if (a.status === 'missed') {
+      if (!cameWithin(a.hn, a.date, 7)) return a;
+      changed = true;
+      return { ...a, status: 'done', closedAuto: true };
+    }
     changed = true;
     const came = a.status === 'arrived' || cameWithin(a.hn, a.date, 7);
     return { ...a, status: came ? 'done' : 'missed', closedAuto: true };
@@ -631,15 +639,20 @@ function App() {
       const oT = tallyStock(sync.oldItems || []), nT = tallyStock(sync.items);
       deducted = stockDeltaCharges(oT.clinic, nT.clinic).length + stockDeltaCharges(oT.shop, nT.shop).length;
     }
+    // เผื่อต้องออกใบเสร็จให้เคสที่ปิดแล้วแต่ยังไม่มีใบ (ดึงเลขไว้ก่อน ใช้จริงเฉพาะตอนจำเป็น)
+    const spareReceipt = nextReceiptNo();
+    let issuedNo = null;
     setState((s) => {
       const pets = (s.pets || []).map((p) => p.hn === updatedPet.hn ? updatedPet : p);
       let receipts = s.receipts || [];
       let stock = s.stock || [], shopStock = s.shopStock || s.stock || [];
+      let con = { receiptSeq: s.receiptSeq || {}, receiptVoids: s.receiptVoids || {} };
       if (sync && Array.isArray(sync.items)) {
         // ตัด/คืนสต็อกตามส่วนต่างรายการเดิม→ใหม่ (รายการเพ็ทช้อปตัดคลังเพ็ทช้อป)
         const d = applyItemDelta(s, sync.oldItems || [], sync.items);
         stock = d.stock; shopStock = d.shopStock;
         // ซิงก์รายการ (พร้อม stockId/origin) ไปใบเสร็จ OPD ที่ผูกกัน
+        let matched = false;
         receipts = receipts.map((r) => {
           if ((r.type || 'opd') !== 'opd' || r.hn !== sync.hn || (r.q || '') !== (sync.q || '') || r.date !== sync.oldDate) return r;
           const rItems = sync.items.map((it) => Array.isArray(it)
@@ -648,14 +661,33 @@ function App() {
           const total = rItems.reduce((sum, c) => sum + c[1] * c[2], 0);
           // noVat = ยอดรายการเพ็ทช้อป (origin='shop') คำนวณใหม่จากรายการจริง
           const noVat = rItems.filter((c) => c[4] === 'shop').reduce((sum, c) => sum + c[1] * c[2], 0);
+          matched = true;
           return { ...r, items: rItems, total, noVat, date: sync.newDate };
         });
+        // ไม่มีใบเสร็จผูกอยู่ + เคสปิดไปแล้ว + ตอนนี้มีค่าใช้จ่าย → ต้องออกใบเสร็จ
+        // (เช่นปิดเคสแบบ "ไม่มีค่าใช้จ่าย" ไว้ แล้วมาเพิ่มรายการในประวัติทีหลัง — เดิมเงินหายจากทุกหน้า)
+        if (!matched && sync.q) {
+          const rItems = norm5(sync.items);
+          const total = rItems.reduce((sum, c) => sum + c[1] * c[2], 0);
+          const qItem = (s.queue || []).find((x) => String(x.q || '') === String(sync.q));
+          if (total > 0 && qItem && qItem.status === 'done') {
+            con = consumeReceipt(spareReceipt, s);
+            issuedNo = spareReceipt.no;
+            receipts = [...receipts, {
+              no: spareReceipt.no, date: sync.newDate || sync.oldDate, type: 'opd', svcType: qItem.type || null,
+              petName: updatedPet.name, ownerName: (updatedPet.owner && updatedPet.owner.name) || '-',
+              hn: sync.hn, q: sync.q, items: rItems, method: 'เงินสด', total,
+              noVat: rItems.filter((c) => c[4] === 'shop').reduce((sum, c) => sum + c[1] * c[2], 0),
+            }];
+          }
+        }
       }
       // การ์ดคิวต้องตามใบเสร็จที่เพิ่งซิงก์ (ไม่งั้นยอดบนหน้าคิวค้างค่าเก่า)
       const queue = (sync && sync.q) ? syncQueuePaid(s.queue, receipts, sync.hn, sync.q) : (s.queue || []);
-      return { ...s, pets, receipts, queue, stock, shopStock };
+      return { ...s, pets, receipts, queue, stock, shopStock, receiptSeq: con.receiptSeq, receiptVoids: con.receiptVoids };
     });
-    pushToast('บันทึกประวัติแล้ว' + (deducted > 0 ? ` · ปรับสต็อก ${deducted} รายการ` : ''));
+    pushToast('บันทึกประวัติแล้ว' + (deducted > 0 ? ` · ปรับสต็อก ${deducted} รายการ` : '')
+      + (issuedNo ? ` · ออกใบเสร็จ ${issuedNo} ให้เคสนี้` : ''));
   };
   // normalize รายการ → 5-tuple [ชื่อ,จำนวน,ราคา,stockId,origin]
   const norm5 = (arr) => (arr || []).map((it) => Array.isArray(it)
