@@ -54,8 +54,8 @@ function autoMapCols(headers) {
 
 function downloadTemplate() {
   const wb = XLSX.utils.book_new();
-  const header = ['ชื่อสินค้า','หมวด','หน่วย','จำนวน','ขั้นต่ำ','ราคา','ต้นทุน','วิธีใช้'];
-  const example = ['Amoxicillin 250mg','ยา','เม็ด',100,30,12,5,'ครั้งละ 1 เม็ด วันละ 2 ครั้ง'];
+  const header = ['ชื่อสินค้า','หมวด','หน่วย','จำนวน','ขั้นต่ำ','ราคา','ต้นทุน','วิธีใช้','วันหมดอายุ'];
+  const example = ['Amoxicillin 250mg','ยา','เม็ด',100,30,12,5,'ครั้งละ 1 เม็ด วันละ 2 ครั้ง','31/12/2027'];
   const ws = XLSX.utils.aoa_to_sheet([header, example]);
   XLSX.utils.book_append_sheet(wb, ws, 'สต็อก');
   XLSX.writeFile(wb, 'template_stock_import.xlsx');
@@ -170,7 +170,7 @@ function ExcelImportModal({ onImport, onClose }) {
                 <tr>
                   <th style={{ width: 36 }}><input type="checkbox" checked={selected.length === rows.length} onChange={toggleAll} /></th>
                   <th>ชื่อสินค้า</th><th>หมวด</th><th>หน่วย</th>
-                  <th className="num">จำนวน</th><th className="num">ราคา</th><th className="num">ต้นทุน</th>
+                  <th className="num">จำนวน</th><th className="num">ราคา</th><th className="num">ต้นทุน</th><th>หมดอายุ</th>
                 </tr>
               </thead>
               <tbody>
@@ -186,6 +186,7 @@ function ExcelImportModal({ onImport, onClose }) {
                       <td className="num">{getVal(r, 'qty') || '—'}</td>
                       <td className="num">{getVal(r, 'price') ? fmtB(parseFloat(getVal(r, 'price'))) : '—'}</td>
                       <td className="num">{getVal(r, 'cost') ? fmtB(parseFloat(getVal(r, 'cost'))) : '—'}</td>
+                      <td style={{ fontSize: 12 }}>{parseExp(getVal(r, 'exp')) || <span style={{ color: 'var(--ink-faint)' }}>—</span>}</td>
                     </tr>
                   );
                 })}

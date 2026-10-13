@@ -377,7 +377,185 @@ function ChargePicker({ services, stock, shopStock = [], onAdd }) {
   );
 }
 
-function CaseView({ pet, queueItem, vets, assistants = [], services, stock, shopStock = [], allPets, appointments = [], onBack, onFinish, onAddVet, onDeleteVet, onAddAssistant, onDeleteAssistant, onAddAdmitted, onUpdateAdmitted, onDischargeAdmitted, onAddAdmitPayment, onDeleteAdmitPayment, onAddAppointment, onUpdateAppointment, onDeleteAppointment, pushToast, onUpdatePet, onUpdateVisit, onAddService, onDeleteService, onUpdateService, onSaveDraft, previewReceiptNo, notePresets, onSavePresets }) {
+// ════════ ยาชุด — ชุดรายการสำเร็จรูป ════════
+// เก็บใน state.chargeSets = [{ id, name, items: [[ชื่อ, จำนวน, ราคา, stockId, origin], ...] }]
+// ใส่ในบิล = ต่อท้าย charges ตามรูปแบบเดิมทุกอย่าง → สต็อกถูกตัดตอนชำระเงิน/จำหน่าย (ไม่ตัดซ้ำ ไม่ตัดล่วงหน้า)
+// ราคาตามราคาปัจจุบันในคลัง/บริการ ณ ตอนกด (ราคาที่เก็บในชุดใช้สำรองเมื่อหารายการไม่เจอ)
+function resolveSetItem(c, stock, shopStock, services) {
+  const name = String(c[0] || ''), qty = Math.max(1, Number(c[1]) || 1), origin = c[4] === 'shop' ? 'shop' : null;
+  if (c[3]) {
+    const pool = origin === 'shop' ? (shopStock || []) : (stock || []);
+    // id หายได้ถ้าลบแล้วนำเข้าใหม่ → ผูกกลับด้วยชื่อในคลังเดียวกัน
+    const st = pool.find((x) => x.id === c[3]) || pool.find((x) => x.name === name);
+    if (st) return { name: st.name, qty, price: Number(st.price) || 0, stockId: st.id, origin, st, missing: false };
+    return { name, qty, price: Number(c[2]) || 0, stockId: null, origin: null, st: null, missing: true };
+  }
+  const sv = (services || []).find((x) => x.name === name);
+  return { name, qty, price: sv ? (Number(sv.price) || 0) : (Number(c[2]) || 0), stockId: null, origin: null, st: null, missing: false };
+}
+
+function ChargeSetModal({ sets, services, stock, shopStock, onSave, onApply, onClose }) {
+  const [editing, setEditing] = useState(null);   // null = หน้ารายการ · { id, name, items } = หน้าแก้ไข
+  const [confirmDel, setConfirmDel] = useState(null);
+  const [q, setQ] = useState('');
+  const list = (sets || []).filter((s) => !q.trim() || s.name.toLowerCase().includes(q.trim().toLowerCase()));
+
+  if (editing) {
+    const rows = editing.items.map((c) => resolveSetItem(c, stock, shopStock, services));
+    const sum = rows.reduce((a, r) => a + r.qty * r.price, 0);
+    const nameTrim = editing.name.trim();
+    const isNew = !(sets || []).some((s) => s.id === editing.id);
+    const dupName = !!nameTrim && (sets || []).some((s) => s.id !== editing.id && s.name.trim() === nameTrim);
+    const canSave = !!nameTrim && editing.items.length > 0 && !dupName;
+    const setItems = (fn) => setEditing((e) => ({ ...e, items: fn(e.items) }));
+    const setQtyAt = (i, n) => setItems((items) => items.map((c, j) => (j === i ? [c[0], Math.max(1, n), c[2], c[3], c[4]] : c)));
+    const addItem = (item) => {
+      const stockId = (item.kind === 'stock' || item.kind === 'stk' || item.kind === 'shop') ? item.id : null;
+      const origin = item.kind === 'shop' ? 'shop' : null;
+      setItems((items) => {
+        // เลือกตัวเดิมซ้ำ = บวกจำนวน (ไม่แตกเป็นสองบรรทัด)
+        const ix = items.findIndex((c) => (stockId ? c[3] === stockId && (c[4] || null) === origin : !c[3] && c[0] === item.name));
+        if (ix >= 0) return items.map((c, j) => (j === ix ? [c[0], (Number(c[1]) || 1) + 1, c[2], c[3], c[4]] : c));
+        return [...items, [item.name, 1, Number(item.price) || 0, stockId, origin]];
+      });
+    };
+    const save = () => {
+      if (!canSave) return;
+      // เก็บชื่อ/ราคาปัจจุบันไว้เป็นค่าสำรอง + ผูก id ใหม่ถ้าผูกกลับด้วยชื่อได้
+      const items = editing.items.map((c, i) => {
+        const r = rows[i];
+        return r.stockId ? [r.name, r.qty, r.price, r.stockId, r.origin] : [r.name, r.qty, r.price, c[3] || null, c[4] || null];
+      });
+      const set = { id: editing.id, name: nameTrim, items };
+      onSave((prev) => (prev.some((s) => s.id === set.id) ? prev.map((s) => (s.id === set.id ? set : s)) : [...prev, set]),
+        `${isNew ? 'สร้าง' : 'บันทึก'}ยาชุด “${set.name}” แล้ว (${items.length} รายการ)`);
+      setEditing(null);
+    };
+    return (
+      <Modal title={`💊 ยาชุด · ${isNew ? 'สร้างชุดใหม่' : 'แก้ไขชุด'}`} onClose={() => setEditing(null)} wide
+        footer={<>
+          <button className="btn" onClick={() => setEditing(null)}>← กลับ</button>
+          <button className="btn btn-primary" disabled={!canSave} onClick={save}>บันทึกชุด</button>
+        </>}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+            <label style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--ink-soft)' }}>ชื่อชุด</label>
+            <input className="input" value={editing.name} autoFocus placeholder="เช่น วัคซีนแมว"
+              onChange={(e) => { const v = e.target.value; setEditing((x) => ({ ...x, name: v })); }} />
+            {dupName ? <span style={{ fontSize: 12, color: 'var(--blush-deep)' }}>มีชุดชื่อนี้อยู่แล้ว — ตั้งชื่ออื่น</span> : null}
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+            <label style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--ink-soft)' }}>เพิ่มรายการเข้าชุด (ยา/สินค้าในสต็อก หรือบริการ)</label>
+            <ChargePicker services={services || []} stock={stock || []} shopStock={shopStock || []} onAdd={addItem} />
+          </div>
+          {rows.length === 0 ? (
+            <div style={{ padding: 22, textAlign: 'center', color: 'var(--ink-faint)', fontSize: 13, border: '1.5px dashed var(--line)', borderRadius: 'var(--radius-sm)' }}>
+              ยังไม่มีรายการ — ค้นหาแล้วกดเลือกจากช่องด้านบน
+            </div>
+          ) : (
+            <div style={{ overflow: 'auto', border: '1px solid var(--line)', borderRadius: 'var(--radius-sm)' }}>
+              <table className="tbl">
+                <thead><tr><th>รายการ</th><th style={{ width: 120, textAlign: 'center' }}>จำนวน</th><th className="num" style={{ width: 90 }}>ราคา/หน่วย</th><th className="num" style={{ width: 90 }}>รวม</th><th style={{ width: 36 }}></th></tr></thead>
+                <tbody>
+                  {rows.map((r, i) => (
+                    <tr key={i}>
+                      <td>
+                        <b>{r.name}</b>
+                        <div style={{ fontSize: 11.5, marginTop: 2 }}>
+                          {r.missing ? <span style={{ color: 'var(--blush-deep)', fontWeight: 700 }}>⚠️ ไม่พบในสต็อกแล้ว (จะไม่ตัดสต็อก)</span>
+                            : r.stockId ? <span style={{ color: 'var(--mint-deep)' }}>📦 ตัดสต็อก{r.origin === 'shop' ? ' (เพ็ทช้อป)' : ''} · คงเหลือ {r.st.qty}{r.st.unit ? ` ${r.st.unit}` : ''}</span>
+                            : <span style={{ color: 'var(--ink-faint)' }}>💼 บริการ (ไม่ตัดสต็อก)</span>}
+                        </div>
+                      </td>
+                      <td style={{ textAlign: 'center' }}>
+                        <div className="qty-stepper" style={{ width: 84, margin: '0 auto' }}>
+                          <button onClick={() => setQtyAt(i, r.qty - 1)} disabled={r.qty <= 1}>−</button>
+                          <QtyInput value={r.qty} onChange={(n) => setQtyAt(i, n)} min={1} width={34} />
+                          <button onClick={() => setQtyAt(i, r.qty + 1)}>+</button>
+                        </div>
+                      </td>
+                      <td className="num">{fmtB(r.price)}</td>
+                      <td className="num" style={{ fontWeight: 700 }}>{fmtB(r.qty * r.price)}</td>
+                      <td><button className="btn btn-icon" title="เอาออกจากชุด" style={{ color: 'var(--blush-deep)', fontSize: 19, lineHeight: 1 }}
+                        onClick={() => setItems((items) => items.filter((_, j) => j !== i))}>×</button></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+          {rows.length > 0 ? (
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, fontSize: 12.5, color: 'var(--ink-soft)', flexWrap: 'wrap' }}>
+              <span>ราคาตามราคาปัจจุบันในคลัง/บริการ — แก้ราคาในคลังแล้ว ชุดใช้ราคาใหม่อัตโนมัติ</span>
+              <span style={{ fontWeight: 800, fontSize: 16, color: 'var(--navy)', whiteSpace: 'nowrap' }}>รวม {fmtB(sum)}</span>
+            </div>
+          ) : null}
+        </div>
+      </Modal>
+    );
+  }
+
+  return (
+    <Modal title="💊 ยาชุด" onClose={onClose} wide
+      footer={<>
+        <button className="btn" onClick={onClose}>ปิด</button>
+        <button className="btn btn-primary" onClick={() => { setConfirmDel(null); setEditing({ id: 'set_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6), name: '', items: [] }); }}>+ สร้างชุดใหม่</button>
+      </>}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+        {(sets || []).length > 4 ? <input className="input" value={q} onChange={(e) => setQ(e.target.value)} placeholder="ค้นหาชื่อชุด..." /> : null}
+        {(sets || []).length === 0 ? (
+          <div style={{ padding: '26px 16px', textAlign: 'center', color: 'var(--ink-soft)', fontSize: 13.5, lineHeight: 1.7, border: '1.5px dashed var(--line)', borderRadius: 'var(--radius-sm)' }}>
+            ยังไม่มียาชุด<br />
+            สร้างชุดที่ใช้บ่อย เช่น <b>“วัคซีนแมว”</b> = ค่าฉีดวัคซีน + วัคซีน + ยาถ่ายพยาธิ<br />
+            แล้วกด <b>ใส่ในบิล</b> ครั้งเดียวได้ครบทั้งชุด · สต็อกถูกตัดตอนชำระเงินเหมือนรายการปกติ
+          </div>
+        ) : list.length === 0 ? (
+          <div style={{ padding: 18, textAlign: 'center', color: 'var(--ink-faint)', fontSize: 13 }}>ไม่พบชุดที่ค้นหา</div>
+        ) : list.map((s) => {
+          const rows = (s.items || []).map((c) => resolveSetItem(c, stock, shopStock, services));
+          const sum = rows.reduce((a, r) => a + r.qty * r.price, 0);
+          const missing = rows.filter((r) => r.missing);
+          const short = rows.filter((r) => r.st && Number(r.st.qty) < r.qty);
+          return (
+            <div key={s.id} style={{ border: '1.5px solid var(--line)', borderRadius: 'var(--radius-sm)', padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: 7 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                <span style={{ fontWeight: 800, fontSize: 15, color: 'var(--navy)' }}>💊 {s.name}</span>
+                <span style={{ fontSize: 12.5, color: 'var(--ink-soft)' }}>{rows.length} รายการ · <b style={{ color: 'var(--mint-deep)' }}>{fmtB(sum)}</b></span>
+                <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center' }}>
+                  {confirmDel === s.id ? (<>
+                    <button className="btn btn-sm" style={{ fontSize: 12, background: 'var(--blush-soft)', color: 'var(--blush-deep)', borderColor: 'var(--blush-deep)', fontWeight: 700 }}
+                      onClick={() => { onSave((prev) => prev.filter((x) => x.id !== s.id), `ลบยาชุด “${s.name}” แล้ว`); setConfirmDel(null); }}>ลบชุดนี้?</button>
+                    <button className="btn btn-sm" style={{ fontSize: 12 }} onClick={() => setConfirmDel(null)}>ไม่</button>
+                  </>) : (<>
+                    <button className="btn btn-sm" title="แก้ไขชุด" style={{ fontSize: 13, padding: '3px 8px' }}
+                      onClick={() => { setConfirmDel(null); setEditing({ id: s.id, name: s.name, items: (s.items || []).map((c) => [c[0], c[1], c[2], c[3] || null, c[4] || null]) }); }}>✏️</button>
+                    <button className="btn btn-sm" title="ลบชุด" style={{ fontSize: 13, padding: '3px 8px', color: 'var(--blush-deep)' }} onClick={() => setConfirmDel(s.id)}>🗑</button>
+                    <button className="btn btn-sm btn-primary" style={{ fontWeight: 700 }} disabled={rows.length === 0} onClick={() => onApply(s)}>＋ ใส่ในบิล</button>
+                  </>)}
+                </span>
+              </div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
+                {rows.map((r, i) => (
+                  <span key={i} className="chip" style={{ fontSize: 11.5, ...(r.missing ? { background: 'var(--blush-soft)', color: 'var(--blush-deep)' } : {}) }}>
+                    {r.stockId ? '📦' : r.missing ? '⚠️' : '💼'} {r.name} ×{r.qty}
+                  </span>
+                ))}
+              </div>
+              {missing.length || short.length ? (
+                <div style={{ fontSize: 12, color: 'var(--blush-deep)' }}>
+                  {missing.length ? <div>⚠️ ไม่พบในสต็อกแล้ว: {missing.map((r) => r.name).join(', ')}</div> : null}
+                  {short.length ? <div>⚠️ สต็อกไม่พอ: {short.map((r) => `${r.name} (เหลือ ${r.st.qty})`).join(', ')}</div> : null}
+                </div>
+              ) : null}
+            </div>
+          );
+        })}
+      </div>
+    </Modal>
+  );
+}
+
+function CaseView({ pet, queueItem, vets, assistants = [], services, stock, shopStock = [], allPets, appointments = [], onBack, onFinish, onAddVet, onDeleteVet, onAddAssistant, onDeleteAssistant, onAddAdmitted, onUpdateAdmitted, onDischargeAdmitted, onAddAdmitPayment, onDeleteAdmitPayment, onAddAppointment, onUpdateAppointment, onDeleteAppointment, pushToast, onUpdatePet, onUpdateVisit, onAddService, onDeleteService, onUpdateService, onSaveDraft, previewReceiptNo, notePresets, onSavePresets, chargeSets = [], onSaveChargeSets }) {
   const latestWeight = pet.visits.length ? pet.visits[0].weight : pet.weight;
   const draft = queueItem?.draft;
   // เคสที่บันทึกประวัติไปแล้ว (ส่งแคชเชียร์/ชำระแล้ว) เปิดกลับเข้ามาใหม่ ต้องเห็นของเดิมครบทุกช่อง
@@ -418,6 +596,7 @@ function CaseView({ pet, queueItem, vets, assistants = [], services, stock, shop
   const [showVaccineHistory, setShowVaccineHistory] = useState(false);
   const [newPay, setNewPay] = useState({ amount: '', method: 'เงินสด', note: 'มัดจำ' });   // มัดจำ/จ่ายล่วงหน้า (แอดมิด)
   const [showServiceMgr, setShowServiceMgr] = useState(false);
+  const [showChargeSets, setShowChargeSets] = useState(false);
   const [lightbox, setLightbox] = useState(null);
   const [expandedVisits, setExpandedVisits] = useState({ 0: true });
   const [showAllHistory, setShowAllHistory] = useState(false);
@@ -514,6 +693,19 @@ function CaseView({ pet, queueItem, vets, assistants = [], services, stock, shop
     };
     setCharges((prev) => [...prev, ...lastVisitItems.items.map((c) => [c[0], c[1], priceNow(c), c[3], c[4]])]);
     pushToast && pushToast(`เพิ่ม ${lastVisitItems.items.length} รายการจากครั้งก่อน (${dateTH(lastVisitItems.date)}) — ตรวจราคาก่อนบันทึก`);
+  };
+  // ยาชุด → ต่อท้ายบิล (ราคาปัจจุบัน · ผูก stockId เดิมให้ตัดสต็อกตอนชำระเงิน)
+  const applyChargeSet = (set) => {
+    const rows = (set.items || []).map((c) => resolveSetItem(c, stock, shopStock, services));
+    if (!rows.length) return;
+    setCharges((prev) => [...prev, ...rows.map((r) => [r.name, r.qty, r.price, r.stockId, r.origin])]);
+    // เทียบสต็อกกับจำนวนรวมในบิล (รวมรายการเดิมที่ใช้ตัวเดียวกัน)
+    const inBill = (r) => charges.filter((c) => c[3] === r.stockId && (c[4] === 'shop' ? 'shop' : null) === r.origin).reduce((a, c) => a + (Number(c[1]) || 0), 0);
+    const short = rows.filter((r) => r.st && Number(r.st.qty) < r.qty + inBill(r)).map((r) => `${r.name} (เหลือ ${r.st.qty})`);
+    const missing = rows.filter((r) => r.missing).map((r) => r.name);
+    const warn = [missing.length ? `ไม่พบในสต็อก: ${missing.join(', ')}` : '', short.length ? `สต็อกไม่พอ: ${short.join(', ')}` : ''].filter(Boolean).join(' · ');
+    pushToast && pushToast(`💊 ใส่ยาชุด “${set.name}” ${rows.length} รายการแล้ว${warn ? ' — ⚠️ ' + warn : ' — ตัดสต็อกตอนชำระเงิน'}`);
+    setShowChargeSets(false);
   };
   const patchCharge = (i, k, v) => setCharges((prev) => prev.map((x, ix) => {
     if (ix !== i) return x;
@@ -878,6 +1070,10 @@ function CaseView({ pet, queueItem, vets, assistants = [], services, stock, shop
                 </button>
                 <button className="btn btn-sm" onClick={() => setShowServiceMgr(true)}>
                   📋 จัดการรายการ
+                </button>
+                <button className="btn btn-sm" onClick={() => setShowChargeSets(true)}
+                  style={{ color: 'var(--mint-deep)', borderColor: 'var(--mint-deep)', fontWeight: 700 }}>
+                  💊 ยาชุด{chargeSets.length ? ` (${chargeSets.length})` : ''}
                 </button>
                 {charges.length > 0 && (
                   <div style={{ marginLeft: 'auto', fontWeight: 700, fontSize: 16.5, color: 'var(--navy)' }}>
@@ -1520,6 +1716,10 @@ function CaseView({ pet, queueItem, vets, assistants = [], services, stock, shop
           onConfirm={(method, grandTotal, billEdits) => { setShowReceipt(false); isAdmittedMode ? dischargeAdmitted(method, grandTotal, billEdits) : save('paid', method, grandTotal, billEdits); }}
           confirmLabel={isAdmittedMode ? 'จำหน่าย + ออกใบเสร็จ' : 'รับชำระ + ปิดเคส'}
         />
+      ) : null}
+      {showChargeSets ? (
+        <ChargeSetModal sets={chargeSets} services={services || []} stock={stock || []} shopStock={shopStock || []}
+          onSave={(fn, msg) => onSaveChargeSets && onSaveChargeSets(fn, msg)} onApply={applyChargeSet} onClose={() => setShowChargeSets(false)} />
       ) : null}
       {showServiceMgr ? (
         <ServiceManagerModal

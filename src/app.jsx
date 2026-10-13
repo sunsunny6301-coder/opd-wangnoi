@@ -202,6 +202,7 @@ function mergeState(base, mine, theirs) {
     stock: mergeArrayById(base.stock, M.stock, T.stock, (s) => s.id),
     shopStock: mergeArrayById(base.shopStock, M.shopStock, T.shopStock, (s) => s.id),
     services: mergeArrayById(base.services, M.services, T.services, (s) => s.id),
+    chargeSets: mergeArrayById(base.chargeSets, M.chargeSets, T.chargeSets, (x) => x.id),
     vets: _union(M.vets, T.vets),
     assistants: _union(M.assistants, T.assistants),
     receiptSeq: mr.seq,
@@ -304,6 +305,12 @@ function App() {
   const saveNotePresets = (type, list) => {
     setState((s) => ({ ...s, notePresets: { ...(s.notePresets || {}), [type]: list } }));
     pushToast(`บันทึกตัวเลือกของ “${type}” แล้ว (${list.length} อัน)`);
+  };
+  // ยาชุด — ชุดรายการสำเร็จรูป (เช่น “วัคซีนแมว”) กดทีเดียวได้ทั้งชุดในบิล · ตัดสต็อกตอนชำระเงินตามปกติ
+  const chargeSets = state.chargeSets || [];
+  const saveChargeSets = (list, msg) => {
+    setState((s) => ({ ...s, chargeSets: typeof list === 'function' ? list(s.chargeSets || []) : list }));
+    if (msg) pushToast(msg);
   };
   // ข้อความสำเร็จรูปของหน้าส่ง SMS เอง (แก้/เพิ่มได้ · sync คลาวด์)
   const smsPresets = state.smsPresets;
@@ -1232,7 +1239,7 @@ function App() {
           onUpdateAdmitted={updateAdmitted} onDischargeAdmitted={dischargeAdmitted}
           onAddAdmitted={addAdmitted} onAddAdmitPayment={addAdmitPayment} onDeleteAdmitPayment={deleteAdmitPayment} pushToast={pushToast}
           onUpdatePet={updatePet} onUpdateVisit={updateVisit} onAddService={addService} onDeleteService={deleteService} onUpdateService={updateService} onSaveDraft={saveDraft} previewReceiptNo={nextReceiptNo().no}
-          notePresets={notePresets} onSavePresets={saveNotePresets} /> :
+          notePresets={notePresets} onSavePresets={saveNotePresets} chargeSets={chargeSets} onSaveChargeSets={saveChargeSets} /> :
           null}
           {page === 'appointments' ? <AppointmentsView appointments={appointments} pets={pets} onAdd={addAppointment} onUpdate={updateAppointment} onDelete={deleteAppointment} onOpenPet={openPet} pushToast={pushToast} notePresets={notePresets} onSavePresets={saveNotePresets} smsPresets={smsPresets} onSaveSmsPresets={saveSmsPresets} /> : null}
           {page === 'shop' ? <PetShop stock={shopStock} onCheckout={shopCheckout} previewReceiptNo={nextReceiptNo().no} onDeleteItem={deleteShopItem} onAddItem={addShopItem} onImportStock={importShopItems} onUpdateItem={updateShopItem} /> : null}
