@@ -491,6 +491,30 @@ function CaseView({ pet, queueItem, vets, assistants = [], services, stock, shop
     setShowReceipt(false);
     onBack();
   };
+  // ── ทำซ้ำรายการครั้งก่อน ──
+  // เอา visit ล่าสุดที่ "มีรายการ" และไม่ใช่เคสที่กำลังเปิดอยู่ (กันทำซ้ำตัวเอง)
+  const lastVisitItems = useMemo(() => {
+    const v = (pet.visits || []).find((x) => {
+      if (queueItem?.q && String(x.q || '') === String(queueItem.q)) return false;
+      return (x.items || []).length > 0;
+    });
+    if (!v) return null;
+    const items = (v.items || []).map((c) => Array.isArray(c)
+      ? [c[0] || '', Number(c[1]) || 1, Number(c[2]) || 0, c[3] || null, c[4] || null]
+      : [String(c.name || ''), Number(c.qty) || 1, Number(c.price) || 0, c.stockId || null, c.origin || null]);
+    return { date: v.date, items, total: items.reduce((s, c) => s + c[1] * c[2], 0) };
+  }, [pet.visits, queueItem]);
+  const repeatLastVisit = () => {
+    if (!lastVisitItems) return;
+    // ราคาปัจจุบันอาจเปลี่ยนไปจากครั้งก่อน → ใช้ราคาล่าสุดจากคลัง/บริการ ถ้าหาเจอ
+    const priceNow = (c) => {
+      if (c[3]) { const st = [...(stock || []), ...(shopStock || [])].find((x) => x.id === c[3]); if (st && Number(st.price) > 0) return Number(st.price); }
+      const sv = (services || []).find((x) => x.name === c[0]); if (sv && Number(sv.price) > 0) return Number(sv.price);
+      return c[2];
+    };
+    setCharges((prev) => [...prev, ...lastVisitItems.items.map((c) => [c[0], c[1], priceNow(c), c[3], c[4]])]);
+    pushToast && pushToast(`เพิ่ม ${lastVisitItems.items.length} รายการจากครั้งก่อน (${dateTH(lastVisitItems.date)}) — ตรวจราคาก่อนบันทึก`);
+  };
   const patchCharge = (i, k, v) => setCharges((prev) => prev.map((x, ix) => {
     if (ix !== i) return x;
     const a = [x[0], x[1], x[2], x[3], x[4]]; a[k] = v; return a;
@@ -785,6 +809,14 @@ function CaseView({ pet, queueItem, vets, assistants = [], services, stock, shop
             </div>
             <div className="card-pad" style={{ display: 'flex', flexDirection: 'column', gap: 13 }}>
               <ChargePicker services={services} stock={stock} shopStock={shopStock} onAdd={(item) => setCharges((prev) => [...prev, [item.name, 1, item.price, (item.kind === 'stock' || item.kind === 'stk' || item.kind === 'shop') ? item.id : null, item.kind === 'shop' ? 'shop' : null]])} />
+              {/* ทำซ้ำรายการครั้งก่อน — เคสโรคเรื้อรังมักได้ยาชุดเดิมทุกเดือน กดครั้งเดียวได้ทั้งชุด */}
+              {lastVisitItems ? (
+                <button className="btn btn-sm" onClick={repeatLastVisit}
+                  style={{ alignSelf: 'flex-start', color: 'var(--powder-deep)', borderColor: 'var(--powder-deep)', fontWeight: 700 }}
+                  title={lastVisitItems.items.map((c) => `${c[0]} x${c[1]}`).join('\n')}>
+                  ↻ ทำซ้ำครั้งก่อน ({dateTH(lastVisitItems.date)} · {lastVisitItems.items.length} รายการ · {fmtB(lastVisitItems.total)})
+                </button>
+              ) : null}
               {/* charges table */}
               {charges.length > 0 && (
                 <div style={{ overflow: 'auto' }}>

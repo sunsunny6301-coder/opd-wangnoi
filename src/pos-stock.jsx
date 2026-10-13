@@ -12,7 +12,34 @@ const FIELD_ALIASES = {
   price: ['ราคา','ราคาขาย','price'],
   cost:  ['ต้นทุน','cost','ราคาต้นทุน'],
   dose:  ['วิธีใช้','dose','คำแนะนำ','คำสั่งยา'],
+  exp:   ['หมดอายุ','วันหมดอายุ','exp','expiry','expire','expiration','วันที่หมดอายุ'],
 };
+
+// ── วันหมดอายุ ──
+// รับได้หลายรูปแบบที่คลินิกใช้จริง: 2027-05-01 · 01/05/2027 · 01/05/70 (พ.ศ.) · 05/2027 (เดือน/ปี)
+function parseExp(v) {
+  if (!v) return '';
+  const s = String(v).trim();
+  if (!s) return '';
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+  const pad = (n) => String(n).padStart(2, '0');
+  const toAD = (y) => { const n = Number(y); if (n > 2400) return n - 543; if (n < 100) return n + (n > 50 ? 1900 : 2000) > 2400 ? n + 1900 - 543 : 2000 + n; return n; };
+  let m = s.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})$/);      // วัน/เดือน/ปี
+  if (m) { const y = toAD(m[3]); return `${y}-${pad(m[2])}-${pad(m[1])}`; }
+  m = s.match(/^(\d{1,2})[\/\-.](\d{4})$/);                             // เดือน/ปี → สิ้นเดือน
+  if (m) { const y = toAD(m[2]), mo = Number(m[1]); const last = new Date(y, mo, 0).getDate(); return `${y}-${pad(mo)}-${pad(last)}`; }
+  const d = new Date(s);
+  if (!isNaN(d.getTime())) return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  return '';
+}
+// สถานะวันหมดอายุ: expired = หมดแล้ว · soon = ภายใน 60 วัน
+function expStatus(exp, todayStr) {
+  if (!exp) return null;
+  const t = todayStr || todayISO();
+  if (exp < t) return { kind: 'expired', days: Math.round((new Date(t) - new Date(exp)) / 86400000) };
+  const days = Math.round((new Date(exp) - new Date(t)) / 86400000);
+  return days <= 60 ? { kind: 'soon', days } : { kind: 'ok', days };
+}
 
 function autoMapCols(headers) {
   const map = {};
@@ -79,6 +106,7 @@ function ExcelImportModal({ onImport, onClose }) {
       price: parseFloat(getVal(r, 'price')) || 0,
       cost: parseFloat(getVal(r, 'cost')) || 0,
       dose: String(getVal(r, 'dose') || '').trim(),
+      exp: parseExp(getVal(r, 'exp')),
       emoji: CAT_EMOJIS[cat] || '📦',
     };
   }).filter((item) => item.name);
@@ -119,7 +147,7 @@ function ExcelImportModal({ onImport, onClose }) {
           <div style={{ background: 'var(--powder-soft)', borderRadius: 'var(--radius-sm)', padding: '10px 14px' }}>
             <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 8 }}>🗂 จับคู่คอลัมน์ (ระบบตรวจจับอัตโนมัติ)</div>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8 }}>
-              {[['name','ชื่อสินค้า *'],['cat','หมวด'],['unit','หน่วย'],['qty','จำนวน'],['min','ขั้นต่ำ'],['price','ราคาขาย'],['cost','ต้นทุน'],['dose','วิธีใช้']].map(([f, label]) => (
+              {[['name','ชื่อสินค้า *'],['cat','หมวด'],['unit','หน่วย'],['qty','จำนวน'],['min','ขั้นต่ำ'],['price','ราคาขาย'],['cost','ต้นทุน'],['dose','วิธีใช้'],['exp','วันหมดอายุ']].map(([f, label]) => (
                 <div key={f}>
                   <div style={{ fontSize: 11, color: 'var(--ink-soft)', marginBottom: 2 }}>{label}</div>
                   <select className="select" style={{ fontSize: 12, padding: '4px 6px' }}
@@ -397,13 +425,14 @@ function PetShop({ stock, onCheckout, previewReceiptNo, onDeleteItem, onAddItem,
 function StockView({ stock, onAdjust, onAddItem, onImportStock, onDeleteItem, onClearAll, onUpdateItem }) {
   const [q, setQ] = useState('');
   const [cat, setCat] = useState('ทั้งหมด');
+  const [flag, setFlag] = useState(null);   // ตัวกรองเตือน: 'cost' ทุนผิด · 'exp' หมดอายุ · 'low' ใกล้หมด
   const [showAdd, setShowAdd] = useState(false);
   const [showImport, setShowImport] = useState(false);
   const [confirmDeleteId, setConfirmDeleteId] = useState(null);
   const [confirmClear, setConfirmClear] = useState(false);
   const [editId, setEditId] = useState(null);
   const [ef, setEf] = useState(null); // edit form state
-  const [nf, setNf] = useState({ name: '', cat: 'ยา', unit: 'เม็ด', qty: '', min: '', price: '', cost: '', dose: '' });
+  const [nf, setNf] = useState({ name: '', cat: 'ยา', unit: 'เม็ด', qty: '', min: '', price: '', cost: '', dose: '', exp: '' });
 
   // Dynamic cats from actual data
   const cats = useMemo(() => {
@@ -412,14 +441,26 @@ function StockView({ stock, onAdjust, onAddItem, onImportStock, onDeleteItem, on
   }, [stock]);
 
   const lowCount = stock.filter((s) => s.qty <= s.min).length;
+  // ── ตัวช่วยตรวจข้อมูลผิดปกติ ──
+  // ทุน > ราคาขาย = มักคีย์ทุนเป็น "ต่อกล่อง" แต่ขาย "ต่อเม็ด" → กำไรที่คำนวณจะสูงเกินจริง
+  const badCost = (s) => Number(s.cost) > 0 && Number(s.price) > 0 && Number(s.cost) > Number(s.price);
+  const today = todayISO();
+  const badCostCount = stock.filter(badCost).length;
+  const expiredCount = stock.filter((s) => { const e = expStatus(s.exp, today); return e && e.kind === 'expired'; }).length;
+  const soonCount = stock.filter((s) => { const e = expStatus(s.exp, today); return e && e.kind === 'soon'; }).length;
 
-  const items = stock.filter((s) =>
-    (cat === 'ทั้งหมด' || s.cat === cat) &&
-    (!q.trim() || s.name.toLowerCase().includes(q.trim().toLowerCase())));
+  const items = stock.filter((s) => {
+    if (!(cat === 'ทั้งหมด' || s.cat === cat)) return false;
+    if (q.trim() && !s.name.toLowerCase().includes(q.trim().toLowerCase())) return false;
+    if (flag === 'cost') return badCost(s);
+    if (flag === 'exp') { const e = expStatus(s.exp, today); return !!e && (e.kind === 'expired' || e.kind === 'soon'); }
+    if (flag === 'low') return s.qty <= s.min;
+    return true;
+  });
 
   const startEdit = (s) => {
     setEditId(s.id);
-    setEf({ name: s.name, cat: s.cat || 'ยา', unit: s.unit || '', qty: String(s.qty ?? ''), min: String(s.min ?? ''), price: String(s.price ?? ''), cost: String(s.cost ?? ''), dose: s.dose || '' });
+    setEf({ name: s.name, cat: s.cat || 'ยา', unit: s.unit || '', qty: String(s.qty ?? ''), min: String(s.min ?? ''), price: String(s.price ?? ''), cost: String(s.cost ?? ''), dose: s.dose || '', exp: s.exp || '' });
     setConfirmDeleteId(null);
   };
   const saveEdit = () => {
@@ -427,7 +468,7 @@ function StockView({ stock, onAdjust, onAddItem, onImportStock, onDeleteItem, on
     onUpdateItem && onUpdateItem(editId, {
       name: ef.name.trim(), cat: ef.cat, unit: ef.unit.trim(),
       qty: parseInt(ef.qty) || 0, min: parseInt(ef.min) || 0,
-      price: parseFloat(ef.price) || 0, cost: parseFloat(ef.cost) || 0, dose: ef.dose,
+      price: parseFloat(ef.price) || 0, cost: parseFloat(ef.cost) || 0, dose: ef.dose, exp: ef.exp || '',
     });
     setEditId(null); setEf(null);
   };
@@ -442,7 +483,17 @@ function StockView({ stock, onAdjust, onAddItem, onImportStock, onDeleteItem, on
         <div className="seg">
           {cats.map((c) => <button key={c} className={cat === c ? 'on' : ''} onClick={() => setCat(c)}>{c}</button>)}
         </div>
-        {lowCount > 0 ? <span className="chip chip-butter"><Icon name="alert" size={13} /> ใกล้หมด {lowCount} รายการ</span> : null}
+        {/* ป้ายเตือน — กดเพื่อกรองเฉพาะรายการที่มีปัญหา กดซ้ำเพื่อยกเลิกตัวกรอง */}
+        {[
+          lowCount > 0 ? { id: 'low', cls: 'chip-butter', label: `⚠️ ใกล้หมด ${lowCount}` } : null,
+          expiredCount > 0 || soonCount > 0 ? { id: 'exp', cls: 'chip-blush', label: `⏰ หมดอายุ ${expiredCount} · ใกล้หมดอายุ ${soonCount}` } : null,
+          badCostCount > 0 ? { id: 'cost', cls: 'chip-blush', label: `💸 ทุนน่าจะผิดหน่วย ${badCostCount}` } : null,
+        ].filter(Boolean).map((b) => (
+          <button key={b.id} className={'chip ' + b.cls} onClick={() => setFlag(flag === b.id ? null : b.id)}
+            style={{ cursor: 'pointer', border: flag === b.id ? '1.5px solid var(--ink)' : '1.5px solid transparent', fontWeight: 700 }}>
+            {b.label}{flag === b.id ? ' ✕' : ''}
+          </button>
+        ))}
         <div style={{ flex: 1 }}></div>
         <button className="btn" style={{ color: 'var(--mint-deep)', borderColor: 'var(--mint-deep)' }} onClick={() => setShowImport(true)}>📥 Import Excel</button>
         {confirmClear ? (
@@ -461,7 +512,7 @@ function StockView({ stock, onAdjust, onAddItem, onImportStock, onDeleteItem, on
       <div className="card" style={{ overflow: 'hidden' }}>
         <table className="tbl">
           <thead>
-            <tr><th>สินค้า</th><th>หมวด</th><th className="num">ต้นทุน</th><th className="num">ราคาขาย</th><th className="num">กำไร</th><th className="num">คงเหลือ</th><th>สถานะ</th><th style={{ width: 130 }}>ปรับสต็อก</th><th style={{ width: 90 }}></th></tr>
+            <tr><th>สินค้า</th><th>หมวด</th><th className="num">ต้นทุน</th><th className="num">ราคาขาย</th><th className="num">กำไร</th><th>หมดอายุ</th><th className="num">คงเหลือ</th><th>สถานะ</th><th style={{ width: 130 }}>ปรับสต็อก</th><th style={{ width: 90 }}></th></tr>
           </thead>
           <tbody>
             {items.map((s) => {
@@ -510,6 +561,24 @@ function StockView({ stock, onAdjust, onAddItem, onImportStock, onDeleteItem, on
                           <button className="btn btn-sm" style={{ fontSize: 12 }} onClick={() => { setEditId(null); setEf(null); }}>✕</button>
                         </div>
                       </div>
+                      <div style={{ marginTop: 8, display: 'grid', gridTemplateColumns: '200px 1fr', gap: 8, alignItems: 'end' }}>
+                        <div>
+                          <div style={{ fontSize: 11, color: 'var(--ink-soft)', marginBottom: 3 }}>วันหมดอายุ</div>
+                          <input className="input" type="date" value={ef.exp || ''} onChange={(e) => setEf({ ...ef, exp: e.target.value })} style={{ fontSize: 13 }} />
+                        </div>
+                        {/* ทุน > ราคาขาย = คีย์ผิดหน่วย → เสนอทุนต่อหน่วยให้กดใส่ได้เลย */}
+                        {Number(ef.cost) > 0 && Number(ef.price) > 0 && Number(ef.cost) > Number(ef.price) ? (
+                          <div style={{ background: 'var(--blush-soft)', border: '1px solid var(--blush)', borderRadius: 'var(--radius-sm)', padding: '7px 10px', fontSize: 12, color: 'var(--blush-deep)' }}>
+                            💸 ทุน ({ef.cost}) สูงกว่าราคาขาย ({ef.price}) — ถ้าคีย์เป็นราคาทั้งกล่อง ให้หารจำนวนต่อกล่องก่อน
+                            <span style={{ display: 'inline-flex', gap: 5, marginLeft: 8 }}>
+                              {[10, 30, 100].map((n) => (
+                                <button key={n} className="btn btn-sm" style={{ fontSize: 11, padding: '2px 7px' }}
+                                  onClick={() => setEf({ ...ef, cost: String(Math.round(Number(ef.cost) / n * 100) / 100) })}>÷{n}</button>
+                              ))}
+                            </span>
+                          </div>
+                        ) : null}
+                      </div>
                       {s.cat === 'ยา' || ef.cat === 'ยา' ? (
                         <div style={{ marginTop: 8 }}>
                           <div style={{ fontSize: 11, color: 'var(--ink-soft)', marginBottom: 3 }}>วิธีใช้ (สำหรับฉลากยา)</div>
@@ -527,9 +596,20 @@ function StockView({ stock, onAdjust, onAddItem, onImportStock, onDeleteItem, on
                   <td><span className="chip">{s.cat}</span></td>
                   <td className="num">{s.cost ? fmtB(s.cost) : <span style={{ color: 'var(--ink-faint)' }}>—</span>}</td>
                   <td className="num">{fmtB(s.price)}</td>
-                  <td className="num">{margin !== null
-                    ? <span style={{ color: margin >= 30 ? 'var(--mint-deep)' : margin >= 15 ? 'var(--butter-deep)' : 'var(--blush-deep)', fontWeight: 600 }}>{margin}%</span>
-                    : <span style={{ color: 'var(--ink-faint)' }}>—</span>}</td>
+                  <td className="num">{badCost(s)
+                    ? <span title={`ต้นทุน ${s.cost} สูงกว่าราคาขาย ${s.price} — มักเกิดจากคีย์ทุนเป็นราคาทั้งกล่อง แต่ขายเป็น${s.unit || 'หน่วย'}\nกำไรของรายการนี้จะไม่ถูกนับจนกว่าจะแก้ทุนเป็นต่อ${s.unit || 'หน่วย'}`}
+                        style={{ color: 'var(--blush-deep)', fontWeight: 800, cursor: 'help' }}>💸 ทุนผิด?</span>
+                    : margin !== null
+                      ? <span style={{ color: margin >= 30 ? 'var(--mint-deep)' : margin >= 15 ? 'var(--butter-deep)' : 'var(--blush-deep)', fontWeight: 600 }}>{margin}%</span>
+                      : <span style={{ color: 'var(--ink-faint)' }}>—</span>}</td>
+                  <td>{(() => {
+                    const e = expStatus(s.exp, today);
+                    if (!e) return <span style={{ color: 'var(--ink-faint)', fontSize: 12 }}>—</span>;
+                    const style = { fontSize: 11.5, fontWeight: 700, whiteSpace: 'nowrap' };
+                    if (e.kind === 'expired') return <span className="chip chip-blush" style={style} title={'หมดอายุแล้ว ' + s.exp}>⛔ หมดอายุ {e.days} วัน</span>;
+                    if (e.kind === 'soon') return <span className="chip chip-butter" style={style} title={'หมดอายุ ' + s.exp}>{e.days === 0 ? '⏰ หมดอายุวันนี้' : `⏰ อีก ${e.days} วัน`}</span>;
+                    return <span style={{ fontSize: 12, color: 'var(--ink-soft)' }}>{dateTH(s.exp)}</span>;
+                  })()}</td>
                   <td className="num" style={{ fontWeight: 700 }}>{s.qty} <span style={{ color: 'var(--ink-faint)', fontWeight: 400 }}>{s.unit}</span></td>
                   <td>
                     {out ? <span className="chip chip-alert">หมด</span>
@@ -581,7 +661,7 @@ function StockView({ stock, onAdjust, onAddItem, onImportStock, onDeleteItem, on
             <button className="btn btn-primary" disabled={!nf.name.trim()} onClick={() => {
               onAddItem({ ...nf, qty: parseInt(nf.qty) || 0, min: parseInt(nf.min) || 0, price: parseFloat(nf.price) || 0, cost: parseFloat(nf.cost) || 0 });
               setShowAdd(false);
-              setNf({ name: '', cat: 'ยา', unit: 'เม็ด', qty: '', min: '', price: '', cost: '', dose: '' });
+              setNf({ name: '', cat: 'ยา', unit: 'เม็ด', qty: '', min: '', price: '', cost: '', dose: '', exp: '' });
             }}><Icon name="check" size={16} /> บันทึก</button>
           </>}>
           <div className="form-grid">
@@ -598,6 +678,7 @@ function StockView({ stock, onAdjust, onAddItem, onImportStock, onDeleteItem, on
               <Field label="จำนวนเริ่มต้น"><input className="input" type="number" value={nf.qty} onChange={(e) => setNf({ ...nf, qty: e.target.value })} /></Field>
               <Field label="ขั้นต่ำแจ้งเตือน"><input className="input" type="number" value={nf.min} onChange={(e) => setNf({ ...nf, min: e.target.value })} /></Field>
               <Field label="ต้นทุน (฿)"><input className="input" type="number" value={nf.cost} onChange={(e) => setNf({ ...nf, cost: e.target.value })} placeholder="0" /></Field>
+              <Field label="วันหมดอายุ (ถ้ามี)"><input className="input" type="date" value={nf.exp || ''} onChange={(e) => setNf({ ...nf, exp: e.target.value })} /></Field>
             </div>
             <Field label="ราคาขาย (฿)"><input className="input" type="number" value={nf.price} onChange={(e) => setNf({ ...nf, price: e.target.value })} />
               {nf.cost && nf.price && parseFloat(nf.price) > 0 ? (
