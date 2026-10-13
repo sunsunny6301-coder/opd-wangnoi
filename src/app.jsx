@@ -269,6 +269,32 @@ function App() {
   const [backupAt, setBackupAt] = useState(() => { try { return localStorage.getItem(BACKUP_AT_KEY) || ''; } catch (e) { return ''; } });
   const [booted, setBooted] = useState(false);   // โหลดคลาวด์ครั้งแรกเสร็จหรือยัง (ใช้โชว์ skeleton ตอนเครื่องใหม่)
   const [pushToast, toastRack] = useToasts();
+  // ── โหมดเจ้าของ: ตั้ง PIN แล้ว ผู้ที่ยังไม่ปลดล็อกจะไม่เห็นเมนูสรุปรายรับ/ยอดเงินสด-โอน ──
+  // ปลดล็อก = เก็บ hash ไว้ในเครื่อง (session = ปิดแท็บแล้วล็อกเอง · จำเครื่อง = localStorage)
+  // เปลี่ยน PIN จากเครื่องใดก็ตาม → hash ไม่ตรง → ทุกเครื่องล็อกใหม่หมด
+  const [showOwnerLock, setShowOwnerLock] = useState(false);
+  const [ownerTok, setOwnerTok] = useState(() => {
+    try { return sessionStorage.getItem(OWNER_UNLOCK_KEY) || localStorage.getItem(OWNER_UNLOCK_KEY) || ''; } catch (e) { return ''; }
+  });
+  const ownerPinHash = state.ownerPinHash || '';
+  const isOwner = !ownerPinHash || ownerTok === ownerPinHash;
+  const storeOwnerTok = (h, remember) => {
+    try {
+      sessionStorage.removeItem(OWNER_UNLOCK_KEY); localStorage.removeItem(OWNER_UNLOCK_KEY);
+      if (h) (remember ? localStorage : sessionStorage).setItem(OWNER_UNLOCK_KEY, h);
+    } catch (e) {}
+    setOwnerTok(h || '');
+  };
+  const unlockOwner = (h, remember) => { storeOwnerTok(h, remember); setShowOwnerLock(false); pushToast('👑 ปลดล็อกโหมดเจ้าของแล้ว' + (remember ? ' (จำเครื่องนี้)' : '')); };
+  const lockOwner = () => { storeOwnerTok('', false); setShowOwnerLock(false); pushToast('🔒 ล็อกแล้ว — ซ่อนสรุปรายรับและยอดเงินสด/โอน'); };
+  const setOwnerPin = (h, remember) => {
+    setState((s) => ({ ...s, ownerPinHash: h }));
+    storeOwnerTok(h, remember);
+    setShowOwnerLock(false);
+    pushToast(h ? '🔑 ตั้ง PIN เจ้าของแล้ว — เครื่องอื่นจะถูกล็อก' : 'ยกเลิก PIN แล้ว — ทุกเครื่องเห็นสรุปรายรับ');
+  };
+  // หลุดโหมดเจ้าของระหว่างเปิดหน้าสรุปรายรับ (ล็อก/เครื่องอื่นเปลี่ยน PIN) → เด้งกลับหน้า OPD
+  useEffect(() => { if (!isOwner && page === 'reports') setPage('dashboard'); }, [isOwner, page]);
 
   const { pets, queue, stock } = state;
   const appointments = state.appointments || [];
@@ -370,6 +396,8 @@ function App() {
     const total = (paidTotal != null) ? paidTotal : allItems.reduce((s, c) => s + c[1] * c[2], 0);
     const noVatAmt = records.flatMap((r) => (r.charges || [])).filter((c) => c[4] === 'shop').reduce((s, c) => s + (Number(c[1]) || 1) * (Number(c[2]) || 0), 0);
     const receipt = total > 0 ? nextReceiptNo() : null;
+    // มัดจำที่รับไว้ระหว่างแอดมิด → เก็บติดใบเสร็จ (ไม่งั้นหายไปพร้อมเคส) ใช้แยกเงินสด/โอนตามวันที่รับเงินจริง
+    const deposits = (adm.payments || []).map((p) => ({ id: p.id, date: p.date, amount: Number(p.amount) || 0, method: p.method || 'เงินสด', note: p.note || '' }));
     // ตัดสต็อกจากรายการแอดมิดทุกวัน (เดิมไม่ตัดเลย) — เพ็ทช้อปตัดคลังเพ็ทช้อป, ที่เหลือตัดคลังคลินิก
     const allCharges = records.flatMap((r) => (r.charges || []));
     const clinicCharges = allCharges.filter((c) => c[3] && c[4] !== 'shop').map((c) => ({ stockId: c[3], qty: Number(c[1]) || 1 }));
@@ -386,7 +414,7 @@ function App() {
         pets: s.pets.map((p) => p.hn === adm.hn ? { ...p, visits: [...newVisits, ...p.visits] } : p),
         admitted: (s.admitted || []).filter((a) => a.id !== admId),
         queue: adm.q ? (s.queue || []).map((x) => x.q === adm.q ? { ...x, status: 'done', paid: total, doneDate: todayISO() } : x) : (s.queue || []),
-        receipts: receipt ? [...(s.receipts || []), applyBillEdits({ no: receipt.no, date: todayISO(), type: 'opd', svcType: adm.type || null, petName: adm.petName, ownerName: adm.owner?.name || '-', hn: adm.hn, q: adm.q || '', items: allItems, method: method || 'เงินสด', total, noVat: noVatAmt }, billEdits)] : (s.receipts || []),
+        receipts: receipt ? [...(s.receipts || []), applyBillEdits({ no: receipt.no, date: todayISO(), type: 'opd', svcType: adm.type || null, petName: adm.petName, ownerName: adm.owner?.name || '-', hn: adm.hn, q: adm.q || '', items: allItems, method: method || 'เงินสด', total, noVat: noVatAmt, ...(deposits.length ? { deposits } : {}) }, billEdits)] : (s.receipts || []),
         receiptSeq: con.receiptSeq,
         receiptVoids: con.receiptVoids,
       };
@@ -1164,7 +1192,7 @@ function App() {
             <div className="brand-sub">OPD SYSTEM</div>
           </div>
         </div>
-        {NAV.map((n) =>
+        {NAV.filter((n) => n.id !== 'reports' || isOwner).map((n) =>
         <button key={n.id}
         className={'nav-item' + (page === n.id || n.id === 'dashboard' && page === 'case' ? ' active' : '')}
         onClick={() => {setPage(n.id);setCaseCtx(null);setNavOpen(false);}}>
@@ -1175,6 +1203,13 @@ function App() {
           </button>
         )}
         <div className="nav-spacer"></div>
+        {/* โหมดเจ้าของ — ปุ่มเล็กๆ ท้ายเมนู (ไม่ตั้ง PIN = ทุกคนเห็นทุกอย่างเหมือนเดิม) */}
+        <button className="nav-item" onClick={() => { setShowOwnerLock(true); setNavOpen(false); }}
+          title={!ownerPinHash ? 'ตั้ง PIN เจ้าของ เพื่อซ่อนสรุปรายรับจากพนักงาน' : isOwner ? 'โหมดเจ้าของ (กดเพื่อล็อก)' : 'ปลดล็อกโหมดเจ้าของ'}
+          style={{ opacity: isOwner && ownerPinHash ? 1 : .55, fontSize: 13 }}>
+          <span style={{ width: 19, textAlign: 'center', fontSize: 15 }}>{!ownerPinHash ? '🔓' : isOwner ? '👑' : '🔒'}</span>
+          <span className="nav-label">{!ownerPinHash ? 'ตั้ง PIN เจ้าของ' : isOwner ? 'โหมดเจ้าของ · ล็อก' : 'เจ้าของ'}</span>
+        </button>
         <div className="nav-foot">ระบบ OPD วังน้อยสัตวแพทย์<br />ข้อมูลบันทึกในเครื่องนี้</div>
       </nav>
 
@@ -1228,7 +1263,7 @@ function App() {
           onOpenCase={openCase} onOpenPet={openPet}
           onMove={moveQ} onPay={setPayFor} onWalkIn={walkIn}
           onUpdateAppointment={updateAppointment} onDischargeAdmitted={dischargeAdmitted} onUpdateAdmitted={updateAdmitted} onOpenAdmittedCase={openAdmittedCase} onCancelQueue={cancelQueue} onCancelAdmit={cancelAdmit}
-          notePresets={notePresets} onSavePresets={saveNotePresets} pushToast={pushToast} /> :
+          notePresets={notePresets} onSavePresets={saveNotePresets} pushToast={pushToast} ownerMode={isOwner} /> :
           null}
           {page === 'case' && casePet ?
           <CaseView pet={casePet} queueItem={caseQItem}
@@ -1245,7 +1280,7 @@ function App() {
           {page === 'shop' ? <PetShop stock={shopStock} onCheckout={shopCheckout} previewReceiptNo={nextReceiptNo().no} onDeleteItem={deleteShopItem} onAddItem={addShopItem} onImportStock={importShopItems} onUpdateItem={updateShopItem} /> : null}
           {page === 'stock' ? <StockView stock={stock} onAdjust={adjustStock} onAddItem={addStockItem} onImportStock={importStockItems} onDeleteItem={deleteStockItem} onClearAll={clearStock} onUpdateItem={updateStockItem} /> : null}
           {page === 'reports' ? <ReportsView pets={pets} queue={queue} stock={stock} shopStock={shopStock} services={services} receipts={receipts} appointments={appointments} vets={vets} assistants={assistants} commissionPct={commissionPct} onSaveCommissionPct={saveCommissionPct} onCancelReceipt={cancelReceipt} onUpdateReceipt={updateReceipt} onOpenPet={openPet} /> : null}
-          {page === 'history' ? <HistoryView pets={pets} receipts={receipts} queue={queue} onOpenPet={openPet} /> : null}
+          {page === 'history' ? <HistoryView pets={pets} receipts={receipts} queue={queue} admitted={admitted} ownerMode={isOwner} onOpenPet={openPet} /> : null}
           {page === 'tax' ? <TaxView pets={pets} receipts={receipts} /> : null}
         </main>
       </div>
@@ -1264,6 +1299,9 @@ function App() {
 
       null}
 
+      {showOwnerLock ? (
+        <OwnerLockModal pinHash={ownerPinHash} isOwner={isOwner} onUnlock={unlockOwner} onLock={lockOwner} onSetPin={setOwnerPin} onClose={() => setShowOwnerLock(false)} />
+      ) : null}
       {showBackup ? (
         <BackupModal state={state} backupAt={backupAt} onClose={() => setShowBackup(false)} onExport={exportAllData} onImport={applyImport} />
       ) : null}
@@ -1275,6 +1313,85 @@ function App() {
       <ThemeToggle />
     </div>);
 
+}
+
+// ── โหมดเจ้าของ (PIN) ──────────────────────────
+// ล็อกแบบเบาๆ กันพนักงานเห็นสรุปรายรับ/ยอดเงินสด — ไม่ใช่ระบบความปลอดภัยเต็มรูปแบบ (ข้อมูลยังอยู่ในเครื่อง)
+// เก็บเฉพาะค่า hash ของ PIN บนคลาวด์ (ownerPinHash) → ตั้งครั้งเดียวใช้ได้ทุกเครื่อง
+const OWNER_UNLOCK_KEY = 'wnvet_owner_unlock';
+async function hashOwnerPin(pin) {
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode('wnvet-owner:' + String(pin)));
+  return Array.from(new Uint8Array(buf)).map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+function OwnerLockModal({ pinHash, isOwner, onUnlock, onLock, onSetPin, onClose }) {
+  const [mode, setMode] = useState(!pinHash ? 'set' : isOwner ? 'menu' : 'unlock');
+  const [pin, setPin] = useState('');
+  const [pin2, setPin2] = useState('');
+  const [remember, setRemember] = useState(false);
+  const [err, setErr] = useState('');
+  const [busy, setBusy] = useState(false);
+  const pinOk = /^\d{4,8}$/.test(pin);
+  const pinInput = (val, set, ph, auto) => (
+    <input className="input" type="password" inputMode="numeric" autoComplete="off" maxLength={8} autoFocus={auto}
+      value={val} placeholder={ph} style={{ fontSize: 20, letterSpacing: 6, textAlign: 'center' }}
+      onChange={(e) => { set(e.target.value.replace(/\D/g, '')); setErr(''); }}
+      onKeyDown={(e) => { if (e.key === 'Enter') submit(); }} />
+  );
+  const submit = async () => {
+    if (busy) return;
+    if (mode === 'unlock') {
+      if (!pin) return;
+      setBusy(true);
+      const h = await hashOwnerPin(pin);
+      setBusy(false);
+      if (h !== pinHash) { setErr('PIN ไม่ถูกต้อง'); setPin(''); return; }
+      onUnlock(h, remember);
+    } else if (mode === 'set') {
+      if (!pinOk) { setErr('PIN ต้องเป็นตัวเลข 4–8 หลัก'); return; }
+      if (pin !== pin2) { setErr('PIN สองช่องไม่ตรงกัน'); return; }
+      setBusy(true);
+      const h = await hashOwnerPin(pin);
+      setBusy(false);
+      onSetPin(h, remember);
+    }
+  };
+  const title = mode === 'unlock' ? '🔒 ปลดล็อกโหมดเจ้าของ' : mode === 'set' ? (pinHash ? '🔑 เปลี่ยน PIN เจ้าของ' : '🔑 ตั้ง PIN เจ้าของ') : '👑 โหมดเจ้าของ';
+  const rememberBox = (
+    <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--ink-soft)', cursor: 'pointer' }}>
+      <input type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)} />
+      จำเครื่องนี้ไว้ (ติ๊กเฉพาะเครื่องส่วนตัวของเจ้าของ)
+    </label>
+  );
+  return (
+    <Modal title={title} onClose={onClose}
+      footer={mode === 'menu' ? <button className="btn" onClick={onClose}>ปิด</button> : <>
+        <button className="btn" onClick={() => (mode === 'set' && pinHash ? setMode('menu') : onClose())}>ยกเลิก</button>
+        <button className="btn btn-primary" disabled={busy || !pin || (mode === 'set' && !pin2)} onClick={submit}>{mode === 'unlock' ? 'ปลดล็อก' : 'บันทึก PIN'}</button>
+      </>}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 12, minWidth: 280 }}>
+        {mode === 'unlock' ? (<>
+          <div style={{ fontSize: 13.5, color: 'var(--ink-soft)' }}>ใส่ PIN เพื่อดูสรุปรายรับและยอดเงินสด/โอน</div>
+          {pinInput(pin, setPin, 'PIN', true)}
+          {rememberBox}
+        </>) : mode === 'set' ? (<>
+          <div style={{ fontSize: 13.5, color: 'var(--ink-soft)', lineHeight: 1.6 }}>
+            ตั้งแล้ว ทุกเครื่องจะ<b>ซ่อนเมนูสรุปรายรับ</b>และยอดเงินสด/โอน จนกว่าจะใส่ PIN<br />
+            ใช้ตัวเลข 4–8 หลัก · <b>อย่าลืม PIN</b> (ลืมแล้วต้องให้ผู้ดูแลระบบล้างให้)
+          </div>
+          {pinInput(pin, setPin, 'PIN ใหม่', true)}
+          {pinInput(pin2, setPin2, 'พิมพ์ PIN อีกครั้ง', false)}
+          {rememberBox}
+        </>) : (<>
+          <div style={{ fontSize: 13.5, color: 'var(--ink-soft)' }}>ตอนนี้ปลดล็อกอยู่ — เห็นสรุปรายรับและยอดเงินสด/โอน</div>
+          <button className="btn btn-primary" onClick={onLock}>🔒 ล็อกตอนนี้ (ให้พนักงานใช้ต่อ)</button>
+          <button className="btn" onClick={() => { setMode('set'); setPin(''); setPin2(''); setErr(''); }}>🔑 เปลี่ยน PIN</button>
+          <button className="btn" style={{ color: 'var(--blush-deep)' }}
+            onClick={() => { if (window.confirm('ยกเลิก PIN? ทุกเครื่องจะเห็นสรุปรายรับเหมือนเดิม')) onSetPin('', false); }}>ยกเลิก PIN</button>
+        </>)}
+        {err ? <div style={{ color: 'var(--blush-deep)', fontSize: 13, fontWeight: 700 }}>{err}</div> : null}
+      </div>
+    </Modal>
+  );
 }
 
 // ── สำรอง / กู้ข้อมูลทั้งระบบ (JSON) ──────────────────────────

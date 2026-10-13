@@ -744,7 +744,7 @@ function FgCats() {
   );
 }
 
-function Dashboard({ pets, queue, appointments, admitted, receipts = [], loading = false, onOpenCase, onOpenPet, onMove, onPay, onWalkIn, onUpdateAppointment, onDischargeAdmitted, onUpdateAdmitted, onOpenAdmittedCase, onCancelQueue, onCancelAdmit, notePresets, onSavePresets, pushToast }) {
+function Dashboard({ pets, queue, appointments, admitted, receipts = [], loading = false, onOpenCase, onOpenPet, onMove, onPay, onWalkIn, onUpdateAppointment, onDischargeAdmitted, onUpdateAdmitted, onOpenAdmittedCase, onCancelQueue, onCancelAdmit, notePresets, onSavePresets, pushToast, ownerMode = false }) {
   const [showWalkIn, setShowWalkIn] = useState(false);
   const [walkInPrefillHn, setWalkInPrefillHn] = useState(null);
   const [walkInOwner, setWalkInOwner] = useState(null);   // เจ้าของที่กด "เพิ่มสัตว์ตัวใหม่ของบ้านนี้" จากผลค้นหา
@@ -822,7 +822,9 @@ function Dashboard({ pets, queue, appointments, admitted, receipts = [], loading
   { num: byStatus('cashier').length, l: 'รอชำระเงิน', cls: 'tint-blush' },
   { num: byStatus('done').length, l: 'เสร็จแล้ววันนี้', cls: 'tint-mint' },
   { num: revenue, fmt: fmtB, l: 'รายรับวันนี้ (OPD)', cls: 'tint-navy', goal: goalHit, record: isRecord,
-    sub: isRecord ? `🏆 สถิติใหม่! (เดิม ${fmtB(prevBest)})` : goalAvg > 0 ? (goalHit ? '🎉 เกินค่าเฉลี่ย!' : `เป้า ~${fmtB(goalAvg)}`) : null }];
+    sub: isRecord ? `🏆 สถิติใหม่! (เดิม ${fmtB(prevBest)})` : goalAvg > 0 ? (goalHit ? '🎉 เกินค่าเฉลี่ย!' : `เป้า ~${fmtB(goalAvg)}`) : null,
+    // เงินสด/โอน แยกช่องทาง — เห็นเฉพาะโหมดเจ้าของ (ผู้ช่วยนับเงินส่งโดยไม่รู้ยอดที่ระบบคาดไว้)
+    extra: ownerMode ? <MoneyInBreakdown m={moneyInOfDay(todayStr, receipts, admitted)} revenue={revenue} light /> : null }];
 
 
   if (loading) {
@@ -944,6 +946,7 @@ function Dashboard({ pets, queue, appointments, admitted, receipts = [], loading
                 <div className="v"><CountUp value={s.num} format={s.fmt ? (n) => s.fmt(Math.round(n)) : undefined} /></div>
                 <div className="l">{s.l}</div>
                 {s.sub ? <div style={{ fontSize: 11.5, marginTop: 2, opacity: .8, fontWeight: 600 }}>{s.sub}</div> : null}
+                {s.extra || null}
               </div>
             )}
           </div>

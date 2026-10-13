@@ -384,4 +384,51 @@ function FestivalFloat({ override }) {
   );
 }
 
-Object.assign(window, { Icon, Modal, useToasts, Field, QtyInput, DeceasedTag, SPECIES_EMOJI, TYPE_CHIP, fmtB, todayTH, dateTH, timeNow, calcAge, todayISO, imageToDataURL, CountUp, celebrate, playDing, ConfettiLayer, getFestival, FestivalFloat, ThemeToggle, InstallPrompt, isStandalone });
+// ════════ เงินเข้าลิ้นชักรายวัน แยกช่องทาง (ไว้เช็คเงินสดกับเวชระเบียน) ════════
+// = ใบเสร็จของวันนั้นทุกชนิด (OPD + เพ็ทช้อป) โดยหักมัดจำแอดมิดที่เคยรับไปแล้ว
+//   + มัดจำแอดมิดที่ "รับในวันนั้น" (ทั้งเคสที่ยังนอนอยู่ และเคสที่จำหน่ายแล้ว — เก็บไว้ใน receipt.deposits)
+// ช่องทางในระบบมีหลายสะกด (โอน/โอนเงิน, บัตร/บัตรเครดิต) → รวมเป็น 3 กลุ่ม
+function normPayMethod(m) {
+  const s = String(m || '');
+  if (s.includes('โอน')) return 'โอน';
+  if (s.includes('บัตร')) return 'บัตร';
+  return 'เงินสด';
+}
+function moneyInOfDay(date, receipts, admitted) {
+  const by = { 'เงินสด': 0, 'โอน': 0, 'บัตร': 0 };
+  let deposits = 0, shop = 0, prior = 0;
+  const addDep = (p) => {
+    if (!p || p.date !== date) return;
+    const a = Number(p.amount) || 0;
+    by[normPayMethod(p.method)] += a; deposits += a;
+  };
+  (receipts || []).forEach((r) => {
+    (r.deposits || []).forEach(addDep);
+    if (r.date !== date) return;
+    const pre = (r.deposits || []).reduce((s, p) => s + (Number(p.amount) || 0), 0);
+    prior += (r.deposits || []).filter((p) => p.date !== date).reduce((s, p) => s + (Number(p.amount) || 0), 0);
+    by[normPayMethod(r.method)] += (Number(r.total) || 0) - pre;
+    if (r.type === 'shop') shop += Number(r.total) || 0;
+  });
+  (admitted || []).forEach((a) => (a.payments || []).forEach(addDep));
+  return { by, total: by['เงินสด'] + by['โอน'] + by['บัตร'], deposits, shop, prior };
+}
+// แถบสรุป เงินสด / โอน / บัตร — ใช้ทั้งการ์ดหน้า OPD และประวัติรายวัน
+function MoneyInBreakdown({ m, revenue, light }) {
+  if (!m) return null;
+  const parts = [['💵', 'เงินสด'], ['📲', 'โอน'], ['💳', 'บัตร']].filter(([, k]) => k !== 'บัตร' || m.by[k]);
+  const diff = Math.round(m.total) !== Math.round(revenue || 0);
+  const notes = [m.shop ? `เพ็ทช้อป ${fmtB(m.shop)}` : '', m.deposits ? `รับมัดจำแอดมิด ${fmtB(m.deposits)}` : '', m.prior ? `หักมัดจำที่รับไว้วันก่อน ${fmtB(m.prior)}` : ''].filter(Boolean).join(' · ');
+  return (
+    <div title="เงินที่รับเข้ามาจริงวันนี้ แยกตามช่องทาง — ไว้นับเงินสดในลิ้นชักให้ตรง" style={{ marginTop: 6, paddingTop: 6, borderTop: `1px solid ${light ? 'rgba(255,255,255,.25)' : 'var(--line)'}`, fontSize: 12.5, lineHeight: 1.55 }}>
+      {parts.map(([ic, k]) => (
+        <div key={k} style={{ display: 'flex', justifyContent: 'space-between', gap: 10 }}>
+          <span>{ic} {k}</span><b>{fmtB(m.by[k])}</b>
+        </div>
+      ))}
+      {diff ? <div style={{ fontSize: 11, opacity: .8, marginTop: 2 }}>รับจริงรวม {fmtB(m.total)}{notes ? ` (${notes})` : ''}</div> : null}
+    </div>
+  );
+}
+
+Object.assign(window, { Icon, Modal, useToasts, Field, QtyInput, DeceasedTag, SPECIES_EMOJI, TYPE_CHIP, fmtB, todayTH, dateTH, timeNow, calcAge, todayISO, imageToDataURL, CountUp, celebrate, playDing, ConfettiLayer, getFestival, FestivalFloat, ThemeToggle, InstallPrompt, isStandalone, normPayMethod, moneyInOfDay, MoneyInBreakdown });

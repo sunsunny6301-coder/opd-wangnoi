@@ -34,7 +34,7 @@ function heatText(count) {
   return '#fff';
 }
 
-function HistoryView({ pets, receipts = [], queue = [], onOpenPet }) {
+function HistoryView({ pets, receipts = [], queue = [], admitted = [], ownerMode = false, onOpenPet }) {
   const today = new Date();
   const [year, setYear] = useState(today.getFullYear());
   const [month, setMonth] = useState(today.getMonth());
@@ -193,7 +193,13 @@ function HistoryView({ pets, receipts = [], queue = [], onOpenPet }) {
                 <div style={{ fontSize: 12, opacity: .8 }}>รายรับ (ตามใบเสร็จ)</div>
               </div>
             </div>
-          ) : (
+          ) : null}
+          {/* เงินสด/โอน ของวันที่เลือก — เฉพาะโหมดเจ้าของ (ไว้เช็คเงินสดย้อนหลัง) */}
+          {ownerMode ? (() => {
+            const m = moneyInOfDay(selDate, receipts, admitted);
+            return m.total || receiptTotal ? <div style={{ maxWidth: 320, marginLeft: 'auto' }}><MoneyInBreakdown m={m} revenue={receiptTotal} light={selVisits.length > 0} /></div> : null;
+          })() : null}
+          {selVisits.length > 0 ? null : (
             <div style={{ marginTop: 8, fontSize: 13, color: 'var(--ink-faint)' }}>ไม่มีเคสในวันนี้</div>
           )}
         </div>
