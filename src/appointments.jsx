@@ -565,27 +565,142 @@ function apptStats(list, todayStr) {
   st.cameRate = st.judged ? Math.round((st.ontime + st.late) / st.judged * 100) : null;
   return st;
 }
-function ApptOutcomeReport({ appointments, todayStr }) {
+// สีสถานะ (validated: เขียว/เหลือง/แดง ΔE ≥ 11 แม้ตาบอดสี) — มาพร้อมไอคอน+ป้ายเสมอ ไม่ใช้สีอย่างเดียว
+const ST_COL = { ontime: '#0ca30c', late: '#fab219', missed: '#d03b3b' };
+const ST_LABEL = { ontime: '✓ มาตามนัด', late: '⏱ มาช้า', missed: '✕ ไม่มา' };
+function _weekStart(iso) { const [y, m, d] = iso.split('-').map(Number); const dt = new Date(y, m - 1, d); const wd = (dt.getDay() + 6) % 7; dt.setDate(dt.getDate() - wd); return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`; }
+function _isoPlus(iso, n) { const [y, m, d] = iso.split('-').map(Number); const dt = new Date(y, m - 1, d + n); return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`; }
+const _calledBefore = (a) => !!a.calledAt && String(a.calledAt).slice(0, 10) <= a.date;
+
+// แผนภูมิแท่งซ้อน (มาตามนัด / มาช้า / ไม่มา) + ตัวเลข % มาตามนัดบนแท่ง + tooltip ตอนชี้ + เส้นวันเริ่มเวชระเบียน
+function ApptStackBars({ buckets, selectedKey, onPick, markerKey }) {
+  const [tip, setTip] = useState(null);
+  const max = Math.max(1, ...buckets.map((b) => b.judged));
+  const H = 130;
+  return (
+    <div style={{ position: 'relative' }} onMouseLeave={() => setTip(null)}>
+      <div style={{ display: 'flex', gap: 6, alignItems: 'flex-end', height: H + 34, padding: '0 2px', borderBottom: '1px solid var(--line)' }}>
+        {buckets.map((b) => {
+          const sel = b.key === selectedKey;
+          const segs = ['missed', 'late', 'ontime'];   // วาดบน→ล่าง: มาตามนัดอยู่ฐาน
+          return (
+            <div key={b.key} style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-end', height: '100%', cursor: onPick ? 'pointer' : 'default', position: 'relative' }}
+              onClick={() => onPick && onPick(b.key)}
+              onMouseEnter={(e) => { const r = e.currentTarget.getBoundingClientRect(), pr = e.currentTarget.parentElement.getBoundingClientRect(); setTip({ x: r.left - pr.left + r.width / 2, b }); }}>
+              {markerKey && b.key === markerKey ? <div title="เวชระเบียนเริ่มโทรนัด" style={{ position: 'absolute', left: -4, top: 0, bottom: 0, borderLeft: '2px dashed var(--navy)', opacity: .55 }} /> : null}
+              <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--ink-soft)', marginBottom: 3, fontVariantNumeric: 'tabular-nums' }}>{b.judged ? b.rate + '%' : ''}</span>
+              <div style={{ width: '100%', maxWidth: 34, display: 'flex', flexDirection: 'column', gap: 2, outline: sel ? '2px solid var(--navy)' : 'none', outlineOffset: 2, borderRadius: 5 }}>
+                {segs.map((k, i) => b[k] ? (
+                  <div key={k} style={{ height: Math.max(2, b[k] / max * H), background: ST_COL[k], borderRadius: i === segs.findIndex((x) => b[x]) ? '4px 4px 0 0' : 0 }} />
+                ) : null)}
+                {!b.judged ? <div style={{ height: 2, background: 'var(--line)' }} /> : null}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      <div style={{ display: 'flex', gap: 6, padding: '4px 2px 0' }}>
+        {buckets.map((b) => <span key={b.key} style={{ flex: 1, minWidth: 0, textAlign: 'center', fontSize: 11, color: b.key === selectedKey ? 'var(--navy)' : 'var(--ink-faint)', fontWeight: b.key === selectedKey ? 800 : 500, whiteSpace: 'nowrap', overflow: 'hidden' }}>{b.label}</span>)}
+      </div>
+      {tip ? (
+        <div style={{ position: 'absolute', top: 0, left: Math.min(Math.max(tip.x - 80, 0), 9999), width: 160, pointerEvents: 'none', background: 'var(--surface)', border: '1px solid var(--line)', borderRadius: 8, boxShadow: 'var(--shadow)', padding: '7px 9px', fontSize: 12, zIndex: 3 }}>
+          <div style={{ fontWeight: 800, marginBottom: 3 }}>{tip.b.title || tip.b.label}</div>
+          {['ontime', 'late', 'missed'].map((k) => (
+            <div key={k} style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
+              <span><span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: 2, background: ST_COL[k], marginRight: 5 }} />{ST_LABEL[k]}</span><b>{tip.b[k]}</b>
+            </div>
+          ))}
+          <div style={{ borderTop: '1px solid var(--line)', marginTop: 4, paddingTop: 3, color: 'var(--ink-soft)' }}>{tip.b.judged ? `${tip.b.judged} นัด · มาตามนัด ${tip.b.rate}%` : 'ไม่มีนัดที่ตัดสินแล้ว'}</div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+function ApptLegend() {
+  return (
+    <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', fontSize: 12, color: 'var(--ink-soft)' }}>
+      {['ontime', 'late', 'missed'].map((k) => <span key={k} style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}><span style={{ width: 10, height: 10, borderRadius: 3, background: ST_COL[k] }} />{ST_LABEL[k]}{k === 'late' ? ' (≤7 วัน)' : ''}</span>)}
+    </div>
+  );
+}
+// แถบแนวนอน (ใช้เทียบ % ระหว่างกลุ่ม)
+function HBar({ label, pct, sub, color }) {
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: '150px 1fr 52px', gap: 8, alignItems: 'center', fontSize: 12.5 }}>
+      <span style={{ color: 'var(--ink-soft)' }}>{label}</span>
+      <div style={{ height: 14, background: 'var(--paper)', borderRadius: 4, overflow: 'hidden' }} title={sub}>
+        <div style={{ width: `${pct == null ? 0 : pct}%`, height: '100%', background: color || 'var(--navy)', borderRadius: '0 4px 4px 0' }} />
+      </div>
+      <b style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{pct == null ? '–' : pct + '%'}</b>
+    </div>
+  );
+}
+
+function ApptOutcomeReport({ appointments, todayStr, staffStart, onSaveStaffStart }) {
   const [ym, setYm] = useState(todayStr.slice(0, 7));
+  const [view, setView] = useState('month');   // month | week
+  const [showTable, setShowTable] = useState(false);
   const [showMissed, setShowMissed] = useState(false);
-  const inMonth = useMemo(() => (appointments || []).filter((a) => a && a.date && a.date.startsWith(ym)), [appointments, ym]);
+  const [startDraft, setStartDraft] = useState(staffStart || '');
+  const all = useMemo(() => (appointments || []).filter((a) => a && a.date && a.status !== 'cancelled' && !a.deceased), [appointments]);
+  const inMonth = useMemo(() => all.filter((a) => a.date.startsWith(ym)), [all, ym]);
   const st = useMemo(() => apptStats(inMonth, todayStr), [inMonth, todayStr]);
+  const prevSt = useMemo(() => apptStats(all.filter((a) => a.date.startsWith(_monthKeyAdd(ym, -1))), todayStr), [all, ym, todayStr]);
+  const mkBucket = (key, label, title, list) => { const x = apptStats(list, todayStr); return { key, label, title, judged: x.judged, ontime: x.ontime, late: x.late, missed: x.missed, rate: x.rate }; };
+  const monthBuckets = useMemo(() => {
+    const out = [];
+    for (let i = 11; i >= 0; i--) {
+      const k = _monthKeyAdd(todayStr.slice(0, 7), -i); const [yy, mm] = k.split('-').map(Number);
+      out.push(mkBucket(k, THAI_MONTHS_SHORT[mm - 1], `${THAI_MONTHS[mm - 1]} ${yy + 543}`, all.filter((a) => a.date.startsWith(k))));
+    }
+    return out;
+  }, [all, todayStr]);
+  const weekBuckets = useMemo(() => {
+    const out = []; const w0 = _weekStart(todayStr);
+    for (let i = 11; i >= 0; i--) {
+      const ws = _isoPlus(w0, -7 * i), we = _isoPlus(ws, 6);
+      out.push(mkBucket(ws, `${+ws.slice(8)}/${+ws.slice(5, 7)}`, `สัปดาห์ ${dateTHShort(ws)} – ${dateTHShort(we)}`, all.filter((a) => a.date >= ws && a.date <= we)));
+    }
+    return out;
+  }, [all, todayStr]);
+  const buckets = view === 'month' ? monthBuckets : weekBuckets;
+  const markerKey = staffStart ? (view === 'month' ? staffStart.slice(0, 7) : _weekStart(staffStart)) : null;
   const byType = useMemo(() => {
     const g = {};
     inMonth.forEach((a) => { (g[a.type || 'อื่นๆ'] = g[a.type || 'อื่นๆ'] || []).push(a); });
     return Object.entries(g).map(([t, l]) => [t, apptStats(l, todayStr)]).filter(([, x]) => x.judged > 0).sort((a, b) => b[1].judged - a[1].judged);
   }, [inMonth, todayStr]);
-  const trend = useMemo(() => {
+  // ก่อน/หลังเวชระเบียนเริ่มโทร: 90 วันก่อนวันเริ่ม เทียบกับตั้งแต่วันเริ่ม (เฉพาะนัดที่ตัดสินแล้ว)
+  const beforeAfter = useMemo(() => {
+    if (!staffStart) return null;
+    const from = _isoPlus(staffStart, -90);
+    return { before: apptStats(all.filter((a) => a.date >= from && a.date < staffStart), todayStr), after: apptStats(all.filter((a) => a.date >= staffStart), todayStr) };
+  }, [all, staffStart, todayStr]);
+  // ข้อมูลประกอบ: นัดที่ติ๊กโทรไว้ก่อนวันนัด vs ไม่ได้ติ๊ก (เดือนที่เลือก)
+  const callFx = useMemo(() => {
+    const judged = inMonth.filter((a) => a.date < todayStr && (a.status === 'done' || a.status === 'missed'));
+    return { called: apptStats(judged.filter(_calledBefore), todayStr), not: apptStats(judged.filter((a) => !_calledBefore(a)), todayStr) };
+  }, [inMonth, todayStr]);
+  // มาช้ากี่วัน (เดือนที่เลือก)
+  const lateDist = useMemo(() => {
+    const d = [0, 0, 0, 0, 0, 0, 0];
+    inMonth.forEach((a) => { if (a.status === 'done' && a.attend === 'late' && a.offsetDays >= 1 && a.offsetDays <= 7) d[a.offsetDays - 1]++; });
+    return d;
+  }, [inMonth]);
+  // งานโทร 7 วันข้างหน้า: นัดที่ยังเปิด + ติ๊กโทรแล้วกี่นัด (ดูว่าตอนนี้โทรทันไหม)
+  const upcoming = useMemo(() => {
     const out = [];
-    for (let i = 5; i >= 0; i--) {
-      const k = _monthKeyAdd(ym, -i);
-      out.push([k, apptStats((appointments || []).filter((a) => a && a.date && a.date.startsWith(k)), todayStr)]);
+    for (let i = 0; i < 7; i++) {
+      const d = _isoPlus(todayStr, i);
+      const l = all.filter((a) => a.date === d && (a.status === 'scheduled' || a.status === 'arrived'));
+      out.push({ d, n: l.length, called: l.filter((a) => a.calledAt).length });
     }
     return out;
-  }, [appointments, ym, todayStr]);
-  const missedList = inMonth.filter((a) => a.status === 'missed' && !a.deceased).sort((a, b) => a.date.localeCompare(b.date));
+  }, [all, todayStr]);
+  const missedList = inMonth.filter((a) => a.status === 'missed').sort((a, b) => a.date.localeCompare(b.date));
   const [y, m] = ym.split('-').map(Number);
   const pct = (n) => (st.judged ? Math.round(n / st.judged * 100) : 0);
+  const delta = st.rate != null && prevSt.rate != null ? st.rate - prevSt.rate : null;
   const tile = (label, n, sub, color) => (
     <div style={{ flex: '1 1 120px', background: 'var(--paper)', borderRadius: 'var(--radius-sm)', padding: '10px 12px', borderTop: `3px solid ${color}` }}>
       <div style={{ fontSize: 12, color: 'var(--ink-soft)', fontWeight: 600 }}>{label}</div>
@@ -593,6 +708,16 @@ function ApptOutcomeReport({ appointments, todayStr }) {
       {sub ? <div style={{ fontSize: 11.5, color: 'var(--ink-faint)' }}>{sub}</div> : null}
     </div>
   );
+  const section = (title, children, right) => (
+    <div style={{ borderTop: '1px solid var(--line)', paddingTop: 12 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 8, flexWrap: 'wrap' }}>
+        <span style={{ fontSize: 13, fontWeight: 800, color: 'var(--ink-soft)' }}>{title}</span>{right || null}
+      </div>
+      {children}
+    </div>
+  );
+  const maxUp = Math.max(1, ...upcoming.map((u) => u.n));
+  const maxLate = Math.max(1, ...lateDist);
   return (
     <div className="card" style={{ marginBottom: 16 }}>
       <div className="card-head" style={{ background: 'var(--navy-soft)', borderBottom: '2px solid var(--navy)' }}>
@@ -603,51 +728,122 @@ function ApptOutcomeReport({ appointments, todayStr }) {
           <button className="btn btn-sm" disabled={ym >= todayStr.slice(0, 7)} onClick={() => setYm(_monthKeyAdd(ym, 1))}>›</button>
         </span>
       </div>
-      <div className="card-pad" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <div className="card-pad" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+        {/* ── ตัวเลขหลักของเดือน ── */}
         {st.judged === 0 ? (
           <div style={{ fontSize: 13, color: 'var(--ink-faint)' }}>ยังไม่มีนัดที่ผ่านวันในเดือนนี้{st.pending ? ` (รอผล ${st.pending} นัด)` : ''}</div>
         ) : (<>
           <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap' }}>
-            <span style={{ fontSize: 34, fontWeight: 800, color: st.rate >= 60 ? 'var(--mint-deep)' : st.rate >= 40 ? '#A05A00' : 'var(--blush-deep)' }}>{st.rate}%</span>
-            <span style={{ fontSize: 13.5, color: 'var(--ink-soft)' }}>มาตามนัด ({st.ontime} จาก {st.judged} นัดที่ผ่านวันแล้ว) · รวมมาช้าด้วย = {st.cameRate}%</span>
+            <span style={{ fontSize: 34, fontWeight: 800, color: 'var(--ink)' }}>{st.rate}%</span>
+            <span style={{ fontSize: 13.5, color: 'var(--ink-soft)' }}>มาตามนัด ({st.ontime} จาก {st.judged} นัด) · รวมมาช้า = {st.cameRate}%</span>
+            {delta != null ? <span className="chip" style={{ fontSize: 12, fontWeight: 800, color: delta >= 0 ? 'var(--mint-deep)' : 'var(--blush-deep)' }}>{delta >= 0 ? '▲' : '▼'} {Math.abs(delta)} จุด จากเดือนก่อน</span> : null}
           </div>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            {tile('✓ มาตามนัด', st.ontime, `${pct(st.ontime)}%${st.early ? ` · มาก่อน ${st.early}` : ''}`, 'var(--mint-deep)')}
-            {tile('⏱ มาช้า (≤7 วัน)', st.late, `${pct(st.late)}%`, '#E0A030')}
-            {tile('✕ ไม่มา', st.missed, `${pct(st.missed)}%`, 'var(--blush-deep)')}
+            {tile('✓ มาตามนัด', st.ontime, `${pct(st.ontime)}%${st.early ? ` · มาก่อน ${st.early}` : ''}`, ST_COL.ontime)}
+            {tile('⏱ มาช้า (≤7 วัน)', st.late, `${pct(st.late)}%`, ST_COL.late)}
+            {tile('✕ ไม่มา', st.missed, `${pct(st.missed)}%`, ST_COL.missed)}
             {tile('📅 เลื่อนนัด', st.moved, st.moved ? `มาตามนัด ${st.movedCame}${st.movedLate ? ` · เลื่อนกระชั้น ${st.movedLate}` : ''}` : '', 'var(--powder-deep)')}
-            {tile('📞 ติ๊กโทรแล้ว', st.called, `จาก ${st.judged} นัด (ข้อมูลประกอบ)`, 'var(--line)')}
+            {tile('📞 ติ๊กโทรแล้ว', st.called, `จาก ${st.judged} นัด`, 'var(--line)')}
           </div>
           {st.pending ? <div style={{ fontSize: 12, color: 'var(--ink-faint)' }}>ยังรอผลอีก {st.pending} นัด (ยังไม่ถึงวัน/วันนี้) — ระบบตัดสินให้อัตโนมัติวันถัดไป</div> : null}
-          {byType.length ? (
-            <table className="tbl" style={{ fontSize: 13 }}>
-              <thead><tr><th>ประเภทนัด</th><th className="num">นัด</th><th className="num">มาตามนัด</th><th className="num">มาช้า</th><th className="num">ไม่มา</th><th className="num">% มาตามนัด</th></tr></thead>
-              <tbody>
-                {byType.map(([t, x]) => (
-                  <tr key={t}><td><span className={`chip ${APPT_CHIP[t] || ''}`} style={{ fontSize: 11.5 }}>{t}</span></td>
-                    <td className="num">{x.judged}</td><td className="num">{x.ontime}</td><td className="num">{x.late}</td><td className="num">{x.missed}</td>
-                    <td className="num" style={{ fontWeight: 700 }}>{x.rate}%</td></tr>
-                ))}
-              </tbody>
-            </table>
-          ) : null}
         </>)}
-        {/* แนวโน้ม 6 เดือน (% มาตามนัด) */}
-        <div>
-          <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--ink-soft)', marginBottom: 6 }}>แนวโน้ม % มาตามนัด 6 เดือน</div>
-          <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end', height: 92 }}>
-            {trend.map(([k, x]) => {
-              const [ty, tm] = k.split('-').map(Number);
-              return (
-                <div key={k} title={x.judged ? `${x.ontime}/${x.judged} นัด` : 'ไม่มีข้อมูล'} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3, cursor: 'pointer' }} onClick={() => setYm(k)}>
-                  <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--ink-soft)' }}>{x.rate == null ? '–' : x.rate + '%'}</span>
-                  <div style={{ width: '100%', maxWidth: 38, height: Math.max(3, (x.rate || 0) * 0.55), background: k === ym ? 'var(--navy)' : 'var(--powder)', borderRadius: '5px 5px 0 0' }} />
-                  <span style={{ fontSize: 11, color: k === ym ? 'var(--navy)' : 'var(--ink-faint)', fontWeight: k === ym ? 800 : 500 }}>{THAI_MONTHS_SHORT[tm - 1]}</span>
-                </div>
-              );
-            })}
+
+        {/* ── แผนภูมิแท่ง: รายเดือน 12 เดือน / รายสัปดาห์ 12 สัปดาห์ ── */}
+        {section(view === 'month' ? 'แนวโน้มรายเดือน (12 เดือน) — กดแท่งเพื่อดูเดือนนั้น' : 'แนวโน้มรายสัปดาห์ (12 สัปดาห์)', (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <ApptStackBars buckets={buckets} selectedKey={view === 'month' ? ym : null} markerKey={markerKey} onPick={view === 'month' ? setYm : null} />
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+              <ApptLegend />
+              <button className="btn btn-sm" style={{ fontSize: 11.5 }} onClick={() => setShowTable((v) => !v)}>{showTable ? 'ซ่อนตาราง' : 'ดูเป็นตาราง'}</button>
+            </div>
+            {showTable ? (
+              <table className="tbl" style={{ fontSize: 12.5 }}>
+                <thead><tr><th>{view === 'month' ? 'เดือน' : 'สัปดาห์'}</th><th className="num">นัด</th><th className="num">มาตามนัด</th><th className="num">มาช้า</th><th className="num">ไม่มา</th><th className="num">% มาตามนัด</th></tr></thead>
+                <tbody>{buckets.map((b) => <tr key={b.key}><td>{b.title}</td><td className="num">{b.judged}</td><td className="num">{b.ontime}</td><td className="num">{b.late}</td><td className="num">{b.missed}</td><td className="num">{b.judged ? b.rate + '%' : '–'}</td></tr>)}</tbody>
+              </table>
+            ) : null}
           </div>
+        ), (
+          <span className="seg" style={{ display: 'inline-flex' }}>
+            <button className={view === 'month' ? 'on' : ''} onClick={() => setView('month')}>รายเดือน</button>
+            <button className={view === 'week' ? 'on' : ''} onClick={() => setView('week')}>รายสัปดาห์</button>
+          </span>
+        ))}
+
+        {/* ── ก่อน/หลังเวชระเบียนเริ่มโทรนัด ── */}
+        {section('ก่อน / หลัง เวชระเบียนเริ่มโทรนัด', (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', fontSize: 12.5 }}>
+              <span style={{ color: 'var(--ink-soft)' }}>วันที่เริ่มโทรนัด</span>
+              <input type="date" className="input" style={{ width: 160, padding: '4px 8px', fontSize: 13 }} value={startDraft} max={todayStr} onChange={(e) => setStartDraft(e.target.value)} />
+              <button className="btn btn-sm btn-primary" disabled={!startDraft || startDraft === staffStart} onClick={() => onSaveStaffStart && onSaveStaffStart(startDraft)}>บันทึก</button>
+              {staffStart ? <span style={{ color: 'var(--ink-faint)' }}>(เส้นประในกราฟ = วันเริ่ม)</span> : null}
+            </div>
+            {beforeAfter ? (<>
+              <HBar label={`ก่อนเริ่ม (90 วัน · ${beforeAfter.before.judged} นัด)`} pct={beforeAfter.before.rate} color="var(--ink-faint)" sub={`มาตามนัด ${beforeAfter.before.ontime}`} />
+              <HBar label={`หลังเริ่ม (${beforeAfter.after.judged} นัด)`} pct={beforeAfter.after.rate} color={ST_COL.ontime} sub={`มาตามนัด ${beforeAfter.after.ontime}`} />
+              {beforeAfter.after.judged && beforeAfter.before.judged ? (
+                <div style={{ fontSize: 12.5, fontWeight: 700, color: beforeAfter.after.rate >= beforeAfter.before.rate ? 'var(--mint-deep)' : 'var(--blush-deep)' }}>
+                  {beforeAfter.after.rate >= beforeAfter.before.rate ? '▲' : '▼'} {Math.abs(beforeAfter.after.rate - beforeAfter.before.rate)} จุด (มาตามนัด) · ไม่มา {beforeAfter.before.judged ? Math.round(beforeAfter.before.missed / beforeAfter.before.judged * 100) : 0}% → {Math.round(beforeAfter.after.missed / beforeAfter.after.judged * 100)}%
+                  {beforeAfter.after.judged < 30 ? <span style={{ fontWeight: 500, color: 'var(--ink-faint)' }}> · ข้อมูลหลังเริ่มยังน้อย ({beforeAfter.after.judged} นัด) รอสะสมก่อนตัดสิน</span> : null}
+                </div>
+              ) : <div style={{ fontSize: 12, color: 'var(--ink-faint)' }}>ยังไม่มีนัดหลังวันเริ่มที่ตัดสินผลแล้ว</div>}
+            </>) : <div style={{ fontSize: 12, color: 'var(--ink-faint)' }}>ใส่วันที่เวชระเบียนเริ่มโทรนัด เพื่อเทียบผลก่อน/หลัง</div>}
+          </div>
+        ))}
+
+        {/* ── ข้อมูลประกอบ 3 ส่วน ── */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 14 }}>
+          {section('📞 โทรแล้ว vs ไม่ได้โทร (เดือนนี้ · ข้อมูลประกอบ)', (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              <HBar label={`ติ๊กโทรก่อนวันนัด (${callFx.called.judged})`} pct={callFx.called.rate} color={ST_COL.ontime} />
+              <HBar label={`ไม่ได้ติ๊ก (${callFx.not.judged})`} pct={callFx.not.rate} color="var(--ink-faint)" />
+              <div style={{ fontSize: 11.5, color: 'var(--ink-faint)' }}>% = มาตามนัด · ใช้ดูว่าการโทรช่วยให้มาตรงขึ้นไหม (ไม่ใช่ตัวตัดสินผล)</div>
+            </div>
+          ))}
+          {section('⏱ มาช้ากี่วัน (เดือนนี้)', (
+            <div style={{ display: 'flex', gap: 5, alignItems: 'flex-end', height: 84 }}>
+              {lateDist.map((n, i) => (
+                <div key={i} title={`ช้า ${i + 1} วัน: ${n} นัด`} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
+                  <span style={{ fontSize: 11, color: 'var(--ink-soft)', fontWeight: 700 }}>{n || ''}</span>
+                  <div style={{ width: '100%', maxWidth: 26, height: Math.max(2, n / maxLate * 52), background: n ? ST_COL.late : 'var(--line)', borderRadius: '4px 4px 0 0' }} />
+                  <span style={{ fontSize: 11, color: 'var(--ink-faint)' }}>{i + 1}ว.</span>
+                </div>
+              ))}
+            </div>
+          ))}
+          {section('📋 งานโทร 7 วันข้างหน้า (ตอนนี้)', (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              {upcoming.map((u, i) => (
+                <div key={u.d} style={{ display: 'grid', gridTemplateColumns: '78px 1fr 60px', gap: 6, alignItems: 'center', fontSize: 12 }}>
+                  <span style={{ color: i === 1 ? 'var(--blush-deep)' : 'var(--ink-soft)', fontWeight: i <= 1 ? 800 : 500 }}>{i === 0 ? 'วันนี้' : i === 1 ? 'พรุ่งนี้' : dateTHShort(u.d).replace(/ \d{4}$/, '')}</span>
+                  <div style={{ height: 12, background: 'var(--paper)', borderRadius: 4, overflow: 'hidden', width: `${Math.max(8, u.n / maxUp * 100)}%` }} title={`${u.n} นัด · โทรแล้ว ${u.called}`}>
+                    <div style={{ width: u.n ? `${u.called / u.n * 100}%` : 0, height: '100%', background: 'var(--navy)' }} />
+                  </div>
+                  <span style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: 'var(--ink-soft)' }}>{u.called}/{u.n}</span>
+                </div>
+              ))}
+              <div style={{ fontSize: 11.5, color: 'var(--ink-faint)' }}>แท่งเข้ม = ติ๊กโทรแล้ว · ทั้งแท่ง = นัดทั้งหมดของวัน</div>
+            </div>
+          ))}
         </div>
+
+        {/* ── แยกตามประเภทนัด ── */}
+        {byType.length ? section('แยกตามประเภทนัด (เดือนนี้)', (
+          <table className="tbl" style={{ fontSize: 13 }}>
+            <thead><tr><th>ประเภทนัด</th><th className="num">นัด</th><th className="num">มาตามนัด</th><th className="num">มาช้า</th><th className="num">ไม่มา</th><th style={{ width: '32%' }}>% มาตามนัด</th></tr></thead>
+            <tbody>
+              {byType.map(([t, x]) => (
+                <tr key={t}><td><span className={`chip ${APPT_CHIP[t] || ''}`} style={{ fontSize: 11.5 }}>{t}</span></td>
+                  <td className="num">{x.judged}</td><td className="num">{x.ontime}</td><td className="num">{x.late}</td><td className="num">{x.missed}</td>
+                  <td><div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <div style={{ flex: 1, height: 10, background: 'var(--paper)', borderRadius: 4, overflow: 'hidden' }}><div style={{ width: `${x.rate}%`, height: '100%', background: ST_COL.ontime }} /></div>
+                    <b style={{ minWidth: 36, textAlign: 'right' }}>{x.rate}%</b></div></td></tr>
+              ))}
+            </tbody>
+          </table>
+        )) : null}
+
         {missedList.length ? (
           <div>
             <button className="btn btn-sm" onClick={() => setShowMissed((v) => !v)}>{showMissed ? '▴' : '▾'} รายชื่อที่ไม่มาตามนัด ({missedList.length})</button>
@@ -666,7 +862,7 @@ function ApptOutcomeReport({ appointments, todayStr }) {
         ) : null}
         <div style={{ fontSize: 11.5, color: 'var(--ink-faint)', lineHeight: 1.6 }}>
           ระบบตัดสินจากการมาจริง (ประวัติรักษา/แอดมิด/กดรับเข้าคิว) ไม่ใช่จากการติ๊กโทร · มาตามนัด = มาตรงวันหรือมาก่อนนัด · เลื่อนนัดแล้วมาตามวันใหม่ = มาตามนัด · มาช้าเกิน 7 วัน = ไม่มา
-          · "มาก่อนนัด" นับเฉพาะนัดที่สร้างหลังอัปเดตนี้ (มีวันที่ทำนัด)
+          · "มาก่อนนัด" นับเฉพาะนัดที่สร้างหลังอัปเดตนี้
         </div>
       </div>
     </div>
@@ -1171,7 +1367,7 @@ function SmsCreditBadge() {
   );
 }
 
-function AppointmentsView({ appointments, pets, onAdd, onUpdate, onDelete, onOpenPet, pushToast, notePresets, onSavePresets, smsPresets, onSaveSmsPresets, ownerMode = false }) {
+function AppointmentsView({ appointments, pets, onAdd, onUpdate, onDelete, onOpenPet, pushToast, notePresets, onSavePresets, smsPresets, onSaveSmsPresets, ownerMode = false, staffStart, onSaveStaffStart }) {
   const todayStr = todayISO();
   const [selectedDay, setSelectedDay] = useState(todayStr);
   const [showForm, setShowForm] = useState(false);
@@ -1239,7 +1435,7 @@ function AppointmentsView({ appointments, pets, onAdd, onUpdate, onDelete, onOpe
         </button>
       </div>
 
-      {ownerMode ? <ApptOutcomeReport appointments={appointments} todayStr={todayStr} /> : null}
+      {ownerMode ? <ApptOutcomeReport appointments={appointments} todayStr={todayStr} staffStart={staffStart} onSaveStaffStart={onSaveStaffStart} /> : null}
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 360px', gap: 16, alignItems: 'start' }}>
         {/* left: calendar + day detail */}
