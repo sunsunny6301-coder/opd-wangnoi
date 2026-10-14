@@ -128,11 +128,43 @@ function WalkInModal({ pets, onClose, onSubmit, prefillHn, prefillOwner }) {
     return Object.values(map);
   }, [oldResults]);
 
+  // ── กันทำประวัติซ้ำ: โหมดลูกค้าใหม่ พิมพ์เบอร์ (หรือชื่อเจ้าของตรงเป๊ะ) แล้วเจอในระบบ → โชว์ให้เลือกของเดิม ──
+  // จัดกลุ่มตามเบอร์ (ตัวเลขล้วน) — เบอร์เดียวกัน = บ้านเดียวกัน
+  const [openMatch, setOpenMatch] = useState(null);   // key ของกลุ่มที่กางดูรายชื่อสัตว์
+  const phoneMatches = useMemo(() => {
+    if (mode !== 'new' || addNewPet) return [];
+    const digits = (x) => String(x || '').replace(/\D/g, '');
+    const d = digits(f.phone), nm = f.owner.trim();
+    if (d.length < 4 && nm.length < 2) return [];
+    const map = {};
+    pets.forEach((p) => {
+      if (!p.owner) return;
+      const pd = digits(p.owner.phone), pn = String(p.owner.name || '').trim();
+      const byPhone = d.length >= 4 && pd.length >= 4 && pd.startsWith(d);
+      const byName = nm.length >= 2 && pn === nm;
+      if (!byPhone && !byName) return;
+      const key = pd.length >= 4 ? pd : 'n:' + pn;
+      if (!map[key]) map[key] = { key, owner: p.owner, phone: pd, pets: [], exact: false, byName: false };
+      map[key].pets.push(p);
+      if (d.length >= 9 && pd === d) map[key].exact = true;
+      if (byName) map[key].byName = true;
+    });
+    return Object.values(map)
+      .sort((a, b) => (b.exact - a.exact) || (b.byName - a.byName) || (b.pets.length - a.pets.length))
+      .slice(0, 5);
+  }, [mode, addNewPet, f.phone, f.owner, pets]);
+  const exactDup = phoneMatches.find((g) => g.exact);
+  const usePetFromMatch = (p) => { setMode('old'); setAddNewPet(false); setPickedOwner(null); setOldQuery(''); setPick(p); setOpenMatch(null); };
+  const newPetForMatch = (g) => { setAddNewPet(true); setPickedOwner(g.owner); setPick(null); setOpenMatch(null); };
+
   const canSubmit = addNewPet
     ? (f.pet.trim() && pickedOwner)
     : (mode === 'old' ? !!pick : f.pet.trim() && f.owner.trim());
 
   const submit = () => {
+    // ด่านสุดท้าย: เบอร์ซ้ำเป๊ะกับลูกค้าเดิม แต่ยังจะสร้างลูกค้าใหม่ → ถามก่อน (สาเหตุหลักของประวัติซ้ำ)
+    if (mode === 'new' && !addNewPet && exactDup &&
+      !window.confirm(`เบอร์ ${f.phone} มีในระบบแล้ว (${exactDup.owner.name} · ${exactDup.pets.map((p) => p.name).join(', ')})\n\nต้องการสร้างลูกค้าใหม่ซ้ำจริงไหม?\n(กด "ยกเลิก" แล้วเลือกจากกล่องใต้ช่องเบอร์แทน)`)) return;
     if (addNewPet && pickedOwner) {
       // สัตว์ใหม่ + เจ้าของเดิม
       onSubmit({ newPet: { ...f, owner: pickedOwner.name, phone: pickedOwner.phone }, type: f.type, cc: f.cc, keepOwner: pickedOwner });
@@ -176,7 +208,18 @@ function WalkInModal({ pets, onClose, onSubmit, prefillHn, prefillOwner }) {
           </div>
           <div className="form-grid">
             <Field label="ชื่อสัตว์เลี้ยง *"><input className="input" value={f.pet} onChange={set('pet')} placeholder="ชื่อน้อง..." autoFocus /></Field>
-            <div />
+            {(() => {
+              // บ้านนี้มีตัวชื่อนี้อยู่แล้ว → น่าจะเป็นตัวเดิม ให้กดใช้ตัวเดิมแทนการทำประวัติซ้ำ
+              const digits = (x) => String(x || '').replace(/\D/g, '');
+              const ph = digits(pickedOwner.phone), nm = f.pet.trim();
+              const same = nm ? pets.find((p) => p.owner && p.name.trim() === nm && (ph.length >= 4 ? digits(p.owner.phone) === ph : String(p.owner.name || '').trim() === String(pickedOwner.name || '').trim())) : null;
+              return same ? (
+                <div style={{ alignSelf: 'end', fontSize: 12.5, color: 'var(--blush-deep)', background: 'var(--blush-soft)', border: '1px solid var(--blush-deep)', borderRadius: 'var(--radius-sm)', padding: '7px 10px', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                  ⚠️ บ้านนี้มี “{same.name}” อยู่แล้ว (HN {same.hn})
+                  <button type="button" className="btn btn-sm" style={{ fontSize: 12 }} onClick={() => usePetFromMatch(same)}>ใช้ตัวเดิม</button>
+                </div>
+              ) : <div />;
+            })()}
             <Field label="ชนิด">
               <select className="select" value={f.species} onChange={set('species')}>
                 {['สุนัข', 'แมว', 'กระต่าย', 'นก', 'อื่นๆ'].map((s) => <option key={s}>{s}</option>)}
@@ -265,6 +308,46 @@ function WalkInModal({ pets, onClose, onSubmit, prefillHn, prefillOwner }) {
         <div className="form-grid">
           <Field label="ชื่อเจ้าของ *"><input className="input" value={f.owner} onChange={set('owner')} placeholder="ชื่อ-นามสกุล" autoFocus /></Field>
           <Field label="เบอร์โทร"><input className="input" value={f.phone} onChange={set('phone')} placeholder="08x-xxx-xxxx" /></Field>
+          {phoneMatches.length > 0 ? (
+            <div className="walkin-match" style={{ gridColumn: '1 / -1', border: `1.5px solid ${exactDup ? 'var(--blush-deep)' : 'var(--butter)'}`, background: exactDup ? 'var(--blush-soft)' : 'var(--butter-soft)', borderRadius: 'var(--radius-sm)', padding: '8px 10px', display: 'flex', flexDirection: 'column', gap: 4 }}>
+              <div style={{ fontSize: 12.5, fontWeight: 800, color: exactDup ? 'var(--blush-deep)' : 'var(--butter-deep)' }}>
+                {exactDup ? '⚠️ เบอร์นี้มีในระบบแล้ว — เลือกของเดิม ไม่ต้องทำประวัติใหม่' : '📞 พบลูกค้าเดิมที่ใกล้เคียง — กดเพื่อดูสัตว์เลี้ยง'}
+              </div>
+              {phoneMatches.map((g) => (
+                <div key={g.key} style={{ background: 'var(--surface)', borderRadius: 8, border: '1px solid var(--line)', overflow: 'hidden' }}>
+                  <button type="button" onClick={() => setOpenMatch(openMatch === g.key ? null : g.key)}
+                    style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 8, padding: '7px 10px', border: 'none', background: 'none', cursor: 'pointer', font: 'inherit', fontSize: 13.5, textAlign: 'left', color: 'var(--ink)' }}>
+                    <span>👤</span>
+                    <b>{g.owner.name}</b>
+                    <span style={{ color: 'var(--ink-soft)' }}>{g.owner.phone}</span>
+                    <span style={{ fontSize: 12, color: 'var(--ink-faint)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1, minWidth: 0 }}>
+                      · {g.pets.length} ตัว: {g.pets.map((p) => `${SPECIES_EMOJI[p.species] || '🐾'}${p.name}`).join(' ')}
+                    </span>
+                    <span style={{ fontSize: 11, color: 'var(--navy)', fontWeight: 700, whiteSpace: 'nowrap' }}>{openMatch === g.key ? '▴' : 'เลือก ▾'}</span>
+                  </button>
+                  {openMatch === g.key ? (
+                    <div style={{ borderTop: '1px solid var(--line-soft)', padding: '4px 6px 6px', display: 'flex', flexDirection: 'column', gap: 2 }}>
+                      {g.pets.map((p) => (
+                        <button type="button" key={p.hn} disabled={!!p.deceased} onClick={() => usePetFromMatch(p)}
+                          className="search-row"
+                          style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 8px', border: 'none', background: 'none', borderRadius: 6, cursor: p.deceased ? 'default' : 'pointer', opacity: p.deceased ? .5 : 1, font: 'inherit', fontSize: 13.5, textAlign: 'left', color: 'var(--ink)' }}>
+                          <span style={{ fontSize: 17 }}>{SPECIES_EMOJI[p.species] || '🐾'}</span>
+                          <b>{p.name}</b>
+                          <span style={{ fontSize: 12, color: 'var(--ink-faint)' }}>HN {p.hn} · {p.species}{p.breed && p.breed !== '-' ? ` ${p.breed}` : ''}</span>
+                          <DeceasedTag pet={p} />
+                          <span style={{ marginLeft: 'auto', fontSize: 12, color: 'var(--navy)', fontWeight: 700 }}>{p.deceased ? '' : 'ใช้ตัวนี้ →'}</span>
+                        </button>
+                      ))}
+                      <button type="button" onClick={() => newPetForMatch(g)}
+                        style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 8px', border: '1px dashed var(--navy)', background: 'var(--navy-soft)', borderRadius: 6, cursor: 'pointer', font: 'inherit', fontSize: 13, fontWeight: 700, color: 'var(--navy)', marginTop: 3 }}>
+                        🐾 + เพิ่มสัตว์ตัวใหม่ของเบอร์นี้{f.pet.trim() ? ` (“${f.pet.trim()}”)` : ''}
+                      </button>
+                    </div>
+                  ) : null}
+                </div>
+              ))}
+            </div>
+          ) : null}
           <Field label="ชื่อสัตว์เลี้ยง *"><input className="input" value={f.pet} onChange={set('pet')} placeholder="ชื่อน้อง..." /></Field>
           <div className="form-grid" style={{ gridTemplateColumns: '1fr 1fr', gap: 13 }}>
             <Field label="ชนิด">
