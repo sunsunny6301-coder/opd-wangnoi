@@ -467,7 +467,15 @@ function Calculator({ variant = 'popup', onClose, keyboardActive = true }) {
   const { s, done } = st;
   const [copied, setCopied] = useState(false);
   const live = s ? calcEval(s) : null;
-  const press = (k) => { setCopied(false); dispatch(k); };
+  // เอฟเฟกต์ตอนกด: ปุ่มยุบ-เด้ง + วงแสง และตัวเลขบนจอเด้งเบาๆ (คลิกหรือพิมพ์จากคีย์บอร์ดก็เด้ง)
+  const keysRef = useRef(null), valRef = useRef(null);
+  // ใช้ data-fx แทน className — React เขียน className ทับตอนปุ่มเครื่องหมายเปลี่ยนสี ทำให้เอฟเฟกต์ขาดกลางทาง
+  const replay = (el, fx) => { if (!el) return; el.removeAttribute('data-fx'); void el.offsetWidth; el.setAttribute('data-fx', fx); };
+  const press = (k) => {
+    setCopied(false); dispatch(k);
+    const btn = keysRef.current && Array.from(keysRef.current.children).find((b) => b.dataset.k === k);
+    replay(btn, 'pressed'); replay(valRef.current, 'bump');
+  };
   // คีย์บอร์ด: ป้อปอัพ = ตลอดตอนเปิด · แบบวางข้างจอ = เฉพาะตอนเมาส์อยู่บนเครื่องคิดเลข (ไม่แย่งพิมพ์ช่องอื่น)
   const pressRef = useRef(press); pressRef.current = press;
   useEffect(() => {
@@ -509,15 +517,15 @@ function Calculator({ variant = 'popup', onClose, keyboardActive = true }) {
       </div>
       <div className="calc-screen" onClick={copy} title={result != null ? 'กดเพื่อคัดลอกผลลัพธ์' : ''}>
         <div className="calc-expr">{done ? calcFmtExpr(done.expr) + ' =' : (s ? calcFmtExpr(s) : ' ')}</div>
-        <div className={'calc-val' + (done ? ' is-done' : '')}>
+        <div ref={valRef} className={'calc-val' + (done ? ' is-done' : '')}>
           {done && done.error ? <span className="calc-err">{done.error}</span>
             : result != null ? calcFmt(result) : (s ? calcFmtExpr(s) : '0')}
         </div>
         <div className="calc-hint">{copied ? '✓ คัดลอกแล้ว' : result != null ? 'แตะจอเพื่อคัดลอก' : ' '}</div>
       </div>
-      <div className="calc-keys">
+      <div className="calc-keys" ref={keysRef}>
         {keys.map(([k, kind]) => (
-          <button key={k} type="button" className={'calc-key' + (kind ? ' k-' + kind : '') + (kind === 'op' && lastOp === k ? ' on' : '')}
+          <button key={k} type="button" data-k={k} onAnimationEnd={(e) => { if (e.animationName === 'calcRing') e.currentTarget.removeAttribute('data-fx'); }} className={'calc-key' + (kind ? ' k-' + kind : '') + (kind === 'op' && lastOp === k ? ' on' : '')}
             onClick={() => press(k)}>{k}</button>
         ))}
       </div>

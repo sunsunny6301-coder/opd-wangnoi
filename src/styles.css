@@ -122,6 +122,17 @@
 .calc-key.k-op.on { background: var(--blush-deep); color: #fff; }
 .calc-key.k-eq { background: var(--navy); color: #fff; border-color: var(--navy); font-size: 22px; box-shadow: 0 2px 0 rgba(0,0,0,.25); }
 .calc-key.k-zero { grid-column: span 2; }
+/* เอฟเฟกต์ตอนกด: ยุบ-เด้ง + วงแสงกระจาย · ตัวเลขบนจอเด้ง */
+.calc-key { position: relative; }
+.calc-key[data-fx] { animation: calcPress .3s cubic-bezier(.34,1.56,.64,1); }
+.calc-key[data-fx]::after { content: ''; position: absolute; inset: -2px; border-radius: 16px; border: 2px solid currentColor; pointer-events: none; animation: calcRing .38s ease-out forwards; }
+.calc-key.k-eq[data-fx]::after { border-color: var(--navy); }
+@keyframes calcPress { 0% { transform: scale(.86); } 55% { transform: scale(1.07); } 100% { transform: scale(1); } }
+@keyframes calcRing { from { opacity: .55; transform: scale(.92); } to { opacity: 0; transform: scale(1.22); } }
+.calc-val { transform-origin: right center; }
+.calc-val[data-fx] { animation: calcBump .2s ease-out; }
+@keyframes calcBump { 0% { transform: scale(1.06); } 100% { transform: scale(1); } }
+@media (prefers-reduced-motion: reduce) { .calc-key[data-fx], .calc-key[data-fx]::after, .calc-val[data-fx] { animation: none; } }
 .calc-dock .calc-key { height: 40px; font-size: 17px; }
 .calc-dock .calc-val { font-size: 26px; }
 .calc-dock-bar { width: 100%; max-width: 340px; padding: 10px 14px; border-radius: var(--radius); border: 1.5px dashed var(--line); background: var(--surface); color: var(--ink-soft); font: inherit; font-weight: 700; font-size: 13.5px; cursor: pointer; text-align: left; }
