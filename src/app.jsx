@@ -139,44 +139,65 @@ function healReceipts(receipts, seqIn, voids) {
   return { receipts: out, seq, voids: voidsOut, changed: changed || vChanged };
 }
 
-// ── ปิดนัดที่เลยวันแล้วอัตโนมัติ ──
-// นโยบายคลินิก: เลยวันนัดแล้วถือว่าจบ ไม่ตามต่อ → ไม่ปล่อยให้ค้างรกหน้าจอ
-//   มาจริง (มีประวัติรักษาวันนั้น หรือภายใน 7 วันถัดมา / เคยกด "มาแล้ว") → 'done'
-//   ไม่มา → 'missed' (เก็บเป็นสถิติ ไม่ต้องตาม)
-function healAppointments(appointments, pets, todayStr) {
+// ── ตัดสินผลนัดที่เลยวันแล้ว (อัตโนมัติ · ใช้ประเมินงานโทรนัดของเวชระเบียน) ──
+// นโยบายคลินิก: เลยวันนัดแล้วถือว่าจบ ไม่ตามต่อ · วัดจาก "การมาจริง" (ประวัติรักษา/แอดมิด/กดรับเข้าคิว) เท่านั้น
+//   attend 'ontime' = มาวันนัด · 'early' = มาก่อนนัด (หลังวันที่ทำนัด ไม่เกิน 7 วันก่อน) → ทั้งสองนับ "มาตามนัด"
+//   attend 'late'   = มาช้า 1–7 วัน → status 'done' แต่นับแยกเป็น "มาช้า"
+//   ไม่มาเลย หรือมาช้าเกิน 7 วัน → status 'missed'
+//   เลื่อนนัด = วัดกับวันนัดล่าสุดเสมอ → เลื่อนแล้วมาตามวันใหม่ = มาตามนัด
+//   offsetDays = วันที่มาจริง − วันนัด (ลบ = มาก่อน, 0 = ตรงวัน, บวก = ช้า)
+const ATTEND_WINDOW = 7;
+function _isoAddDays(iso, n) {
+  const [y, m, d] = String(iso).split('-').map(Number);
+  // บวกวันแบบ local (อย่าใช้ toISOString — UTC+7 ทำวันเพี้ยน)
+  const dt = new Date(y, m - 1, d + n);
+  return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
+}
+function _isoDiffDays(a, b) {
+  const p = (x) => { const [y, m, d] = String(x).split('-').map(Number); return Date.UTC(y, m - 1, d); };
+  return Math.round((p(a) - p(b)) / 86400000);
+}
+function judgeAppointment(a, dates) {
+  const ds = dates || new Set();
+  const lo = _isoAddDays(a.date, -ATTEND_WINDOW), hi = _isoAddDays(a.date, ATTEND_WINDOW);
+  const cands = [];
+  ds.forEach((d) => { if (d >= lo && d <= hi) cands.push(d); });
+  // กด "รับเข้าคิว" จากนัด = มาแล้วจริงในวันที่กด
+  if (a.arrivedAt && a.arrivedAt >= lo && a.arrivedAt <= hi) cands.push(a.arrivedAt);
+  // มาก่อนนัด: นับเฉพาะหลังวันที่ทำนัด (วันที่ทำนัดคือวันที่หมอสั่งนัด ไม่ใช่การมาตามนัด) · นัดเก่าไม่มีวันที่ทำนัด → ไม่นับมาก่อน
+  const ok = cands.filter((d) => d >= a.date || (a.createdAt && d > a.createdAt));
+  if (!ok.length) {
+    // นัดเก่าที่เคยปิด "มาแล้ว" ไว้ (กดมาแล้ว/ข้อมูลก่อนมีระบบนี้) แต่หาวันที่มาไม่เจอ → คงไว้ ไม่ลดเป็นไม่มา
+    if (a.status === 'done' || a.status === 'arrived') return { status: 'done', attend: 'ontime', offsetDays: 0, arrivedDate: a.arrivedDate || a.date };
+    return { status: 'missed', attend: 'missed', offsetDays: null, arrivedDate: null };
+  }
+  // ใกล้วันนัดที่สุดชนะ (ตรงวัน > มาก่อน/ช้า ที่ใกล้กว่า · เสมอกัน = เอามาก่อน)
+  ok.sort((x, y) => (Math.abs(_isoDiffDays(x, a.date)) - Math.abs(_isoDiffDays(y, a.date))) || (x < y ? -1 : 1));
+  const d = ok[0], off = _isoDiffDays(d, a.date);
+  return { status: 'done', attend: off === 0 ? 'ontime' : off < 0 ? 'early' : 'late', offsetDays: off, arrivedDate: d };
+}
+function healAppointments(appointments, pets, todayStr, admitted) {
   if (!(appointments || []).length) return appointments || [];
-  const visitsByHn = {};
-  (pets || []).forEach((p) => { visitsByHn[p.hn] = new Set((p.visits || []).map((v) => v.date)); });
-  const cameWithin = (hn, date, days) => {
-    const ds = visitsByHn[hn]; if (!ds) return false;
-    const [y, m, d] = String(date).split('-').map(Number);
-    if (!y || !m || !d) return false;
-    for (let i = 0; i <= days; i++) {
-      // บวกวันแบบ local (อย่าใช้ toISOString — UTC+7 ทำวันเพี้ยน)
-      const dt = new Date(y, m - 1, d + i);
-      if (ds.has(`${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`)) return true;
-    }
-    return false;
-  };
+  // วันที่มาจริงของแต่ละ HN: ประวัติรักษา + วันที่นอนแอดมิดอยู่ (ยังไม่จำหน่าย visit ยังไม่ถูกเขียน)
+  const datesByHn = {};
+  const add = (hn, d) => { if (!hn || !d) return; (datesByHn[hn] = datesByHn[hn] || new Set()).add(d); };
+  (pets || []).forEach((p) => (p.visits || []).forEach((v) => add(p.hn, v.date)));
+  (admitted || []).forEach((ad) => { add(ad.hn, ad.admittedDate); (ad.dailyRecords || []).forEach((r) => add(ad.hn, r.date)); });
   let changed = false;
   const out = (appointments || []).map((a) => {
     if (!a || !a.date || a.date >= todayStr) return a;
-    if (a.status === 'cancelled' || a.status === 'done') return a;
-    // นัดที่ปิดเป็น "ไม่มา" ไปแล้ว ยังต้องเช็คซ้ำ — ตอนปิด (วันถัดจากวันนัด) ลูกค้าอาจยังไม่มา
-    // แล้วมาช้าอีก 1-7 วันทีหลัง ถ้าไม่ทบทวนจะติดป้าย "ไม่มาตามนัด" ค้างทั้งที่มาแล้ว
-    // อัปเกรดได้ทางเดียว: ไม่มา → มาแล้ว (ไม่เคยลดกลับ)
-    if (a.status === 'missed') {
-      if (!cameWithin(a.hn, a.date, 7)) return a;
-      changed = true;
-      return { ...a, status: 'done', closedAuto: true };
-    }
+    if (a.status === 'cancelled' || a.deceased) return a;
+    const want = judgeAppointment(a, datesByHn[a.hn]);
+    const same = a.status === want.status && a.attend === want.attend &&
+      (a.offsetDays == null ? null : a.offsetDays) === want.offsetDays &&
+      (a.arrivedDate || null) === want.arrivedDate && a.closedAuto === true;
+    if (same) return a;
     changed = true;
-    const came = a.status === 'arrived' || cameWithin(a.hn, a.date, 7);
-    return { ...a, status: came ? 'done' : 'missed', closedAuto: true };
+    return { ...a, ...want, closedAuto: true };
   });
   return changed ? out : appointments;
 }
-if (typeof window !== 'undefined') window.__healAppointments = healAppointments;
+if (typeof window !== 'undefined') { window.__healAppointments = healAppointments; window.judgeAppointment = judgeAppointment; }
 
 // รวมทั้ง state: scalar/ตั้งค่า = ของเราชนะ · collection = 3-way merge · เลขใบเสร็จ = กันหาย/กันซ้ำ · voids = union (ลบเลขที่ใช้อยู่)
 function mergeState(base, mine, theirs) {
@@ -191,14 +212,15 @@ function mergeState(base, mine, theirs) {
   const voidsClean = {};
   Object.keys(voidsMerged).forEach((y) => { voidsClean[y] = (voidsMerged[y] || []).filter((sq) => !activeNos.has(_fmtNo(y, sq))); });
   const mergedPets = mergeArrayById(base.pets, M.pets, T.pets, (p) => p.hn, mergePet);
+  const mergedAdmitted = mergeArrayById(base.admitted, M.admitted, T.admitted, (a) => a.id, mergeAdmitted);
   return {
     ...merge3obj(base, M, T),   // scalar/ตั้งค่า: เราไม่แก้ → เอาของเขา (กัน revert)
     pets: mergedPets,
     // heal: คิวที่มีใบเสร็จแล้วต้องปิดเสมอ (กันสถานะถูก revert แล้วพนักงานกดจบซ้ำ)
     queue: healQueue(mergeArrayById(base.queue, M.queue, T.queue, (q) => q.q), mergedReceipts),
     receipts: mergedReceipts,
-    appointments: healAppointments(mergeArrayById(base.appointments, M.appointments, T.appointments, (a) => a.id), mergedPets, todayISO()),
-    admitted: mergeArrayById(base.admitted, M.admitted, T.admitted, (a) => a.id, mergeAdmitted),
+    appointments: healAppointments(mergeArrayById(base.appointments, M.appointments, T.appointments, (a) => a.id), mergedPets, todayISO(), mergedAdmitted),
+    admitted: mergedAdmitted,
     stock: mergeArrayById(base.stock, M.stock, T.stock, (s) => s.id),
     shopStock: mergeArrayById(base.shopStock, M.shopStock, T.shopStock, (s) => s.id),
     services: mergeArrayById(base.services, M.services, T.services, (s) => s.id),
@@ -313,12 +335,28 @@ function App() {
     }
   }, [state.shopStock]);
 
+  // createdAt = วันที่ทำนัด (ใช้แยก "มาก่อนนัด" ออกจากวันที่หมอสั่งนัด)
   const addAppointment = (appt) => {
-    setState((s) => ({ ...s, appointments: [...(s.appointments || []), appt] }));
+    const a = { ...appt, createdAt: appt.createdAt || todayISO() };
+    setState((s) => ({ ...s, appointments: [...(s.appointments || []), a] }));
     pushToast(`บันทึกนัด ${appt.petName} — ${appt.date} ${appt.time} (ประเภท: ${appt.type})`);
   };
+  // อัปเดตนัด + จดข้อมูลไว้วัดผล:
+  //   เลื่อนวันนัดขณะนัดยังเปิด → reschedules [{ from, to, at }] (ผลวัดกับวันใหม่)
+  //   เปลี่ยนเป็น "มาแล้ว" (กดรับเข้าคิว) → arrivedAt = วันที่มาจริง
   const updateAppointment = (appt) => {
-    setState((s) => ({ ...s, appointments: (s.appointments || []).map((a) => a.id === appt.id ? appt : a) }));
+    setState((s) => ({ ...s, appointments: (s.appointments || []).map((a) => {
+      if (a.id !== appt.id) return a;
+      const next = { ...a, ...appt };
+      // นัดที่ปิดผลแล้ว (มา/ไม่มา) ห้ามเปลี่ยนวัน — กันย้ายนัดที่ไม่มาไปวันใหม่แล้วผลกลายเป็นมาตามนัด
+      if ((a.status === 'done' || a.status === 'missed') && appt.date && appt.date !== a.date) next.date = a.date;
+      if (appt.date && a.date && appt.date !== a.date && (a.status === 'scheduled' || a.status === 'arrived')) {
+        next.reschedules = [...(a.reschedules || []), { from: a.date, to: appt.date, at: todayISO() }];
+      }
+      if (next.status === 'arrived' && a.status !== 'arrived' && !next.arrivedAt) next.arrivedAt = todayISO();
+      if (next.status === 'scheduled' && a.status === 'arrived') next.arrivedAt = null;
+      return next;
+    }) }));
   };
   // ลบนัดถาวร (เผื่อทำนัดผิด) — ลบตาม id ในข้อมูลก้อนเดียว → หายทั้งหน้านัดหมายและ OPD พร้อมกัน
   const deleteAppointment = (id) => {
@@ -514,7 +552,7 @@ function App() {
         // ซ่อมตอนเปิดแอป: (1) คิวที่ออกใบเสร็จแล้วแต่ยังไม่ปิด (2) ใบเสร็จเลขซ้ำ/void ทับเลขที่ใช้อยู่
         const healed = healQueue(data.data.queue, data.data.receipts);
         const hr = healReceipts(data.data.receipts, data.data.receiptSeq, data.data.receiptVoids);
-        const ha = healAppointments(data.data.appointments, data.data.pets, todayISO());
+        const ha = healAppointments(data.data.appointments, data.data.pets, todayISO(), data.data.admitted);
         let loaded = data.data;
         if (healed !== data.data.queue || hr.changed || ha !== data.data.appointments) {
           loaded = { ...data.data, queue: healed, receipts: hr.receipts, receiptSeq: hr.seq, receiptVoids: hr.voids, appointments: ha };
@@ -1289,7 +1327,7 @@ function App() {
           onUpdatePet={updatePet} onUpdateVisit={updateVisit} onAddService={addService} onDeleteService={deleteService} onUpdateService={updateService} onSaveDraft={saveDraft} previewReceiptNo={nextReceiptNo().no}
           notePresets={notePresets} onSavePresets={saveNotePresets} chargeSets={chargeSets} onSaveChargeSets={saveChargeSets} /> :
           null}
-          {page === 'appointments' ? <AppointmentsView appointments={appointments} pets={pets} onAdd={addAppointment} onUpdate={updateAppointment} onDelete={deleteAppointment} onOpenPet={openPet} pushToast={pushToast} notePresets={notePresets} onSavePresets={saveNotePresets} smsPresets={smsPresets} onSaveSmsPresets={saveSmsPresets} /> : null}
+          {page === 'appointments' ? <AppointmentsView appointments={appointments} pets={pets} onAdd={addAppointment} onUpdate={updateAppointment} onDelete={deleteAppointment} onOpenPet={openPet} pushToast={pushToast} notePresets={notePresets} onSavePresets={saveNotePresets} smsPresets={smsPresets} onSaveSmsPresets={saveSmsPresets} ownerMode={isOwner} /> : null}
           {page === 'shop' ? <PetShop stock={shopStock} onCheckout={shopCheckout} previewReceiptNo={nextReceiptNo().no} onDeleteItem={deleteShopItem} onAddItem={addShopItem} onImportStock={importShopItems} onUpdateItem={updateShopItem} /> : null}
           {page === 'stock' ? <StockView stock={stock} onAdjust={adjustStock} onAddItem={addStockItem} onImportStock={importStockItems} onDeleteItem={deleteStockItem} onClearAll={clearStock} onUpdateItem={updateStockItem} /> : null}
           {page === 'reports' ? <ReportsView pets={pets} queue={queue} stock={stock} shopStock={shopStock} services={services} receipts={receipts} appointments={appointments} vets={vets} assistants={assistants} commissionPct={commissionPct} onSaveCommissionPct={saveCommissionPct} onCancelReceipt={cancelReceipt} onUpdateReceipt={updateReceipt} onOpenPet={openPet} /> : null}

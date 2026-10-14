@@ -527,6 +527,152 @@ function ApptSmsStatus({ a, past, style, onToggle }) {
   return <span className="chip chip-butter" style={base} onClick={onClk} title={title}>⏳ ส่ง SMS อัตโนมัติ{clickable ? ' · แตะปิด' : ''}</span>;
 }
 
+// ── ผลนัด (ระบบตัดสินจากการมาจริง — ดู judgeAppointment ใน app.jsx) ──
+// มาตามนัด = มาตรงวัน หรือมาก่อนนัด · มาช้า = 1–7 วัน · ไม่มา = ไม่มา/เกิน 7 วัน
+function apptOutcome(a) {
+  if (!a) return null;
+  if (a.status === 'cancelled') return { key: 'cancelled', label: 'ยกเลิก', cls: '' };
+  if (a.status === 'missed') return { key: 'missed', label: '✕ ไม่มาตามนัด', cls: 'chip-blush' };
+  if (a.status === 'done') {
+    if (a.attend === 'late') return { key: 'late', label: `⏱ มาช้า ${a.offsetDays || ''} วัน`.replace('  ', ' '), cls: 'chip-butter' };
+    if (a.attend === 'early') return { key: 'ontime', label: `✓ มาก่อนนัด ${Math.abs(a.offsetDays || 0)} วัน`, cls: 'chip-mint' };
+    return { key: 'ontime', label: '✓ มาตามนัด', cls: 'chip-mint' };
+  }
+  return null;
+}
+
+// ── รายงานผลการนัด (เฉพาะโหมดเจ้าของ) — ใช้ประเมินงานโทรนัดของเวชระเบียน ──
+// นับเฉพาะนัดที่ "ผ่านวันนัดแล้ว" (ระบบตัดสินผลแล้ว) · ไม่นับนัดที่ยกเลิก และสัตว์ที่เสียชีวิต
+function _monthKeyAdd(ym, n) { const [y, m] = ym.split('-').map(Number); const d = new Date(y, m - 1 + n, 1); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`; }
+function apptStats(list, todayStr) {
+  const st = { total: 0, judged: 0, ontime: 0, early: 0, late: 0, missed: 0, pending: 0, moved: 0, movedCame: 0, movedLate: 0, called: 0 };
+  list.forEach((a) => {
+    if (!a || a.status === 'cancelled' || a.deceased) return;
+    st.total++;
+    if (a.date >= todayStr || (a.status !== 'done' && a.status !== 'missed')) { st.pending++; return; }
+    st.judged++;
+    const o = apptOutcome(a);
+    if (a.status === 'done' && a.attend === 'early') st.early++;
+    if (o && o.key === 'ontime') st.ontime++; else if (o && o.key === 'late') st.late++; else st.missed++;
+    if ((a.reschedules || []).length) {
+      st.moved++;
+      if (o && o.key === 'ontime') st.movedCame++;
+      if ((a.reschedules || []).some((r) => r.at >= r.from)) st.movedLate++;   // เลื่อนในวันนัด/หลังวันนัด (กระชั้น)
+    }
+    if (a.calledAt) st.called++;
+  });
+  st.rate = st.judged ? Math.round(st.ontime / st.judged * 100) : null;
+  st.cameRate = st.judged ? Math.round((st.ontime + st.late) / st.judged * 100) : null;
+  return st;
+}
+function ApptOutcomeReport({ appointments, todayStr }) {
+  const [ym, setYm] = useState(todayStr.slice(0, 7));
+  const [showMissed, setShowMissed] = useState(false);
+  const inMonth = useMemo(() => (appointments || []).filter((a) => a && a.date && a.date.startsWith(ym)), [appointments, ym]);
+  const st = useMemo(() => apptStats(inMonth, todayStr), [inMonth, todayStr]);
+  const byType = useMemo(() => {
+    const g = {};
+    inMonth.forEach((a) => { (g[a.type || 'อื่นๆ'] = g[a.type || 'อื่นๆ'] || []).push(a); });
+    return Object.entries(g).map(([t, l]) => [t, apptStats(l, todayStr)]).filter(([, x]) => x.judged > 0).sort((a, b) => b[1].judged - a[1].judged);
+  }, [inMonth, todayStr]);
+  const trend = useMemo(() => {
+    const out = [];
+    for (let i = 5; i >= 0; i--) {
+      const k = _monthKeyAdd(ym, -i);
+      out.push([k, apptStats((appointments || []).filter((a) => a && a.date && a.date.startsWith(k)), todayStr)]);
+    }
+    return out;
+  }, [appointments, ym, todayStr]);
+  const missedList = inMonth.filter((a) => a.status === 'missed' && !a.deceased).sort((a, b) => a.date.localeCompare(b.date));
+  const [y, m] = ym.split('-').map(Number);
+  const pct = (n) => (st.judged ? Math.round(n / st.judged * 100) : 0);
+  const tile = (label, n, sub, color) => (
+    <div style={{ flex: '1 1 120px', background: 'var(--paper)', borderRadius: 'var(--radius-sm)', padding: '10px 12px', borderTop: `3px solid ${color}` }}>
+      <div style={{ fontSize: 12, color: 'var(--ink-soft)', fontWeight: 600 }}>{label}</div>
+      <div style={{ fontSize: 22, fontWeight: 800, color: 'var(--ink)' }}>{n}</div>
+      {sub ? <div style={{ fontSize: 11.5, color: 'var(--ink-faint)' }}>{sub}</div> : null}
+    </div>
+  );
+  return (
+    <div className="card" style={{ marginBottom: 16 }}>
+      <div className="card-head" style={{ background: 'var(--navy-soft)', borderBottom: '2px solid var(--navy)' }}>
+        <span style={{ fontWeight: 800, fontSize: 14.5, color: 'var(--navy)' }}>📊 ผลการนัด — ประเมินการโทรนัด <span style={{ fontSize: 11.5, fontWeight: 600, opacity: .7 }}>(เห็นเฉพาะเจ้าของ)</span></span>
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+          <button className="btn btn-sm" onClick={() => setYm(_monthKeyAdd(ym, -1))}>‹</button>
+          <b style={{ fontSize: 13.5, minWidth: 110, textAlign: 'center' }}>{THAI_MONTHS[m - 1]} {y + 543}</b>
+          <button className="btn btn-sm" disabled={ym >= todayStr.slice(0, 7)} onClick={() => setYm(_monthKeyAdd(ym, 1))}>›</button>
+        </span>
+      </div>
+      <div className="card-pad" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        {st.judged === 0 ? (
+          <div style={{ fontSize: 13, color: 'var(--ink-faint)' }}>ยังไม่มีนัดที่ผ่านวันในเดือนนี้{st.pending ? ` (รอผล ${st.pending} นัด)` : ''}</div>
+        ) : (<>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap' }}>
+            <span style={{ fontSize: 34, fontWeight: 800, color: st.rate >= 60 ? 'var(--mint-deep)' : st.rate >= 40 ? '#A05A00' : 'var(--blush-deep)' }}>{st.rate}%</span>
+            <span style={{ fontSize: 13.5, color: 'var(--ink-soft)' }}>มาตามนัด ({st.ontime} จาก {st.judged} นัดที่ผ่านวันแล้ว) · รวมมาช้าด้วย = {st.cameRate}%</span>
+          </div>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            {tile('✓ มาตามนัด', st.ontime, `${pct(st.ontime)}%${st.early ? ` · มาก่อน ${st.early}` : ''}`, 'var(--mint-deep)')}
+            {tile('⏱ มาช้า (≤7 วัน)', st.late, `${pct(st.late)}%`, '#E0A030')}
+            {tile('✕ ไม่มา', st.missed, `${pct(st.missed)}%`, 'var(--blush-deep)')}
+            {tile('📅 เลื่อนนัด', st.moved, st.moved ? `มาตามนัด ${st.movedCame}${st.movedLate ? ` · เลื่อนกระชั้น ${st.movedLate}` : ''}` : '', 'var(--powder-deep)')}
+            {tile('📞 ติ๊กโทรแล้ว', st.called, `จาก ${st.judged} นัด (ข้อมูลประกอบ)`, 'var(--line)')}
+          </div>
+          {st.pending ? <div style={{ fontSize: 12, color: 'var(--ink-faint)' }}>ยังรอผลอีก {st.pending} นัด (ยังไม่ถึงวัน/วันนี้) — ระบบตัดสินให้อัตโนมัติวันถัดไป</div> : null}
+          {byType.length ? (
+            <table className="tbl" style={{ fontSize: 13 }}>
+              <thead><tr><th>ประเภทนัด</th><th className="num">นัด</th><th className="num">มาตามนัด</th><th className="num">มาช้า</th><th className="num">ไม่มา</th><th className="num">% มาตามนัด</th></tr></thead>
+              <tbody>
+                {byType.map(([t, x]) => (
+                  <tr key={t}><td><span className={`chip ${APPT_CHIP[t] || ''}`} style={{ fontSize: 11.5 }}>{t}</span></td>
+                    <td className="num">{x.judged}</td><td className="num">{x.ontime}</td><td className="num">{x.late}</td><td className="num">{x.missed}</td>
+                    <td className="num" style={{ fontWeight: 700 }}>{x.rate}%</td></tr>
+                ))}
+              </tbody>
+            </table>
+          ) : null}
+        </>)}
+        {/* แนวโน้ม 6 เดือน (% มาตามนัด) */}
+        <div>
+          <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--ink-soft)', marginBottom: 6 }}>แนวโน้ม % มาตามนัด 6 เดือน</div>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end', height: 92 }}>
+            {trend.map(([k, x]) => {
+              const [ty, tm] = k.split('-').map(Number);
+              return (
+                <div key={k} title={x.judged ? `${x.ontime}/${x.judged} นัด` : 'ไม่มีข้อมูล'} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3, cursor: 'pointer' }} onClick={() => setYm(k)}>
+                  <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--ink-soft)' }}>{x.rate == null ? '–' : x.rate + '%'}</span>
+                  <div style={{ width: '100%', maxWidth: 38, height: Math.max(3, (x.rate || 0) * 0.55), background: k === ym ? 'var(--navy)' : 'var(--powder)', borderRadius: '5px 5px 0 0' }} />
+                  <span style={{ fontSize: 11, color: k === ym ? 'var(--navy)' : 'var(--ink-faint)', fontWeight: k === ym ? 800 : 500 }}>{THAI_MONTHS_SHORT[tm - 1]}</span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+        {missedList.length ? (
+          <div>
+            <button className="btn btn-sm" onClick={() => setShowMissed((v) => !v)}>{showMissed ? '▴' : '▾'} รายชื่อที่ไม่มาตามนัด ({missedList.length})</button>
+            {showMissed ? (
+              <table className="tbl" style={{ fontSize: 12.5, marginTop: 8 }}>
+                <thead><tr><th>วันนัด</th><th>สัตว์</th><th>เจ้าของ / เบอร์</th><th>ประเภท</th><th>โทรแล้ว</th></tr></thead>
+                <tbody>
+                  {missedList.map((a) => (
+                    <tr key={a.id}><td>{dateTHShort(a.date)}</td><td><b>{a.petName}</b> <span style={{ color: 'var(--ink-faint)' }}>HN {a.hn}</span></td>
+                      <td>{a.ownerName} · {a.phone}</td><td>{a.type}</td><td>{a.calledAt ? '☑' : '—'}</td></tr>
+                  ))}
+                </tbody>
+              </table>
+            ) : null}
+          </div>
+        ) : null}
+        <div style={{ fontSize: 11.5, color: 'var(--ink-faint)', lineHeight: 1.6 }}>
+          ระบบตัดสินจากการมาจริง (ประวัติรักษา/แอดมิด/กดรับเข้าคิว) ไม่ใช่จากการติ๊กโทร · มาตามนัด = มาตรงวันหรือมาก่อนนัด · เลื่อนนัดแล้วมาตามวันใหม่ = มาตามนัด · มาช้าเกิน 7 วัน = ไม่มา
+          · "มาก่อนนัด" นับเฉพาะนัดที่สร้างหลังอัปเดตนี้ (มีวันที่ทำนัด)
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Appointment Card ─────────────────────────────────────────
 function ApptCard({ appt, onUpdate, onEdit, onOpenPet, onSendSms, onDelete }) {
   const statusCls = { scheduled: 'chip-butter', arrived: 'chip-mint', done: 'chip-mint', missed: '', cancelled: '' };
@@ -547,7 +693,9 @@ function ApptCard({ appt, onUpdate, onEdit, onOpenPet, onSendSms, onDelete }) {
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4, flexShrink: 0 }}>
           {appt.time ? <span style={{ fontWeight: 800, fontSize: 16, fontVariantNumeric: 'tabular-nums' }}>{appt.time}</span> : null}
-          <span className={`chip ${statusCls[appt.status] || ''}`} style={{ fontSize: 11 }}>{statusLabel[appt.status] || 'นัด'}</span>
+          {(() => { const o = apptOutcome(appt); return o ? <span className={`chip ${o.cls}`} style={{ fontSize: 11 }}>{o.label}</span>
+            : <span className={`chip ${statusCls[appt.status] || ''}`} style={{ fontSize: 11 }}>{statusLabel[appt.status] || 'นัด'}</span>; })()}
+          {appt.calledAt ? <span className="chip" style={{ fontSize: 10.5, color: 'var(--ink-faint)' }} title={`โทรแล้ว ${appt.calledAt}`}>📞 โทรแล้ว</span> : null}
         </div>
       </div>
       <div style={{ display: 'flex', gap: 6, marginTop: 8, flexWrap: 'wrap', alignItems: 'center' }}>
@@ -1023,7 +1171,7 @@ function SmsCreditBadge() {
   );
 }
 
-function AppointmentsView({ appointments, pets, onAdd, onUpdate, onDelete, onOpenPet, pushToast, notePresets, onSavePresets, smsPresets, onSaveSmsPresets }) {
+function AppointmentsView({ appointments, pets, onAdd, onUpdate, onDelete, onOpenPet, pushToast, notePresets, onSavePresets, smsPresets, onSaveSmsPresets, ownerMode = false }) {
   const todayStr = todayISO();
   const [selectedDay, setSelectedDay] = useState(todayStr);
   const [showForm, setShowForm] = useState(false);
@@ -1090,6 +1238,8 @@ function AppointmentsView({ appointments, pets, onAdd, onUpdate, onDelete, onOpe
           <Icon name="plus" size={18} /> เพิ่มนัดใหม่
         </button>
       </div>
+
+      {ownerMode ? <ApptOutcomeReport appointments={appointments} todayStr={todayStr} /> : null}
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 360px', gap: 16, alignItems: 'start' }}>
         {/* left: calendar + day detail */}
@@ -1222,4 +1372,4 @@ function AppointmentsView({ appointments, pets, onAdd, onUpdate, onDelete, onOpe
   );
 }
 
-Object.assign(window, { AppointmentsView, ApptFormModal, ApptSmsStatus, APPT_TYPES, APPT_COLORS, APPT_CHIP });
+Object.assign(window, { AppointmentsView, ApptFormModal, ApptSmsStatus, APPT_TYPES, APPT_COLORS, APPT_CHIP, apptOutcome, apptStats, dateTHShort, ApptOutcomeReport });

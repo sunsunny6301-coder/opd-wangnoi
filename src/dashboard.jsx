@@ -1039,6 +1039,11 @@ function Dashboard({ pets, queue, appointments, admitted, receipts = [], loading
             dayAppts.map((a) => {
               const arrived = a.status === 'arrived';
               const alreadyQueued = queue.some((q) => q.hn === a.hn && ['wait', 'exam', 'cashier'].includes(q.status));
+              // นัดที่ผ่านไปแล้ว = ปิดผลแล้ว (ระบบตัดสินจากการมาจริง) → ไม่มีปุ่มรับเข้าคิว/โทร กันแก้ผลย้อนหลัง
+              const past = apptDay < todayStr;
+              const closed = past || a.status === 'done' || a.status === 'missed' || !!a.deceased;
+              const outcome = typeof apptOutcome !== 'undefined' ? apptOutcome(a) : null;
+              const moved = (a.reschedules || []).length ? a.reschedules[a.reschedules.length - 1] : null;
               return (
                 <div key={a.id} style={{
                   background: arrived ? 'var(--mint-soft)' : '#fff',
@@ -1054,11 +1059,13 @@ function Dashboard({ pets, queue, appointments, admitted, receipts = [], loading
                   <div style={{ display: 'flex', gap: 5, marginTop: 5, alignItems: 'center', flexWrap: 'wrap' }}>
                     <span className={`chip ${APPT_CHIP && APPT_CHIP[a.type] ? APPT_CHIP[a.type] : ''}`} style={{ fontSize: 11 }}>{a.type}</span>
                     {arrived ? <span className="chip chip-mint" style={{ fontSize: 11 }}>มาแล้ว</span> : null}
+                    {past && outcome ? <span className={'chip ' + outcome.cls} style={{ fontSize: 11 }}>{outcome.label}</span> : null}
+                    {moved ? <span className="chip" style={{ fontSize: 10.5, color: 'var(--ink-faint)' }} title={(a.reschedules || []).map((r) => `${r.from} → ${r.to}`).join('\n')}>เลื่อนจาก {typeof dateTHShort !== 'undefined' ? dateTHShort(moved.from) : moved.from}</span> : null}
                     {!arrived && apptDay === todayStr && a.time && a.time <= nowHM ? <span className="due-badge">⏰ ถึงเวลา</span> : null}
                     {typeof ApptSmsStatus !== 'undefined' ? <ApptSmsStatus a={a} past={apptDay < todayStr} onToggle={() => onUpdateAppointment && onUpdateAppointment({ ...a, smsAuto: a.smsAuto === false })} /> : null}
                   </div>
                   {a.note ? <div style={{ fontSize: 12, color: 'var(--ink-soft)', marginTop: 4 }}>{a.note}</div> : null}
-                  {!arrived && !alreadyQueued ?
+                  {!closed && !arrived && !alreadyQueued ?
                   <button className="btn btn-primary btn-sm" style={{ width: '100%', marginTop: 7, fontSize: 12 }}
                   onClick={() => {
                     onUpdateAppointment && onUpdateAppointment({ ...a, status: 'arrived' });
@@ -1066,19 +1073,27 @@ function Dashboard({ pets, queue, appointments, admitted, receipts = [], loading
                   }}>
                       <Icon name="plus" size={13} /> รับเข้าคิว
                     </button> :
-                  alreadyQueued ?
+                  !closed && alreadyQueued ?
                   <div style={{ fontSize: 12, color: 'var(--powder-deep)', marginTop: 5, fontWeight: 600, textAlign: 'center' }}>อยู่ในคิวแล้ว</div> :
                   null}
                   {/* ส่ง SMS + แก้ไขนัด — ลิงก์กับหน้านัดหมาย/OPD */}
                   <div style={{ display: 'flex', gap: 5, marginTop: 6 }}>
-                    {typeof SmsComposerModal !== 'undefined' ? (
+                    {/* ติ๊ก "โทรแล้ว" — เช็คลิสต์ของเวชระเบียน (ไม่ใช้วัดผล · ผลวัดจากการมาจริง) */}
+                    {!closed ? (
+                      <button className={'btn btn-sm appt-call' + (a.calledAt ? ' on' : '')} style={{ flexShrink: 0, fontSize: 11.5 }}
+                        title={a.calledAt ? `โทรแล้ว ${a.calledAt} · กดเพื่อยกเลิกติ๊ก` : 'กดเมื่อโทรนัดแล้ว'}
+                        onClick={() => onUpdateAppointment && onUpdateAppointment({ ...a, calledAt: a.calledAt ? null : `${todayISO()} ${typeof timeNow !== 'undefined' ? timeNow() : ''}`.trim() })}>
+                        {a.calledAt ? '☑ โทรแล้ว' : '☐ โทร'}
+                      </button>
+                    ) : a.calledAt ? <span className="chip" style={{ fontSize: 10.5, color: 'var(--ink-faint)', alignSelf: 'center' }}>📞 โทรแล้ว</span> : null}
+                    {!closed && typeof SmsComposerModal !== 'undefined' ? (
                       <button className="btn btn-sm" style={{ flex: 1, fontSize: 11.5,
                         ...(a.reminderSent ? { color: 'var(--mint-deep)', borderColor: 'var(--mint-deep)', background: 'var(--mint-soft)', fontWeight: 700 } : {}) }}
                         onClick={() => setSmsAppt(a)}>
                         {a.reminderSent ? '✓ ส่งแล้ว' : '📱 ส่ง SMS'}
                       </button>
                     ) : null}
-                    {typeof ApptFormModal !== 'undefined' ? (
+                    {!closed && typeof ApptFormModal !== 'undefined' ? (
                       <button className="btn btn-sm" style={{ flexShrink: 0, fontSize: 11.5 }} onClick={() => setEditAppt(a)} title="แก้ไขรายละเอียดนัด">
                         <Icon name="edit" size={13} />
                       </button>
