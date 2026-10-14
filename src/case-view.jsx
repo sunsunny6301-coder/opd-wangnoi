@@ -1154,8 +1154,9 @@ function CaseView({ pet, queueItem, vets, assistants = [], services, stock, shop
           </div>
         </div>
 
-        {/* ── right: history ── */}
-        <div className="card case-right">
+        {/* ── right: history + เครื่องคิดเลข (วางไว้ใต้ประวัติ) ── */}
+        <div className="case-right" style={{ display: 'flex', flexDirection: 'column', gap: 16, minWidth: 0 }}>
+        <div className="card">
           <button onClick={() => pet.visits.length > 0 && setShowAllHistory(true)} title={pet.visits.length > 0 ? 'กดเพื่อดูประวัติแบบเต็ม' : ''}
             className="card-head" style={{ background: 'var(--butter-soft)', width: '100%', border: 'none', borderBottom: '2px solid #E5C97E', cursor: pet.visits.length > 0 ? 'pointer' : 'default', textAlign: 'left' }}>
             <span style={{ fontWeight: 800, fontSize: 14.5, color: '#7A5E00', display: 'inline-flex', alignItems: 'center', gap: 8 }}>
@@ -1232,6 +1233,8 @@ function CaseView({ pet, queueItem, vets, assistants = [], services, stock, shop
                 );
               })}
           </div>
+        </div>
+        <CalcDock />
         </div>
       </div>
 

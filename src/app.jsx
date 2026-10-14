@@ -1323,6 +1323,7 @@ function App() {
       <InstallPrompt />
       <ConfettiLayer />
       <FestivalFloat />
+      <CalcFloat />
       <ThemeToggle />
     </div>);
 

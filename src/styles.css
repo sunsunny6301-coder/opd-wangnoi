@@ -83,6 +83,51 @@
 .theme-toggle:active { transform: scale(.94); }
 @media print { .theme-toggle { display: none !important; } }
 
+/* ── เครื่องคิดเลข 🧮 ── */
+.calc-fab {
+  position: fixed; right: 16px; bottom: 68px; z-index: 70;
+  width: 42px; height: 42px; border-radius: 50%; font-size: 20px; line-height: 1;
+  display: inline-flex; align-items: center; justify-content: center;
+  border: 1px solid var(--line); background: var(--surface); cursor: pointer;
+  opacity: .55; box-shadow: var(--shadow); transition: opacity .2s, transform .2s, box-shadow .2s;
+}
+.calc-fab:hover { opacity: 1; transform: translateY(-2px) rotate(-6deg); box-shadow: var(--shadow-lift); }
+.calc-veil { position: fixed; inset: 0; z-index: 90; background: rgba(20, 30, 50, .18); display: flex; align-items: center; justify-content: center; padding: 16px; animation: calcFade .15s ease-out; }
+@keyframes calcFade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes calcPop { from { opacity: 0; transform: translateY(10px) scale(.96); } to { opacity: 1; transform: none; } }
+.calc { background: var(--surface); border: 1.5px solid var(--line); border-radius: 22px; padding: 12px; box-shadow: var(--shadow-lift); user-select: none; }
+.calc-popup { width: 292px; max-width: 100%; animation: calcPop .18s cubic-bezier(.34,1.56,.64,1); }
+.calc-dock { width: 100%; max-width: 340px; }
+.calc-dock .calc { box-shadow: var(--shadow); border-radius: 18px; }
+.calc-top { display: flex; align-items: center; justify-content: space-between; padding: 0 4px 8px; }
+.calc-title { font-weight: 800; font-size: 13.5px; color: var(--ink-soft); letter-spacing: .02em; }
+.calc-x { border: none; background: var(--paper); color: var(--ink-faint); width: 26px; height: 26px; border-radius: 50%; font-size: 17px; line-height: 1; cursor: pointer; }
+.calc-x:hover { background: var(--blush-soft); color: var(--blush-deep); }
+.calc-screen { background: linear-gradient(135deg, var(--mint-soft), var(--powder-soft)); border-radius: 16px; padding: 10px 14px 6px; text-align: right; cursor: pointer; margin-bottom: 10px; border: 1px solid var(--line-soft, var(--line)); }
+.calc-expr { font-size: 13px; color: var(--ink-faint); min-height: 18px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; direction: ltr; }
+.calc-val { font-size: 32px; font-weight: 800; color: var(--navy); line-height: 1.2; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.calc-val.is-done { animation: calcPop .2s ease-out; }
+.calc-err { font-size: 17px; color: var(--blush-deep); }
+.calc-hint { font-size: 10.5px; color: var(--ink-faint); min-height: 14px; }
+.calc-keys { display: grid; grid-template-columns: repeat(4, 1fr); gap: 7px; }
+.calc-key {
+  height: 46px; border-radius: 14px; border: 1px solid var(--line); background: var(--paper);
+  font: inherit; font-size: 19px; font-weight: 700; color: var(--ink); cursor: pointer;
+  box-shadow: 0 2px 0 var(--line); transition: transform .08s, box-shadow .08s, background .15s;
+}
+.calc-key:hover { background: var(--surface); }
+.calc-key:active { transform: translateY(2px); box-shadow: 0 0 0 var(--line); }
+.calc-key.k-fn { background: var(--butter-soft); color: var(--butter-deep, #A05A00); font-size: 16px; }
+.calc-key.k-op { background: var(--blush-soft); color: var(--blush-deep); font-size: 22px; }
+.calc-key.k-op.on { background: var(--blush-deep); color: #fff; }
+.calc-key.k-eq { background: var(--navy); color: #fff; border-color: var(--navy); font-size: 22px; box-shadow: 0 2px 0 rgba(0,0,0,.25); }
+.calc-key.k-zero { grid-column: span 2; }
+.calc-dock .calc-key { height: 40px; font-size: 17px; }
+.calc-dock .calc-val { font-size: 26px; }
+.calc-dock-bar { width: 100%; max-width: 340px; padding: 10px 14px; border-radius: var(--radius); border: 1.5px dashed var(--line); background: var(--surface); color: var(--ink-soft); font: inherit; font-weight: 700; font-size: 13.5px; cursor: pointer; text-align: left; }
+.calc-dock-bar:hover { border-style: solid; color: var(--navy); }
+@media print { .calc-fab, .calc-veil, .calc-dock, .calc-dock-bar { display: none !important; } }
+
 * { box-sizing: border-box; }
 html, body { margin: 0; padding: 0; }
 body {

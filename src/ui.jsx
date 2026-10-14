@@ -391,6 +391,171 @@ function FestivalFloat({ override }) {
   );
 }
 
+// ════════ เครื่องคิดเลข (ป้อปอัพกลางจอ ปุ่ม 🧮 มุมขวาล่าง + แบบวางไว้ข้างจอในหน้าบันทึกตรวจ) ════════
+// คิดแบบเครื่องคิดเลขทั่วไปแต่ถูกลำดับ (× ÷ ก่อน + −) · ไม่ใช้ eval · ปัดทศนิยมกัน 0.1+0.2 = 0.30000000004
+const calcRound = (x) => parseFloat(Number(x).toPrecision(12));   // ตัดเศษทศนิยมลอย (0.1+0.2) โดยไม่ทำเลขใหญ่เพี้ยน
+const CALC_OPS = ['+', '−', '×', '÷'];
+function calcTokens(s) {
+  const out = []; let num = '';
+  for (const ch of s) {
+    if (CALC_OPS.includes(ch)) { if (num !== '') out.push(num); out.push(ch); num = ''; }
+    else num += ch;
+  }
+  if (num !== '') out.push(num);
+  while (out.length && CALC_OPS.includes(out[out.length - 1])) out.pop();
+  return out;
+}
+function calcEval(s) {
+  const t = calcTokens(s);
+  if (!t.length) return null;
+  const vals = [parseFloat(t[0])];
+  const ops = [];
+  for (let i = 1; i < t.length; i += 2) {
+    const op = t[i], v = parseFloat(t[i + 1]);
+    if (isNaN(v)) break;
+    if (op === '×') vals[vals.length - 1] *= v;
+    else if (op === '÷') { if (v === 0) return { error: 'หารด้วย 0 ไม่ได้' }; vals[vals.length - 1] /= v; }
+    else { ops.push(op); vals.push(v); }
+  }
+  let r = vals[0];
+  ops.forEach((op, i) => { r = op === '+' ? r + vals[i + 1] : r - vals[i + 1]; });
+  if (!isFinite(r)) return { error: 'คำนวณไม่ได้' };
+  return { value: calcRound(r) };
+}
+function calcFmt(n) {
+  if (n == null) return '';
+  const [i, d] = String(n).split('.');
+  return Number(i).toLocaleString('en-US') + (d != null ? '.' + d : '');
+}
+function calcFmtExpr(s) { return s.replace(/\d+(\.\d*)?/g, (m) => { const [i, d] = m.split('.'); return Number(i).toLocaleString('en-US') + (d != null ? '.' + d : ''); }); }
+
+// สถานะเครื่องคิดเลขแบบ reducer: กดถี่แค่ไหนก็คิดจากค่าล่าสุดเสมอ (ไม่อ่านค่าเก่าค้าง)
+// s = นิพจน์ที่กำลังพิมพ์ เช่น "1200+350×2" · done = ผลหลังกด = { expr, value } หรือ { expr, error }
+function calcReduce(st, k) {
+  const { s, done } = st;
+  const lastNum = (x) => { const m = x.match(/[\d.]*$/); return m ? m[0] : ''; };
+  if (k === 'AC') return { s: '', done: null };
+  if (k === '⌫') return done ? { s: done.value != null ? s : '', done: null } : { s: s.slice(0, -1), done: null };
+  if (k === '=') {
+    const r = calcEval(s);
+    if (!r) return st;
+    return r.error ? { s: '', done: { expr: s, error: r.error } } : { s: String(r.value), done: { expr: s, value: r.value } };
+  }
+  if (CALC_OPS.includes(k)) {
+    if (!s) return st;
+    return { s: CALC_OPS.includes(s.slice(-1)) ? s.slice(0, -1) + k : s + k, done: null };
+  }
+  if (k === '%') {
+    // แบบเครื่องคิดเลขมือถือ: 750 − 10% = 750 − 75 (ลด 10%) · 200 × 10% = 200 × 0.1 · 10% เฉยๆ = 0.1
+    const n = lastNum(s); if (!n) return st;
+    const before = s.slice(0, s.length - n.length), op = before.slice(-1);
+    const left = (op === '+' || op === '−') ? calcEval(before.slice(0, -1)) : null;
+    const v = left && left.value != null ? left.value * parseFloat(n) / 100 : parseFloat(n) / 100;
+    return { s: before + String(calcRound(v)), done: null };
+  }
+  // ตัวเลข / จุด — เพิ่งกด = แล้วพิมพ์เลขต่อ = เริ่มโจทย์ใหม่
+  const base = done ? '' : s;
+  const n = lastNum(base);
+  if (k === '.') return n.includes('.') ? { s: base, done: null } : { s: base + (n === '' ? '0.' : '.'), done: null };
+  if (n === '0') return { s: base.slice(0, -1) + k, done: null };
+  if (n.replace('.', '').length >= 12) return { s: base, done: null };
+  return { s: base + k, done: null };
+}
+
+function Calculator({ variant = 'popup', onClose, keyboardActive = true }) {
+  const [st, dispatch] = React.useReducer(calcReduce, { s: '', done: null });
+  const { s, done } = st;
+  const [copied, setCopied] = useState(false);
+  const live = s ? calcEval(s) : null;
+  const press = (k) => { setCopied(false); dispatch(k); };
+  // คีย์บอร์ด: ป้อปอัพ = ตลอดตอนเปิด · แบบวางข้างจอ = เฉพาะตอนเมาส์อยู่บนเครื่องคิดเลข (ไม่แย่งพิมพ์ช่องอื่น)
+  const pressRef = useRef(press); pressRef.current = press;
+  useEffect(() => {
+    if (!keyboardActive) return undefined;
+    const fn = (e) => {
+      const tg = e.target, tag = (tg && tg.tagName) || '';
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || (tg && tg.isContentEditable)) return;
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+      const map = { '*': '×', 'x': '×', 'X': '×', '/': '÷', '-': '−', '+': '+', 'Enter': '=', '=': '=', 'Backspace': '⌫', 'Delete': 'AC', '%': '%', '.': '.', ',': '.' };
+      let k = /^\d$/.test(e.key) ? e.key : map[e.key];
+      if (e.key === 'Escape') { if (onClose && variant === 'popup') { onClose(); e.preventDefault(); } return; }
+      if (!k) return;
+      e.preventDefault();
+      pressRef.current(k);
+    };
+    window.addEventListener('keydown', fn);
+    return () => window.removeEventListener('keydown', fn);
+  }, [keyboardActive, onClose, variant]);
+
+  const result = done ? done.value : (live && !live.error ? live.value : null);
+  const copy = () => {
+    if (result == null) return;
+    const txt = String(result);
+    try { navigator.clipboard.writeText(txt).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1400); }); } catch (e) {}
+  };
+  const keys = [
+    ['AC', 'fn'], ['⌫', 'fn'], ['%', 'fn'], ['÷', 'op'],
+    ['7'], ['8'], ['9'], ['×', 'op'],
+    ['4'], ['5'], ['6'], ['−', 'op'],
+    ['1'], ['2'], ['3'], ['+', 'op'],
+    ['0', 'zero'], ['.'], ['=', 'eq'],
+  ];
+  const lastOp = CALC_OPS.includes(s.slice(-1)) ? s.slice(-1) : null;
+  return (
+    <div className={'calc calc-' + variant}>
+      <div className="calc-top">
+        <span className="calc-title">🐾 เครื่องคิดเลข</span>
+        {onClose ? <button className="calc-x" onClick={onClose} aria-label="ปิด">×</button> : null}
+      </div>
+      <div className="calc-screen" onClick={copy} title={result != null ? 'กดเพื่อคัดลอกผลลัพธ์' : ''}>
+        <div className="calc-expr">{done ? calcFmtExpr(done.expr) + ' =' : (s ? calcFmtExpr(s) : ' ')}</div>
+        <div className={'calc-val' + (done ? ' is-done' : '')}>
+          {done && done.error ? <span className="calc-err">{done.error}</span>
+            : result != null ? calcFmt(result) : (s ? calcFmtExpr(s) : '0')}
+        </div>
+        <div className="calc-hint">{copied ? '✓ คัดลอกแล้ว' : result != null ? 'แตะจอเพื่อคัดลอก' : ' '}</div>
+      </div>
+      <div className="calc-keys">
+        {keys.map(([k, kind]) => (
+          <button key={k} type="button" className={'calc-key' + (kind ? ' k-' + kind : '') + (kind === 'op' && lastOp === k ? ' on' : '')}
+            onClick={() => press(k)}>{k}</button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ปุ่ม 🧮 ลอยมุมขวาล่าง (เหนือปุ่มธีม) → เครื่องคิดเลขป้อปอัพกลางจอ ใช้ได้ทุกหน้า
+function CalcFloat() {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <button className="calc-fab no-print" onClick={() => setOpen((v) => !v)} title="เครื่องคิดเลข" aria-label="เครื่องคิดเลข">🧮</button>
+      {open ? (
+        <div className="calc-veil no-print" onMouseDown={(e) => { if (e.target === e.currentTarget) setOpen(false); }}>
+          <Calculator variant="popup" onClose={() => setOpen(false)} />
+        </div>
+      ) : null}
+    </>
+  );
+}
+
+// แบบวางไว้ข้างจอ (หน้าบันทึกตรวจ ใต้ประวัติ) — ย่อ/ขยายได้ จำค่าไว้ต่อเครื่อง
+const CALC_DOCK_KEY = 'wnvet_calc_dock';
+function CalcDock() {
+  const [open, setOpen] = useState(() => { try { return localStorage.getItem(CALC_DOCK_KEY) !== 'closed'; } catch (e) { return true; } });
+  const [hover, setHover] = useState(false);
+  const toggle = () => setOpen((v) => { try { localStorage.setItem(CALC_DOCK_KEY, v ? 'closed' : 'open'); } catch (e) {} return !v; });
+  if (!open) {
+    return <button className="calc-dock-bar no-print" onClick={toggle}>🧮 เครื่องคิดเลข <span style={{ opacity: .6 }}>▾</span></button>;
+  }
+  return (
+    <div className="calc-dock no-print" onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}>
+      <Calculator variant="dock" onClose={toggle} keyboardActive={hover} />
+    </div>
+  );
+}
+
 // ════════ เงินเข้าลิ้นชักรายวัน แยกช่องทาง (ไว้เช็คเงินสดกับเวชระเบียน) ════════
 // = ใบเสร็จของวันนั้นทุกชนิด (OPD + เพ็ทช้อป) โดยหักมัดจำแอดมิดที่เคยรับไปแล้ว
 //   + มัดจำแอดมิดที่ "รับในวันนั้น" (ทั้งเคสที่ยังนอนอยู่ และเคสที่จำหน่ายแล้ว — เก็บไว้ใน receipt.deposits)
@@ -438,4 +603,4 @@ function MoneyInBreakdown({ m, revenue, light }) {
   );
 }
 
-Object.assign(window, { Icon, Modal, useToasts, Field, QtyInput, DeceasedTag, SPECIES_EMOJI, TYPE_CHIP, fmtB, todayTH, dateTH, timeNow, calcAge, todayISO, imageToDataURL, CountUp, celebrate, playDing, ConfettiLayer, getFestival, FestivalFloat, ThemeToggle, InstallPrompt, isStandalone, normPayMethod, moneyInOfDay, MoneyInBreakdown });
+Object.assign(window, { Icon, Modal, useToasts, Field, QtyInput, DeceasedTag, SPECIES_EMOJI, TYPE_CHIP, fmtB, todayTH, dateTH, timeNow, calcAge, todayISO, imageToDataURL, CountUp, celebrate, playDing, ConfettiLayer, getFestival, FestivalFloat, ThemeToggle, InstallPrompt, isStandalone, normPayMethod, moneyInOfDay, MoneyInBreakdown, Calculator, CalcFloat, CalcDock, calcEval });

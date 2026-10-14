@@ -108,6 +108,51 @@ if ('serviceWorker' in navigator) {
 .theme-toggle:active { transform: scale(.94); }
 @media print { .theme-toggle { display: none !important; } }
 
+/* ── เครื่องคิดเลข 🧮 ── */
+.calc-fab {
+  position: fixed; right: 16px; bottom: 68px; z-index: 70;
+  width: 42px; height: 42px; border-radius: 50%; font-size: 20px; line-height: 1;
+  display: inline-flex; align-items: center; justify-content: center;
+  border: 1px solid var(--line); background: var(--surface); cursor: pointer;
+  opacity: .55; box-shadow: var(--shadow); transition: opacity .2s, transform .2s, box-shadow .2s;
+}
+.calc-fab:hover { opacity: 1; transform: translateY(-2px) rotate(-6deg); box-shadow: var(--shadow-lift); }
+.calc-veil { position: fixed; inset: 0; z-index: 90; background: rgba(20, 30, 50, .18); display: flex; align-items: center; justify-content: center; padding: 16px; animation: calcFade .15s ease-out; }
+@keyframes calcFade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes calcPop { from { opacity: 0; transform: translateY(10px) scale(.96); } to { opacity: 1; transform: none; } }
+.calc { background: var(--surface); border: 1.5px solid var(--line); border-radius: 22px; padding: 12px; box-shadow: var(--shadow-lift); user-select: none; }
+.calc-popup { width: 292px; max-width: 100%; animation: calcPop .18s cubic-bezier(.34,1.56,.64,1); }
+.calc-dock { width: 100%; max-width: 340px; }
+.calc-dock .calc { box-shadow: var(--shadow); border-radius: 18px; }
+.calc-top { display: flex; align-items: center; justify-content: space-between; padding: 0 4px 8px; }
+.calc-title { font-weight: 800; font-size: 13.5px; color: var(--ink-soft); letter-spacing: .02em; }
+.calc-x { border: none; background: var(--paper); color: var(--ink-faint); width: 26px; height: 26px; border-radius: 50%; font-size: 17px; line-height: 1; cursor: pointer; }
+.calc-x:hover { background: var(--blush-soft); color: var(--blush-deep); }
+.calc-screen { background: linear-gradient(135deg, var(--mint-soft), var(--powder-soft)); border-radius: 16px; padding: 10px 14px 6px; text-align: right; cursor: pointer; margin-bottom: 10px; border: 1px solid var(--line-soft, var(--line)); }
+.calc-expr { font-size: 13px; color: var(--ink-faint); min-height: 18px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; direction: ltr; }
+.calc-val { font-size: 32px; font-weight: 800; color: var(--navy); line-height: 1.2; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.calc-val.is-done { animation: calcPop .2s ease-out; }
+.calc-err { font-size: 17px; color: var(--blush-deep); }
+.calc-hint { font-size: 10.5px; color: var(--ink-faint); min-height: 14px; }
+.calc-keys { display: grid; grid-template-columns: repeat(4, 1fr); gap: 7px; }
+.calc-key {
+  height: 46px; border-radius: 14px; border: 1px solid var(--line); background: var(--paper);
+  font: inherit; font-size: 19px; font-weight: 700; color: var(--ink); cursor: pointer;
+  box-shadow: 0 2px 0 var(--line); transition: transform .08s, box-shadow .08s, background .15s;
+}
+.calc-key:hover { background: var(--surface); }
+.calc-key:active { transform: translateY(2px); box-shadow: 0 0 0 var(--line); }
+.calc-key.k-fn { background: var(--butter-soft); color: var(--butter-deep, #A05A00); font-size: 16px; }
+.calc-key.k-op { background: var(--blush-soft); color: var(--blush-deep); font-size: 22px; }
+.calc-key.k-op.on { background: var(--blush-deep); color: #fff; }
+.calc-key.k-eq { background: var(--navy); color: #fff; border-color: var(--navy); font-size: 22px; box-shadow: 0 2px 0 rgba(0,0,0,.25); }
+.calc-key.k-zero { grid-column: span 2; }
+.calc-dock .calc-key { height: 40px; font-size: 17px; }
+.calc-dock .calc-val { font-size: 26px; }
+.calc-dock-bar { width: 100%; max-width: 340px; padding: 10px 14px; border-radius: var(--radius); border: 1.5px dashed var(--line); background: var(--surface); color: var(--ink-soft); font: inherit; font-weight: 700; font-size: 13.5px; cursor: pointer; text-align: left; }
+.calc-dock-bar:hover { border-style: solid; color: var(--navy); }
+@media print { .calc-fab, .calc-veil, .calc-dock, .calc-dock-bar { display: none !important; } }
+
 * { box-sizing: border-box; }
 html, body { margin: 0; padding: 0; }
 body {
@@ -1711,6 +1756,171 @@ function FestivalFloat({ override }) {
   );
 }
 
+// ════════ เครื่องคิดเลข (ป้อปอัพกลางจอ ปุ่ม 🧮 มุมขวาล่าง + แบบวางไว้ข้างจอในหน้าบันทึกตรวจ) ════════
+// คิดแบบเครื่องคิดเลขทั่วไปแต่ถูกลำดับ (× ÷ ก่อน + −) · ไม่ใช้ eval · ปัดทศนิยมกัน 0.1+0.2 = 0.30000000004
+const calcRound = (x) => parseFloat(Number(x).toPrecision(12));   // ตัดเศษทศนิยมลอย (0.1+0.2) โดยไม่ทำเลขใหญ่เพี้ยน
+const CALC_OPS = ['+', '−', '×', '÷'];
+function calcTokens(s) {
+  const out = []; let num = '';
+  for (const ch of s) {
+    if (CALC_OPS.includes(ch)) { if (num !== '') out.push(num); out.push(ch); num = ''; }
+    else num += ch;
+  }
+  if (num !== '') out.push(num);
+  while (out.length && CALC_OPS.includes(out[out.length - 1])) out.pop();
+  return out;
+}
+function calcEval(s) {
+  const t = calcTokens(s);
+  if (!t.length) return null;
+  const vals = [parseFloat(t[0])];
+  const ops = [];
+  for (let i = 1; i < t.length; i += 2) {
+    const op = t[i], v = parseFloat(t[i + 1]);
+    if (isNaN(v)) break;
+    if (op === '×') vals[vals.length - 1] *= v;
+    else if (op === '÷') { if (v === 0) return { error: 'หารด้วย 0 ไม่ได้' }; vals[vals.length - 1] /= v; }
+    else { ops.push(op); vals.push(v); }
+  }
+  let r = vals[0];
+  ops.forEach((op, i) => { r = op === '+' ? r + vals[i + 1] : r - vals[i + 1]; });
+  if (!isFinite(r)) return { error: 'คำนวณไม่ได้' };
+  return { value: calcRound(r) };
+}
+function calcFmt(n) {
+  if (n == null) return '';
+  const [i, d] = String(n).split('.');
+  return Number(i).toLocaleString('en-US') + (d != null ? '.' + d : '');
+}
+function calcFmtExpr(s) { return s.replace(/\d+(\.\d*)?/g, (m) => { const [i, d] = m.split('.'); return Number(i).toLocaleString('en-US') + (d != null ? '.' + d : ''); }); }
+
+// สถานะเครื่องคิดเลขแบบ reducer: กดถี่แค่ไหนก็คิดจากค่าล่าสุดเสมอ (ไม่อ่านค่าเก่าค้าง)
+// s = นิพจน์ที่กำลังพิมพ์ เช่น "1200+350×2" · done = ผลหลังกด = { expr, value } หรือ { expr, error }
+function calcReduce(st, k) {
+  const { s, done } = st;
+  const lastNum = (x) => { const m = x.match(/[\d.]*$/); return m ? m[0] : ''; };
+  if (k === 'AC') return { s: '', done: null };
+  if (k === '⌫') return done ? { s: done.value != null ? s : '', done: null } : { s: s.slice(0, -1), done: null };
+  if (k === '=') {
+    const r = calcEval(s);
+    if (!r) return st;
+    return r.error ? { s: '', done: { expr: s, error: r.error } } : { s: String(r.value), done: { expr: s, value: r.value } };
+  }
+  if (CALC_OPS.includes(k)) {
+    if (!s) return st;
+    return { s: CALC_OPS.includes(s.slice(-1)) ? s.slice(0, -1) + k : s + k, done: null };
+  }
+  if (k === '%') {
+    // แบบเครื่องคิดเลขมือถือ: 750 − 10% = 750 − 75 (ลด 10%) · 200 × 10% = 200 × 0.1 · 10% เฉยๆ = 0.1
+    const n = lastNum(s); if (!n) return st;
+    const before = s.slice(0, s.length - n.length), op = before.slice(-1);
+    const left = (op === '+' || op === '−') ? calcEval(before.slice(0, -1)) : null;
+    const v = left && left.value != null ? left.value * parseFloat(n) / 100 : parseFloat(n) / 100;
+    return { s: before + String(calcRound(v)), done: null };
+  }
+  // ตัวเลข / จุด — เพิ่งกด = แล้วพิมพ์เลขต่อ = เริ่มโจทย์ใหม่
+  const base = done ? '' : s;
+  const n = lastNum(base);
+  if (k === '.') return n.includes('.') ? { s: base, done: null } : { s: base + (n === '' ? '0.' : '.'), done: null };
+  if (n === '0') return { s: base.slice(0, -1) + k, done: null };
+  if (n.replace('.', '').length >= 12) return { s: base, done: null };
+  return { s: base + k, done: null };
+}
+
+function Calculator({ variant = 'popup', onClose, keyboardActive = true }) {
+  const [st, dispatch] = React.useReducer(calcReduce, { s: '', done: null });
+  const { s, done } = st;
+  const [copied, setCopied] = useState(false);
+  const live = s ? calcEval(s) : null;
+  const press = (k) => { setCopied(false); dispatch(k); };
+  // คีย์บอร์ด: ป้อปอัพ = ตลอดตอนเปิด · แบบวางข้างจอ = เฉพาะตอนเมาส์อยู่บนเครื่องคิดเลข (ไม่แย่งพิมพ์ช่องอื่น)
+  const pressRef = useRef(press); pressRef.current = press;
+  useEffect(() => {
+    if (!keyboardActive) return undefined;
+    const fn = (e) => {
+      const tg = e.target, tag = (tg && tg.tagName) || '';
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || (tg && tg.isContentEditable)) return;
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+      const map = { '*': '×', 'x': '×', 'X': '×', '/': '÷', '-': '−', '+': '+', 'Enter': '=', '=': '=', 'Backspace': '⌫', 'Delete': 'AC', '%': '%', '.': '.', ',': '.' };
+      let k = /^\d$/.test(e.key) ? e.key : map[e.key];
+      if (e.key === 'Escape') { if (onClose && variant === 'popup') { onClose(); e.preventDefault(); } return; }
+      if (!k) return;
+      e.preventDefault();
+      pressRef.current(k);
+    };
+    window.addEventListener('keydown', fn);
+    return () => window.removeEventListener('keydown', fn);
+  }, [keyboardActive, onClose, variant]);
+
+  const result = done ? done.value : (live && !live.error ? live.value : null);
+  const copy = () => {
+    if (result == null) return;
+    const txt = String(result);
+    try { navigator.clipboard.writeText(txt).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1400); }); } catch (e) {}
+  };
+  const keys = [
+    ['AC', 'fn'], ['⌫', 'fn'], ['%', 'fn'], ['÷', 'op'],
+    ['7'], ['8'], ['9'], ['×', 'op'],
+    ['4'], ['5'], ['6'], ['−', 'op'],
+    ['1'], ['2'], ['3'], ['+', 'op'],
+    ['0', 'zero'], ['.'], ['=', 'eq'],
+  ];
+  const lastOp = CALC_OPS.includes(s.slice(-1)) ? s.slice(-1) : null;
+  return (
+    <div className={'calc calc-' + variant}>
+      <div className="calc-top">
+        <span className="calc-title">🐾 เครื่องคิดเลข</span>
+        {onClose ? <button className="calc-x" onClick={onClose} aria-label="ปิด">×</button> : null}
+      </div>
+      <div className="calc-screen" onClick={copy} title={result != null ? 'กดเพื่อคัดลอกผลลัพธ์' : ''}>
+        <div className="calc-expr">{done ? calcFmtExpr(done.expr) + ' =' : (s ? calcFmtExpr(s) : ' ')}</div>
+        <div className={'calc-val' + (done ? ' is-done' : '')}>
+          {done && done.error ? <span className="calc-err">{done.error}</span>
+            : result != null ? calcFmt(result) : (s ? calcFmtExpr(s) : '0')}
+        </div>
+        <div className="calc-hint">{copied ? '✓ คัดลอกแล้ว' : result != null ? 'แตะจอเพื่อคัดลอก' : ' '}</div>
+      </div>
+      <div className="calc-keys">
+        {keys.map(([k, kind]) => (
+          <button key={k} type="button" className={'calc-key' + (kind ? ' k-' + kind : '') + (kind === 'op' && lastOp === k ? ' on' : '')}
+            onClick={() => press(k)}>{k}</button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ปุ่ม 🧮 ลอยมุมขวาล่าง (เหนือปุ่มธีม) → เครื่องคิดเลขป้อปอัพกลางจอ ใช้ได้ทุกหน้า
+function CalcFloat() {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <button className="calc-fab no-print" onClick={() => setOpen((v) => !v)} title="เครื่องคิดเลข" aria-label="เครื่องคิดเลข">🧮</button>
+      {open ? (
+        <div className="calc-veil no-print" onMouseDown={(e) => { if (e.target === e.currentTarget) setOpen(false); }}>
+          <Calculator variant="popup" onClose={() => setOpen(false)} />
+        </div>
+      ) : null}
+    </>
+  );
+}
+
+// แบบวางไว้ข้างจอ (หน้าบันทึกตรวจ ใต้ประวัติ) — ย่อ/ขยายได้ จำค่าไว้ต่อเครื่อง
+const CALC_DOCK_KEY = 'wnvet_calc_dock';
+function CalcDock() {
+  const [open, setOpen] = useState(() => { try { return localStorage.getItem(CALC_DOCK_KEY) !== 'closed'; } catch (e) { return true; } });
+  const [hover, setHover] = useState(false);
+  const toggle = () => setOpen((v) => { try { localStorage.setItem(CALC_DOCK_KEY, v ? 'closed' : 'open'); } catch (e) {} return !v; });
+  if (!open) {
+    return <button className="calc-dock-bar no-print" onClick={toggle}>🧮 เครื่องคิดเลข <span style={{ opacity: .6 }}>▾</span></button>;
+  }
+  return (
+    <div className="calc-dock no-print" onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}>
+      <Calculator variant="dock" onClose={toggle} keyboardActive={hover} />
+    </div>
+  );
+}
+
 // ════════ เงินเข้าลิ้นชักรายวัน แยกช่องทาง (ไว้เช็คเงินสดกับเวชระเบียน) ════════
 // = ใบเสร็จของวันนั้นทุกชนิด (OPD + เพ็ทช้อป) โดยหักมัดจำแอดมิดที่เคยรับไปแล้ว
 //   + มัดจำแอดมิดที่ "รับในวันนั้น" (ทั้งเคสที่ยังนอนอยู่ และเคสที่จำหน่ายแล้ว — เก็บไว้ใน receipt.deposits)
@@ -1758,7 +1968,7 @@ function MoneyInBreakdown({ m, revenue, light }) {
   );
 }
 
-Object.assign(window, { Icon, Modal, useToasts, Field, QtyInput, DeceasedTag, SPECIES_EMOJI, TYPE_CHIP, fmtB, todayTH, dateTH, timeNow, calcAge, todayISO, imageToDataURL, CountUp, celebrate, playDing, ConfettiLayer, getFestival, FestivalFloat, ThemeToggle, InstallPrompt, isStandalone, normPayMethod, moneyInOfDay, MoneyInBreakdown });
+Object.assign(window, { Icon, Modal, useToasts, Field, QtyInput, DeceasedTag, SPECIES_EMOJI, TYPE_CHIP, fmtB, todayTH, dateTH, timeNow, calcAge, todayISO, imageToDataURL, CountUp, celebrate, playDing, ConfettiLayer, getFestival, FestivalFloat, ThemeToggle, InstallPrompt, isStandalone, normPayMethod, moneyInOfDay, MoneyInBreakdown, Calculator, CalcFloat, CalcDock, calcEval });
 
 </script>
 
@@ -4558,8 +4768,9 @@ function CaseView({ pet, queueItem, vets, assistants = [], services, stock, shop
           </div>
         </div>
 
-        {/* ── right: history ── */}
-        <div className="card case-right">
+        {/* ── right: history + เครื่องคิดเลข (วางไว้ใต้ประวัติ) ── */}
+        <div className="case-right" style={{ display: 'flex', flexDirection: 'column', gap: 16, minWidth: 0 }}>
+        <div className="card">
           <button onClick={() => pet.visits.length > 0 && setShowAllHistory(true)} title={pet.visits.length > 0 ? 'กดเพื่อดูประวัติแบบเต็ม' : ''}
             className="card-head" style={{ background: 'var(--butter-soft)', width: '100%', border: 'none', borderBottom: '2px solid #E5C97E', cursor: pet.visits.length > 0 ? 'pointer' : 'default', textAlign: 'left' }}>
             <span style={{ fontWeight: 800, fontSize: 14.5, color: '#7A5E00', display: 'inline-flex', alignItems: 'center', gap: 8 }}>
@@ -4636,6 +4847,8 @@ function CaseView({ pet, queueItem, vets, assistants = [], services, stock, shop
                 );
               })}
           </div>
+        </div>
+        <CalcDock />
         </div>
       </div>
 
@@ -11021,6 +11234,7 @@ function App() {
       <InstallPrompt />
       <ConfettiLayer />
       <FestivalFloat />
+      <CalcFloat />
       <ThemeToggle />
     </div>);
 
