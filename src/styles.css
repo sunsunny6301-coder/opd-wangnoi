@@ -267,6 +267,21 @@ button, input, select, textarea { font-family: inherit; font-size: inherit; colo
 .q-card .q-cc { font-size: 13px; color: var(--ink-soft); margin-top: 6px; overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
 .q-card .q-actions { display: flex; gap: 6px; margin-top: 10px; }
 .q-card.tone-mint { opacity: .88; }
+/* แก้บริการ / เพิ่มสัตว์บ้านเดียวกัน — ซ่อนไว้ โผล่ตอนเอาเมาส์ชี้การ์ด (จอสัมผัส: จางๆ ตลอด) */
+.q-card .q-type-btn { font: inherit; font-size: 12px; cursor: pointer; border: 1px solid transparent; }
+.q-card .q-type-btn:hover { border-color: currentColor; }
+.q-card .q-hover-ico { display: inline-block; width: 0; overflow: hidden; opacity: 0; margin-left: 0; font-size: 10px; transition: all .15s; vertical-align: middle; }
+.q-card:hover .q-hover-ico, .q-card.q-open .q-hover-ico { width: 10px; opacity: .7; margin-left: 4px; }
+.q-card .q-hover-btn { border: 1px dashed var(--line); background: var(--surface); color: var(--ink-soft); border-radius: 99px; font-size: 11.5px; padding: 1px 8px; cursor: pointer; opacity: 0; transition: opacity .15s; }
+.q-card:hover .q-hover-btn, .q-card.q-open .q-hover-btn { opacity: 1; }
+.q-card .q-hover-btn:hover { border-style: solid; border-color: var(--navy); color: var(--navy); }
+@media (hover: none) { .q-card .q-hover-btn { opacity: .6; } .q-card .q-hover-ico { width: 10px; opacity: .5; margin-left: 4px; } }
+.q-card .q-panel { margin-top: 8px; padding: 8px 9px; border-radius: var(--radius-sm); background: var(--paper); border: 1px solid var(--line); cursor: default; display: flex; flex-direction: column; gap: 4px; }
+.q-card .q-panel-title { font-size: 11.5px; font-weight: 700; color: var(--ink-faint); margin-bottom: 2px; }
+.q-card .q-house-row { width: 100%; display: flex; align-items: center; gap: 6px; padding: 5px 6px; border: none; background: none; border-radius: 6px; cursor: pointer; font: inherit; font-size: 13px; color: var(--ink); text-align: left; }
+.q-card .q-house-row:hover:not(:disabled) { background: var(--navy-soft); }
+.q-card .q-house-row:disabled { opacity: .5; cursor: default; }
+.q-card.q-open, .q-card.q-open:hover { transform: none; z-index: 5; }
 
 /* ── forms ── */
 .field { display: flex; flex-direction: column; gap: 5px; }

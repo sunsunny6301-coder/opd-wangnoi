@@ -295,26 +295,96 @@ function WalkInModal({ pets, onClose, onSubmit, prefillHn, prefillOwner }) {
   );
 }
 
-function QueueCard({ item, pet, onOpen, onOpenCase, onMove, onPay, onCancel, zoneBorder }) {
+// สัตว์บ้านเดียวกัน = เบอร์โทรเดียวกัน (ถ้ามี) ไม่งั้นใช้ชื่อเจ้าของ — เหมือนการจัดกลุ่มในหน้ารับเคส
+function householdOf(pet, pets) {
+  if (!pet || !pet.owner) return [];
+  const digits = (x) => String(x || '').replace(/\D/g, '');
+  const ph = digits(pet.owner.phone), nm = String(pet.owner.name || '').trim();
+  return (pets || []).filter((p) => p.hn !== pet.hn && p.owner && (
+    ph.length >= 6 ? digits(p.owner.phone) === ph : (nm && String(p.owner.name || '').trim() === nm)));
+}
+
+function QueueCard({ item, pet, pets = [], activeHns, onOpen, onOpenCase, onMove, onPay, onCancel, onChangeType, onQueuePet, onNewPetForOwner, zoneBorder }) {
   const meta = STATUS_META[item.status];
   const total = (item.charges || []).reduce((s, [, q, p]) => s + q * p, 0);
   const [confirmCancel, setConfirmCancel] = useState(false);
+  // แผงเล็กที่กางในการ์ด: 'type' = เปลี่ยนบริการ · 'pet' = เพิ่มสัตว์บ้านนี้เข้าคิว (ซ่อนไว้จนกด)
+  const [panel, setPanel] = useState(null);
+  const [petPick, setPetPick] = useState(null);   // hn ของสัตว์บ้านเดียวกันที่กำลังเลือกบริการ
+  const house = useMemo(() => (panel === 'pet' ? householdOf(pet, pets) : []), [panel, pet, pets]);
+  const stop = (e) => e.stopPropagation();
+  const closePanel = () => { setPanel(null); setPetPick(null); };
+  const chipBtn = (label, active, onClick) => (
+    <button key={label} className="btn btn-sm" onClick={(e) => { e.stopPropagation(); onClick(); }}
+      style={{ fontSize: 12, padding: '4px 10px', fontWeight: active ? 800 : 600, background: active ? 'var(--navy)' : 'var(--surface)', color: active ? '#fff' : 'var(--ink)', borderColor: active ? 'var(--navy)' : 'var(--line)' }}>
+      {label}
+    </button>
+  );
   return (
-    <div className={'q-card anim-pop ' + meta.tone}
+    <div className={'q-card anim-pop ' + meta.tone + (panel ? ' q-open' : '')}
     style={{ borderTop: 'none', borderLeft: `4px solid ${zoneBorder || meta.dot}`, cursor: 'pointer' }}
     onClick={() => onOpen(item)}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
         <span className="q-no">{item.q}</span>
-        <span style={{ fontSize: 12, color: 'var(--ink-faint)', display: 'inline-flex', alignItems: 'center', gap: 4 }}><Icon name="clock" size={13} />{item.time}</span>
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+          {pet && onQueuePet ? (
+            <button className="q-hover-btn" title="เพิ่มสัตว์บ้านนี้เข้าคิว"
+              onClick={(e) => { e.stopPropagation(); setPetPick(null); setPanel(panel === 'pet' ? null : 'pet'); }}>🐾+</button>
+          ) : null}
+          <span style={{ fontSize: 12, color: 'var(--ink-faint)', display: 'inline-flex', alignItems: 'center', gap: 4 }}><Icon name="clock" size={13} />{item.time}</span>
+        </span>
       </div>
       <div className="q-pet"><span className="anim-wiggle">{SPECIES_EMOJI[item.species] || '🐾'}</span> {item.petName}
         {item.isNew ? <span className="chip chip-blush" style={{ fontSize: 11 }}>ลูกค้าใหม่</span> : null}
         <DeceasedTag pet={pet} />
       </div>
       <div className="q-meta">
-        <span className={'chip ' + (TYPE_CHIP[item.type] || '')}>{item.type}</span>
+        {onChangeType ? (
+          <button className={'chip q-type-btn ' + (TYPE_CHIP[item.type] || '')} title="กดเพื่อเปลี่ยนบริการ"
+            onClick={(e) => { e.stopPropagation(); setPetPick(null); setPanel(panel === 'type' ? null : 'type'); }}>
+            {item.type}<span className="q-hover-ico">▾</span>
+          </button>
+        ) : <span className={'chip ' + (TYPE_CHIP[item.type] || '')}>{item.type}</span>}
         {pet ? <span className="chip">HN {pet.hn}</span> : null}
       </div>
+      {panel === 'type' ? (
+        <div className="q-panel" onClick={stop}>
+          <div className="q-panel-title">เปลี่ยนบริการเป็น</div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
+            {SERVICE_TYPES.map((t) => chipBtn(t, t === item.type, () => { if (t !== item.type) onChangeType(item.q, t); closePanel(); }))}
+          </div>
+        </div>
+      ) : null}
+      {panel === 'pet' ? (
+        <div className="q-panel" onClick={stop}>
+          <div className="q-panel-title">สัตว์บ้านนี้ · {(pet.owner && pet.owner.name) || '-'}</div>
+          {house.length === 0 ? <div style={{ fontSize: 12, color: 'var(--ink-faint)', padding: '2px 0 4px' }}>ยังไม่มีตัวอื่นในบ้านนี้</div> : null}
+          {house.map((p) => {
+            const inQ = !!(activeHns && activeHns.has(p.hn));
+            const dead = !!p.deceased;
+            return (
+              <div key={p.hn}>
+                <button className="q-house-row" disabled={inQ || dead}
+                  onClick={(e) => { e.stopPropagation(); setPetPick(petPick === p.hn ? null : p.hn); }}>
+                  <span>{SPECIES_EMOJI[p.species] || '🐾'}</span>
+                  <b>{p.name}</b>
+                  <span style={{ fontSize: 11, color: 'var(--ink-faint)' }}>HN {p.hn}</span>
+                  <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--ink-faint)', whiteSpace: 'nowrap' }}>{dead ? 'เสียชีวิตแล้ว' : inQ ? 'อยู่ในคิวแล้ว' : petPick === p.hn ? '▴' : 'ส่งเข้าคิว ▾'}</span>
+                </button>
+                {petPick === p.hn ? (
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, padding: '4px 0 6px 24px' }}>
+                    {SERVICE_TYPES.map((t) => chipBtn(t, false, () => { onQueuePet(p.hn, t); closePanel(); }))}
+                  </div>
+                ) : null}
+              </div>
+            );
+          })}
+          <button className="q-house-row" style={{ color: 'var(--navy)', fontWeight: 700 }}
+            onClick={(e) => { e.stopPropagation(); closePanel(); onNewPetForOwner && onNewPetForOwner(pet.owner); }}>
+            <span>➕</span> สัตว์ตัวใหม่ของบ้านนี้ <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--ink-faint)', fontWeight: 500 }}>กรอกประวัติ</span>
+          </button>
+        </div>
+      ) : null}
       {item.cc ? <div className="q-cc">{item.cc}</div> : null}
       <div className="q-actions" onClick={(e) => e.stopPropagation()}>
         {item.status === 'wait' ? (
@@ -744,7 +814,7 @@ function FgCats() {
   );
 }
 
-function Dashboard({ pets, queue, appointments, admitted, receipts = [], loading = false, onOpenCase, onOpenPet, onMove, onPay, onWalkIn, onUpdateAppointment, onDischargeAdmitted, onUpdateAdmitted, onOpenAdmittedCase, onCancelQueue, onCancelAdmit, notePresets, onSavePresets, pushToast, ownerMode = false }) {
+function Dashboard({ pets, queue, appointments, admitted, receipts = [], loading = false, onOpenCase, onOpenPet, onMove, onPay, onWalkIn, onUpdateAppointment, onDischargeAdmitted, onUpdateAdmitted, onOpenAdmittedCase, onCancelQueue, onCancelAdmit, onChangeQueueType, notePresets, onSavePresets, pushToast, ownerMode = false }) {
   const [showWalkIn, setShowWalkIn] = useState(false);
   const [walkInPrefillHn, setWalkInPrefillHn] = useState(null);
   const [walkInOwner, setWalkInOwner] = useState(null);   // เจ้าของที่กด "เพิ่มสัตว์ตัวใหม่ของบ้านนี้" จากผลค้นหา
@@ -814,6 +884,8 @@ function Dashboard({ pets, queue, appointments, admitted, receipts = [], loading
   }, [goalHit, isRecord, revenue]);
 
   const activeCount = byStatus('wait').length + byStatus('exam').length + byStatus('cashier').length;
+  // สัตว์ที่ยังอยู่ในคิว (รอตรวจ/ตรวจ/รอจ่าย) — กันส่งตัวเดิมเข้าคิวซ้ำจากปุ่ม 🐾+
+  const activeHns = new Set([...byStatus('wait'), ...byStatus('exam'), ...byStatus('cashier')].map((x) => x.hn));
   const nowHM = (typeof timeNow !== 'undefined' ? timeNow() : new Date().toTimeString().slice(0, 5));
 
   const stats = [
@@ -1012,8 +1084,11 @@ function Dashboard({ pets, queue, appointments, admitted, receipts = [], loading
                 {items.length === 0 ?
                     <div className="queue-empty" style={{ background: 'transparent', border: `1.5px dashed ${meta.zoneBorder}`, opacity: .7 }}>— ว่าง —</div> :
                     items.map((item) =>
-                    <QueueCard key={item.q} item={item} pet={pets.find((p) => p.hn === item.hn)}
-                    onOpen={onOpenCase} onOpenCase={onOpenCase} onMove={onMove} onPay={onPay} onCancel={onCancelQueue} zoneBorder={meta.zoneBorder} />
+                    <QueueCard key={item.q} item={item} pet={pets.find((p) => p.hn === item.hn)} pets={pets} activeHns={activeHns}
+                    onOpen={onOpenCase} onOpenCase={onOpenCase} onMove={onMove} onPay={onPay} onCancel={onCancelQueue} zoneBorder={meta.zoneBorder}
+                    onChangeType={onChangeQueueType}
+                    onQueuePet={(hn, type) => onWalkIn({ existingHn: hn, type, cc: '' })}
+                    onNewPetForOwner={(owner) => openWalkIn({ newPetForOwner: owner })} />
                     )}
               </div>
             </div>);

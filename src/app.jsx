@@ -814,6 +814,19 @@ function App() {
     pushToast(`ออกบัตรคิว ${entry.q} — ${petName} เรียบร้อย`);
   };
 
+  // เปลี่ยนบริการของคิว (กดผิดตอนรับเคส) → ตามไปทุกที่ที่เก็บประเภทไว้:
+  // คิว (หน้า OPD/ประวัติรายวันใช้ type ของคิว) + ใบเสร็จของคิวนี้ (สรุปรายรับใช้ svcType ก่อน)
+  const changeQueueType = (qNo, type) => {
+    const item = (queue || []).find((x) => x.q === qNo);
+    if (!item || !type || item.type === type) return;
+    setState((s) => ({
+      ...s,
+      queue: (s.queue || []).map((x) => x.q === qNo ? { ...x, type } : x),
+      receipts: (s.receipts || []).map((r) => (r.q === qNo && r.hn === item.hn && (r.type || 'opd') === 'opd') ? { ...r, svcType: type } : r),
+    }));
+    pushToast(`เปลี่ยนบริการ ${qNo} ${item.petName}: ${item.type || '-'} → ${type}`);
+  };
+
   const moveQ = (qNo, status) =>
   setState((s) => ({ ...s, queue: s.queue.map((x) => x.q === qNo ? { ...x, status } : x) }));
 
@@ -1262,7 +1275,7 @@ function App() {
           loading={!booted && (pets || []).length === 0}
           onOpenCase={openCase} onOpenPet={openPet}
           onMove={moveQ} onPay={setPayFor} onWalkIn={walkIn}
-          onUpdateAppointment={updateAppointment} onDischargeAdmitted={dischargeAdmitted} onUpdateAdmitted={updateAdmitted} onOpenAdmittedCase={openAdmittedCase} onCancelQueue={cancelQueue} onCancelAdmit={cancelAdmit}
+          onUpdateAppointment={updateAppointment} onDischargeAdmitted={dischargeAdmitted} onUpdateAdmitted={updateAdmitted} onOpenAdmittedCase={openAdmittedCase} onCancelQueue={cancelQueue} onCancelAdmit={cancelAdmit} onChangeQueueType={changeQueueType}
           notePresets={notePresets} onSavePresets={saveNotePresets} pushToast={pushToast} ownerMode={isOwner} /> :
           null}
           {page === 'case' && casePet ?
