@@ -518,7 +518,7 @@ function StockView({ stock, onAdjust, onAddItem, onImportStock, onDeleteItem, on
           <tbody>
             {items.map((s) => {
               const out = s.qty <= 0, low = !out && s.qty <= s.min;
-              const margin = s.cost ? Math.round((s.price - s.cost) / s.price * 100) : null;
+              const margin = (s.cost && Number(s.price) > 0) ? Math.round((s.price - s.cost) / s.price * 100) : null;   // ราคาขาย 0 → ไม่คำนวณ (กัน -Infinity%)
               if (editId === s.id && ef) {
                 // ── Edit mode row ──
                 return (
@@ -620,7 +620,8 @@ function StockView({ stock, onAdjust, onAddItem, onImportStock, onDeleteItem, on
                   <td>
                     <div className="qty-stepper">
                       <button onClick={() => onAdjust(s.id, -1)}>−</button>
-                      <span className="qv">{s.qty}</span>
+                      <QtyInput value={s.qty} min={0} width={48} commitOnBlur title="พิมพ์จำนวนแล้วกด Enter"
+                        onChange={(n) => onAdjust(s.id, n - s.qty)} />
                       <button onClick={() => onAdjust(s.id, +1)}>+</button>
                     </div>
                   </td>

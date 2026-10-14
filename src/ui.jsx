@@ -137,7 +137,8 @@ function DeceasedTag({ pet, size = 'sm' }) {
 // ── ช่องจำนวนในตัวเพิ่ม/ลด — พิมพ์ตัวเลขลงไปตรงๆ ได้ (ไม่ต้องกด + ทีละครั้ง) ──
 // ระหว่างพิมพ์ปล่อยให้ค่าว่างชั่วคราวได้ แต่ค่าที่ส่งออกเป็นตัวเลขเสมอ (กันยอดรวมกลายเป็น NaN)
 // max = เพดาน (เช่น จำนวนคงเหลือในสต็อก) · ปล่อยว่างถ้าไม่จำกัด
-function QtyInput({ value, onChange, min = 1, max, width = 30 }) {
+// commitOnBlur = ไม่ส่งค่าระหว่างพิมพ์ ส่งครั้งเดียวตอน Enter/คลิกออก · ลบว่างแล้วออก = คืนค่าเดิม · Esc = ยกเลิก (ใช้กับยอดสต็อก)
+function QtyInput({ value, onChange, min = 1, max, width = 30, commitOnBlur = false, title }) {
   const [raw, setRaw] = useState(String(value));
   const [editing, setEditing] = useState(false);
   useEffect(() => { if (!editing) setRaw(String(value)); }, [value, editing]);
@@ -154,6 +155,7 @@ function QtyInput({ value, onChange, min = 1, max, width = 30 }) {
       onChange={(e) => {
         const t = e.target.value.replace(/[^\d]/g, '');
         const n = parseInt(t, 10);
+        if (commitOnBlur) { setRaw(t); return; }
         if (t !== '' && !isNaN(n)) {
           const v = clamp(n);
           // เกินเพดาน (เช่นพิมพ์เกินจำนวนคงเหลือ) → ตรึงที่เพดานทันที ให้เลขที่เห็น = เลขที่คิดเงินจริง
@@ -163,9 +165,14 @@ function QtyInput({ value, onChange, min = 1, max, width = 30 }) {
       onBlur={() => {
         setEditing(false);
         const n = parseInt(raw, 10);
+        if (commitOnBlur) { if (raw !== '' && !isNaN(n) && clamp(n) !== Number(value)) onChange(clamp(n)); return; }
         onChange((!raw || isNaN(n)) ? (min != null ? min : 0) : clamp(n));
       }}
-      onKeyDown={(e) => { if (e.key === 'Enter') e.target.blur(); }}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') e.target.blur();
+        if (e.key === 'Escape' && commitOnBlur) { setRaw(String(value)); e.stopPropagation(); setTimeout(() => e.target.blur(), 0); }
+      }}
+      title={title}
       style={{ width }}
     />
   );
