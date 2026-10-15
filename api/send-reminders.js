@@ -1,5 +1,6 @@
 // ──────────────────────────────────────────────────────────────────────────────
-// Vercel Cron — ส่ง SMS เตือนนัดอัตโนมัติทุกวัน 08:00 น. (เวลาไทย = 01:00 UTC)
+// Vercel Cron — ส่ง SMS เตือนนัด "วันพรุ่งนี้" อัตโนมัติ 2 รอบ: 08:00 น. และ 18:00 น. (เวลาไทย = 01:00 / 11:00 UTC)
+//   รอบ 18:00 เก็บนัดพรุ่งนี้ที่เพิ่งทำหลัง 8 โมง (เดิมพลาดไม่ได้ SMS) · นัดที่ส่งแล้วถูกข้าม ไม่ส่งซ้ำ
 //
 // ตั้งค่า Env Vars ใน Vercel Dashboard → Project → Settings → Environment Variables:
 //
@@ -34,6 +35,12 @@ function tomorrowThai() {
     iso: `${y}-${String(m + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`,
     display: `${day} ${MONTHS_TH[m]} ${y + 543}`,
   };
+}
+
+// วันนี้ (UTC+7) — ใช้บันทึก "วันที่ส่งจริง" ของ SMS
+function todayThaiIso() {
+  const d = new Date(Date.now() + 7 * 3_600_000);
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
 }
 
 // แปลง YYYY-MM-DD เป็น display ไทย (ใช้ตอน ?date=... override)
@@ -299,7 +306,7 @@ module.exports = async function handler(req, res) {
 
       const mergedAppts = latestAppts.map(a =>
         sentIds.has(a.id) && !a.reminderSent
-          ? { ...a, reminderSent: true, reminderSentAt: targetIso, reminderVia: 'auto' }
+          ? { ...a, reminderSent: true, reminderSentAt: todayThaiIso(), reminderVia: 'auto' }   // วันที่ส่งจริง (ไม่ใช่วันนัด)
           : a
       );
 
