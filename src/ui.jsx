@@ -391,6 +391,72 @@ function FestivalFloat({ override }) {
   );
 }
 
+// ════════ เบอร์โทรหลายเบอร์ของเจ้าของ ════════
+// owner.phone = เบอร์หลัก (ใช้ส่ง SMS/ค้นหา/จับบ้านเดียวกัน — ทุกระบบเดิมใช้ต่อได้)
+// owner.altPhones = [{ phone, label }] เบอร์อื่น (เช่น แม่, ที่ทำงาน) — ข้อมูลเก่าไม่มีช่องนี้ = มีเบอร์เดียว
+const phoneDigits = (x) => String(x || '').replace(/\D/g, '');
+function fmtPhone(x) {
+  const d = phoneDigits(x);
+  if (/^0\d{9}$/.test(d)) return `${d.slice(0, 3)}-${d.slice(3, 6)}-${d.slice(6)}`;
+  if (/^0\d{8}$/.test(d)) return `${d.slice(0, 2)}-${d.slice(2, 5)}-${d.slice(5)}`;
+  return String(x || '');
+}
+// ทุกเบอร์ของเจ้าของ (เบอร์หลักก่อน · ตัดเบอร์ว่าง/ซ้ำ)
+function ownerPhones(owner) {
+  const o = owner || {}; const seen = new Set(); const out = [];
+  const add = (phone, label, primary) => { const d = phoneDigits(phone); if (d.length < 6 || seen.has(d)) return; seen.add(d); out.push({ phone: String(phone).trim(), label: String(label || '').trim(), primary }); };
+  add(o.phone, '', true);
+  (Array.isArray(o.altPhones) ? o.altPhones : []).forEach((p) => add(p && p.phone, p && p.label, false));
+  return out;
+}
+const ownerPhoneDigits = (owner) => ownerPhones(owner).map((p) => phoneDigits(p.phone));
+// ล้างช่องที่กรอก → { phone, altPhones } พร้อมเก็บ (ช่องว่างหาย · ถ้าเบอร์หลักว่างแต่มีเบอร์อื่น เลื่อนขึ้นมาเป็นเบอร์หลัก)
+function cleanOwnerPhones(primary, alts) {
+  const list = [{ phone: primary, label: '' }, ...(alts || [])].map((p) => ({ phone: String((p && p.phone) || '').trim(), label: String((p && p.label) || '').trim() })).filter((p) => p.phone);
+  const seen = new Set(); const uniq = list.filter((p) => { const d = phoneDigits(p.phone); if (!d || seen.has(d)) return false; seen.add(d); return true; });
+  return { phone: uniq[0] ? uniq[0].phone : '', altPhones: uniq.slice(1) };
+}
+
+// ช่องกรอกเบอร์หลายเบอร์ — เบอร์หลัก + "+ เพิ่มเบอร์" (ใส่ชื่อกำกับได้ เช่น แม่/ที่ทำงาน)
+function PhoneListInput({ phone, altPhones, onChange, autoFocus, max = 4 }) {
+  const alts = altPhones || [];
+  const setAlt = (i, k, v) => onChange(phone, alts.map((p, j) => (j === i ? { ...p, [k]: v } : p)));
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+      <input className="input" value={phone || ''} autoFocus={autoFocus} inputMode="tel" placeholder="08x-xxx-xxxx"
+        onChange={(e) => onChange(e.target.value, alts)} />
+      {alts.map((p, i) => (
+        <div key={i} style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+          <input className="input" style={{ flex: 1.3 }} value={p.phone || ''} inputMode="tel" placeholder={`เบอร์ที่ ${i + 2}`} onChange={(e) => setAlt(i, 'phone', e.target.value)} />
+          <input className="input" style={{ flex: 1 }} value={p.label || ''} placeholder="ของใคร เช่น แม่" onChange={(e) => setAlt(i, 'label', e.target.value)} />
+          <button type="button" className="btn btn-icon" title="ลบเบอร์นี้" style={{ color: 'var(--blush-deep)', fontSize: 18, lineHeight: 1 }}
+            onClick={() => onChange(phone, alts.filter((_, j) => j !== i))}>×</button>
+        </div>
+      ))}
+      {alts.length < max - 1 ? (
+        <button type="button" className="btn btn-sm" style={{ alignSelf: 'flex-start', fontSize: 12, color: 'var(--navy)' }}
+          onClick={() => onChange(phone, [...alts, { phone: '', label: '' }])}>+ เพิ่มเบอร์</button>
+      ) : null}
+      {alts.length ? <span style={{ fontSize: 11, color: 'var(--ink-faint)' }}>เบอร์แรก = เบอร์หลัก (ใช้ส่ง SMS เตือนนัด)</span> : null}
+    </div>
+  );
+}
+// แสดงทุกเบอร์ แตะเพื่อโทร (มือถือ/แท็บเล็ต)
+function PhoneLinks({ owner, size = 13, gap = 6, wrap = true }) {
+  const list = ownerPhones(owner);
+  if (!list.length) return <span style={{ color: 'var(--ink-faint)' }}>— ไม่มีเบอร์ —</span>;
+  return (
+    <span style={{ display: 'inline-flex', flexWrap: wrap ? 'wrap' : 'nowrap', gap, alignItems: 'center' }}>
+      {list.map((p) => (
+        <a key={p.phone} href={`tel:${phoneDigits(p.phone)}`} className="appt-phone" style={{ fontSize: size }} onClick={(e) => e.stopPropagation()}
+          title={p.primary ? 'เบอร์หลัก · แตะเพื่อโทร' : `${p.label || 'เบอร์สำรอง'} · แตะเพื่อโทร`}>
+          📞 {fmtPhone(p.phone)}{p.label ? <span style={{ fontWeight: 500, opacity: .75 }}> ({p.label})</span> : null}
+        </a>
+      ))}
+    </span>
+  );
+}
+
 // ════════ เครื่องคิดเลข (ป้อปอัพกลางจอ ปุ่ม 🧮 มุมขวาล่าง + แบบวางไว้ข้างจอในหน้าบันทึกตรวจ) ════════
 // คิดแบบเครื่องคิดเลขทั่วไปแต่ถูกลำดับ (× ÷ ก่อน + −) · ไม่ใช้ eval · ปัดทศนิยมกัน 0.1+0.2 = 0.30000000004
 const calcRound = (x) => parseFloat(Number(x).toPrecision(12));   // ตัดเศษทศนิยมลอย (0.1+0.2) โดยไม่ทำเลขใหญ่เพี้ยน
@@ -611,4 +677,4 @@ function MoneyInBreakdown({ m, revenue, light }) {
   );
 }
 
-Object.assign(window, { Icon, Modal, useToasts, Field, QtyInput, DeceasedTag, SPECIES_EMOJI, TYPE_CHIP, fmtB, todayTH, dateTH, timeNow, calcAge, todayISO, imageToDataURL, CountUp, celebrate, playDing, ConfettiLayer, getFestival, FestivalFloat, ThemeToggle, InstallPrompt, isStandalone, normPayMethod, moneyInOfDay, MoneyInBreakdown, Calculator, CalcFloat, CalcDock, calcEval });
+Object.assign(window, { Icon, Modal, useToasts, Field, QtyInput, DeceasedTag, SPECIES_EMOJI, TYPE_CHIP, fmtB, todayTH, dateTH, timeNow, calcAge, todayISO, imageToDataURL, CountUp, celebrate, playDing, ConfettiLayer, getFestival, FestivalFloat, ThemeToggle, InstallPrompt, isStandalone, normPayMethod, moneyInOfDay, MoneyInBreakdown, Calculator, CalcFloat, CalcDock, calcEval, phoneDigits, fmtPhone, ownerPhones, ownerPhoneDigits, cleanOwnerPhones, PhoneListInput, PhoneLinks });

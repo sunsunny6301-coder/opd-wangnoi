@@ -555,7 +555,7 @@ function ChargeSetModal({ sets, services, stock, shopStock, onSave, onApply, onC
   );
 }
 
-function CaseView({ pet, queueItem, vets, assistants = [], services, stock, shopStock = [], allPets, appointments = [], onBack, onFinish, onAddVet, onDeleteVet, onAddAssistant, onDeleteAssistant, onAddAdmitted, onUpdateAdmitted, onDischargeAdmitted, onAddAdmitPayment, onDeleteAdmitPayment, onAddAppointment, onUpdateAppointment, onDeleteAppointment, pushToast, onUpdatePet, onUpdateVisit, onAddService, onDeleteService, onUpdateService, onSaveDraft, previewReceiptNo, notePresets, onSavePresets, chargeSets = [], onSaveChargeSets }) {
+function CaseView({ pet, queueItem, vets, assistants = [], services, stock, shopStock = [], allPets, appointments = [], onBack, onFinish, onAddVet, onDeleteVet, onAddAssistant, onDeleteAssistant, onAddAdmitted, onUpdateAdmitted, onDischargeAdmitted, onAddAdmitPayment, onDeleteAdmitPayment, onAddAppointment, onUpdateAppointment, onDeleteAppointment, pushToast, onUpdatePet, onUpdateOwnerFor, onUpdateVisit, onAddService, onDeleteService, onUpdateService, onSaveDraft, previewReceiptNo, notePresets, onSavePresets, chargeSets = [], onSaveChargeSets }) {
   const latestWeight = pet.visits.length ? pet.visits[0].weight : pet.weight;
   const draft = queueItem?.draft;
   // เคสที่บันทึกประวัติไปแล้ว (ส่งแคชเชียร์/ชำระแล้ว) เปิดกลับเข้ามาใหม่ ต้องเห็นของเดิมครบทุกช่อง
@@ -577,7 +577,17 @@ function CaseView({ pet, queueItem, vets, assistants = [], services, stock, shop
   const avatarRef = useRef(null);
   const [media, setMedia] = useState(draft?.media || savedVisit?.media || []);
   const [showOwnerPets, setShowOwnerPets] = useState(false);
-  const ownerPets = useMemo(() => (allPets || []).filter((p) => p.owner.phone === pet.owner.phone), [allPets, pet.owner.phone]);
+  const ownerPets = useMemo(() => {
+    const mine = ownerPhoneDigits(pet.owner).filter((d) => d.length >= 6);
+    if (!mine.length) return (allPets || []).filter((p) => p.hn === pet.hn);
+    return (allPets || []).filter((p) => p.hn === pet.hn || (p.owner && ownerPhoneDigits(p.owner).some((d) => mine.includes(d))));
+  }, [allPets, pet.hn, pet.owner]);
+  // "แก้ทั้งบ้าน" แตะเฉพาะตัวที่เป็นเจ้าของคนเดียวกันแน่ๆ (เบอร์หลักเดียวกัน + ชื่อเจ้าของเดียวกัน)
+  // กันไปทับชื่อคนอื่นที่แค่ใส่เบอร์นี้เป็นเบอร์สำรอง (เช่น คู่สมรสที่มีประวัติแยก)
+  const sameOwnerPets = useMemo(() => {
+    const ph = phoneDigits(pet.owner && pet.owner.phone), nm = String((pet.owner && pet.owner.name) || '').trim();
+    return ownerPets.filter((x) => x.hn !== pet.hn && ph.length >= 6 && phoneDigits(x.owner.phone) === ph && String(x.owner.name || '').trim() === nm);
+  }, [ownerPets, pet.hn, pet.owner]);
   // charge = [ชื่อ, จำนวน, ราคา/หน่วย, stockId?, origin?] — stockId ไว้ตัดสต็อก/ปริ้นฉลาก, origin='shop' = สินค้าเพ็ทช้อป (ตัดสต็อกเพ็ทช้อป + ไม่คิด VAT)
   const [charges, setCharges] = useState(
     (draft?.charges || (queueItem && queueItem.charges) || savedVisit?.items || []).map((c) =>
@@ -807,14 +817,14 @@ function CaseView({ pet, queueItem, vets, assistants = [], services, stock, shop
               <div style={{ fontWeight: 700, fontSize: 13.5, color: 'var(--ink-soft)', marginBottom: 8 }}>เจ้าของ</div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 14 }}>
                 <span style={{ display: 'flex', gap: 8, alignItems: 'center' }}><Icon name="user" size={15} style={{ color: 'var(--ink-faint)' }} /> {pet.owner.name}</span>
-                <span style={{ display: 'flex', gap: 8, alignItems: 'center' }}><Icon name="phone" size={15} style={{ color: 'var(--ink-faint)' }} /> {pet.owner.phone}</span>
+                <span style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}><Icon name="phone" size={15} style={{ color: 'var(--ink-faint)', marginTop: 3, flexShrink: 0 }} /> <PhoneLinks owner={pet.owner} size={13} gap={5} /></span>
               </div>
               <button className="btn btn-sm" style={{ marginTop: 8, alignSelf: 'flex-start', fontSize: 12, color: 'var(--navy)' }} onClick={() => setShowOwnerPets(true)}>
                 🐾 สัตว์เลี้ยงทั้งหมด ({ownerPets.length} ตัว)
               </button>
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
-              <button className="btn btn-sm" onClick={() => setEditPetInfo({ kind: 'owner', ownerName: pet.owner.name, phone: pet.owner.phone || '' })}><Icon name="edit" size={14} /> แก้ไข</button>
+              <button className="btn btn-sm" onClick={() => setEditPetInfo({ kind: 'owner', ownerName: pet.owner.name, phone: (pet.owner.phone && pet.owner.phone !== '-') ? pet.owner.phone : '', altPhones: (pet.owner.altPhones || []).map((x) => ({ ...x })), allHouse: true })}><Icon name="edit" size={14} /> แก้ไข</button>
               <button className="btn btn-sm" style={{ color: 'var(--blush-deep)', fontSize: 12 }} onClick={() => setShowVaccineHistory(!showVaccineHistory)}><Icon name="syringe" size={14} /> ประวัติวัคซีน</button>
             </div>
           </div>
@@ -1587,7 +1597,16 @@ function CaseView({ pet, queueItem, vets, assistants = [], services, stock, shop
             if (f.kind === 'pet') onUpdatePet && onUpdatePet({ ...pet, name: f.name.trim() || pet.name, species: f.species || pet.species, breed: f.breed, sex: f.sex, sterilized: f.sterilized === 'true' ? true : f.sterilized === 'false' ? false : null, color: f.color, birth: f.birth, caution: (f.caution || '').trim(), allergy: (f.allergy || '').trim(),
               // เสียชีวิต — ไม่ลบข้อมูลใดๆ แค่ทำเครื่องหมาย · ยกเลิกเครื่องหมายได้ถ้ากดผิด
               deceased: !!f.deceased, deceasedDate: f.deceased ? (f.deceasedDate || todayISO()) : undefined, deceasedCause: f.deceased ? (f.deceasedCause || '').trim() : undefined });
-            else onUpdatePet && onUpdatePet({ ...pet, owner: { ...pet.owner, name: f.ownerName.trim() || pet.owner.name, phone: f.phone } });
+            else {
+              // หลายเบอร์ → ล้างช่องว่าง/ซ้ำ · เบอร์แรก = เบอร์หลัก (ส่ง SMS) · เลือกได้ว่าแก้ให้สัตว์ทุกตัวในบ้านนี้ด้วย
+              const cp = cleanOwnerPhones(f.phone, f.altPhones);
+              const owner = { name: f.ownerName.trim() || pet.owner.name, phone: cp.phone || '-', altPhones: cp.altPhones };
+              const others = sameOwnerPets;
+              if (f.allHouse && others.length && onUpdateOwnerFor) onUpdateOwnerFor([pet.hn, ...others.map((x) => x.hn)], owner);
+              else if (onUpdateOwnerFor) onUpdateOwnerFor([pet.hn], owner);
+              else onUpdatePet && onUpdatePet({ ...pet, owner: { ...pet.owner, ...owner } });
+              setEditPetInfo(null); return;
+            }
             setEditPetInfo(null); pushToast && pushToast('บันทึกข้อมูลแล้ว');
           }}>บันทึก</button>
         </>}>
@@ -1641,7 +1660,17 @@ function CaseView({ pet, queueItem, vets, assistants = [], services, stock, shop
           ) : (
             <div className="form-grid" style={{ gridTemplateColumns: '1fr 1fr', gap: 13 }}>
               <Field label="ชื่อเจ้าของ *"><input className="input" value={editPetInfo.ownerName} onChange={(e) => setEditPetInfo({ ...editPetInfo, ownerName: e.target.value })} placeholder="ชื่อ-นามสกุล" /></Field>
-              <Field label="เบอร์โทรศัพท์ *"><input className="input" value={editPetInfo.phone} onChange={(e) => setEditPetInfo({ ...editPetInfo, phone: e.target.value })} placeholder="เช่น 08X-XXX-XXXX" /></Field>
+              <Field label="เบอร์โทรศัพท์ *">
+                <PhoneListInput phone={editPetInfo.phone} altPhones={editPetInfo.altPhones}
+                  onChange={(ph, alts) => setEditPetInfo((x) => ({ ...x, phone: ph, altPhones: alts }))} />
+              </Field>
+              {sameOwnerPets.length > 0 ? (
+                <label style={{ gridColumn: '1 / -1', display: 'flex', alignItems: 'flex-start', gap: 8, fontSize: 13, cursor: 'pointer', background: 'var(--paper)', borderRadius: 'var(--radius-sm)', padding: '9px 11px' }}>
+                  <input type="checkbox" style={{ marginTop: 2 }} checked={!!editPetInfo.allHouse} onChange={(e) => setEditPetInfo({ ...editPetInfo, allHouse: e.target.checked })} />
+                  <span>แก้ให้สัตว์ตัวอื่นของเจ้าของคนนี้ด้วย ({sameOwnerPets.length} ตัว: {sameOwnerPets.map((x) => x.name).join(', ')})
+                    <span style={{ display: 'block', fontSize: 11.5, color: 'var(--ink-faint)' }}>นัดที่ยังไม่ถึงวันของทุกตัวจะเปลี่ยนเป็นเบอร์ใหม่ด้วย (SMS ไปเบอร์หลัก)</span></span>
+                </label>
+              ) : null}
             </div>
           )}
         </Modal>
@@ -1735,7 +1764,7 @@ function CaseView({ pet, queueItem, vets, assistants = [], services, stock, shop
       {showOwnerPets ? (
         <Modal title={`🐾 สัตว์เลี้ยงของ ${pet.owner.name}`} onClose={() => setShowOwnerPets(false)}>
           <div style={{ marginBottom: 12, color: 'var(--ink-soft)', fontSize: 13 }}>
-            📞 {pet.owner.phone} &nbsp;·&nbsp; สัตว์เลี้ยง {ownerPets.length} ตัว
+            📞 {ownerPhones(pet.owner).map((x) => fmtPhone(x.phone) + (x.label ? ` (${x.label})` : '')).join(', ') || '-'} &nbsp;·&nbsp; สัตว์เลี้ยง {ownerPets.length} ตัว
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
             {ownerPets.map((p) => (

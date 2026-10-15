@@ -466,7 +466,9 @@ function App() {
     pushToast((total > 0 ? `จำหน่าย ${adm.petName} — รับชำระ ${fmtB(total)}` : `จำหน่าย ${adm.petName} แล้ว`) + (deducted > 0 ? ` · ตัดสต็อก ${deducted} รายการ` : ''));
     if (total > 0) celebrate({ big: total >= 3000 });
   };
-  const updatePet = (updated) => {
+  // opts.quiet = ไม่ขึ้นแจ้งเตือนเอง (ใช้ตอนอัปเดตทั้งบ้าน แล้วสรุปแจ้งครั้งเดียว) · คืน { receipts, appts } ที่อัปเดตตาม
+  const updatePet = (updated, opts) => {
+    const quiet = !!(opts && opts.quiet);
     // ชื่อเจ้าของเปลี่ยน → ให้ใบเสร็จเก่าของ HN นี้ตามไปด้วย (ลิ้งกัน ไม่ค้างชื่อเดิม)
     // แตะเฉพาะใบที่ยังใช้ "ชื่อเดิม" อยู่ — ใบที่พิมพ์ชื่อผู้ซื้อเองไว้ (เช่นออกในนามบริษัท) จะไม่ถูกทับ
     const prevPet = (pets || []).find((p) => p.hn === updated.hn);
@@ -513,9 +515,20 @@ function App() {
         admitted: (s.admitted || []).map((x) => (contactChanged && x.hn === updated.hn ? { ...patch(x), owner: { ...(x.owner || {}), ...(updated.owner || {}) } } : patch(x))),
       };
     });
-    if (affected > 0) pushToast(`อัปเดตชื่อเจ้าของในใบเสร็จ ${affected} ใบแล้ว`);
+    if (affected > 0 && !quiet) pushToast(`อัปเดตชื่อเจ้าของในใบเสร็จ ${affected} ใบแล้ว`);
     const apptSynced = contactChanged ? (appointments || []).filter((a) => openAppt(a) && ((phoneChanged && digitsOf(a.phone) === oldPhone) || (renamed && String(a.ownerName || '').trim() === oldName))).length : 0;
-    if (apptSynced > 0) pushToast(`อัปเดตเบอร์/ชื่อเจ้าของในนัดที่ยังไม่ถึง ${apptSynced} นัดแล้ว`);
+    if (apptSynced > 0 && !quiet) pushToast(`อัปเดตเบอร์/ชื่อเจ้าของในนัดที่ยังไม่ถึง ${apptSynced} นัดแล้ว`);
+    return { receipts: affected, appts: apptSynced };
+  };
+  // แก้ข้อมูลเจ้าของทีเดียวทั้งบ้าน (สัตว์หลายตัวของเจ้าของคนเดียวกัน เก็บสำเนาเจ้าของแยกตัว)
+  const updateOwnerFor = (hns, owner) => {
+    let rc = 0, ac = 0;
+    (hns || []).forEach((hn) => {
+      const p = (pets || []).find((x) => x.hn === hn); if (!p) return;
+      const r = updatePet({ ...p, owner: { ...(p.owner || {}), ...owner } }, { quiet: true });
+      rc += r.receipts; ac += r.appts;
+    });
+    pushToast(`บันทึกข้อมูลเจ้าของแล้ว${hns.length > 1 ? ` (สัตว์ ${hns.length} ตัวในบ้านนี้)` : ''}${ac ? ` · อัปเดตเบอร์ในนัด ${ac} นัด` : ''}${rc ? ` · ชื่อในใบเสร็จ ${rc} ใบ` : ''}`);
   };
 
   const services = state.services || VetData.services;
@@ -858,9 +871,10 @@ function App() {
       d.setFullYear(d.getFullYear() - Math.max(0, parseInt(f.ageY) || 0));
       d.setMonth(d.getMonth() - Math.max(0, parseInt(f.ageM) || 0));
       // keepOwner = สัตว์ใหม่ให้เจ้าของเดิม → ใช้ข้อมูลเจ้าของที่ส่งมา
-      const ownerObj = payload.keepOwner
-        ? { name: payload.keepOwner.name, phone: payload.keepOwner.phone || '-' }
-        : { name: f.owner, phone: f.phone || '-' };
+      // หลายเบอร์: เบอร์หลักอยู่ phone (ใช้ส่ง SMS) · เบอร์อื่นอยู่ altPhones
+      const ko = payload.keepOwner;
+      const cp = ko ? { phone: ko.phone, altPhones: Array.isArray(ko.altPhones) ? ko.altPhones : [] } : cleanOwnerPhones(f.phone, f.altPhones);
+      const ownerObj = { name: ko ? ko.name : f.owner, phone: cp.phone || '-', ...(cp.altPhones.length ? { altPhones: cp.altPhones } : {}) };
       newPets = [...pets, {
         hn, name: f.pet, species: f.species, breed: '-', sex: f.sex,
         birth: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`, color: '-',
@@ -1348,7 +1362,7 @@ function App() {
           onAddAppointment={addAppointment} onUpdateAppointment={updateAppointment} onDeleteAppointment={deleteAppointment}
           onUpdateAdmitted={updateAdmitted} onDischargeAdmitted={dischargeAdmitted}
           onAddAdmitted={addAdmitted} onAddAdmitPayment={addAdmitPayment} onDeleteAdmitPayment={deleteAdmitPayment} pushToast={pushToast}
-          onUpdatePet={updatePet} onUpdateVisit={updateVisit} onAddService={addService} onDeleteService={deleteService} onUpdateService={updateService} onSaveDraft={saveDraft} previewReceiptNo={nextReceiptNo().no}
+          onUpdatePet={updatePet} onUpdateOwnerFor={updateOwnerFor} onUpdateVisit={updateVisit} onAddService={addService} onDeleteService={deleteService} onUpdateService={updateService} onSaveDraft={saveDraft} previewReceiptNo={nextReceiptNo().no}
           notePresets={notePresets} onSavePresets={saveNotePresets} chargeSets={chargeSets} onSaveChargeSets={saveChargeSets} /> :
           null}
           {page === 'appointments' ? <AppointmentsView appointments={appointments} pets={pets} onAdd={addAppointment} onUpdate={updateAppointment} onDelete={deleteAppointment} onOpenPet={openPet} pushToast={pushToast} notePresets={notePresets} onSavePresets={saveNotePresets} smsPresets={smsPresets} onSaveSmsPresets={saveSmsPresets} ownerMode={isOwner}

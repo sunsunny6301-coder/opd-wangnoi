@@ -1266,6 +1266,22 @@ function ApptFormModal({ pets, defaultDate, defaultPet, defaultType, editAppt, o
             <Icon name="check" size={15} /> {SPECIES_EMOJI[f.species] || '🐾'} {f.petName} · HN {f.hn} · {f.ownerName} · {f.phone}
           </div>
         ) : null}
+        {/* เจ้าของมีหลายเบอร์ → เลือกได้ว่าจะส่ง SMS เตือนนัดไปเบอร์ไหน (ค่าเริ่มต้น = เบอร์หลัก) */}
+        {(() => {
+          const po = f.hn ? ((pets || []).find((p) => p.hn === f.hn) || {}).owner : null;
+          const list = po ? ownerPhones(po) : [];
+          if (list.length < 2) return null;
+          const cur = phoneDigits(f.phone);
+          return (
+            <Field label="ส่ง SMS ไปเบอร์">
+              <select className="select" value={list.some((x) => phoneDigits(x.phone) === cur) ? cur : ''}
+                onChange={(e) => { const x = list.find((y) => phoneDigits(y.phone) === e.target.value); if (x) setFClearSms({ phone: x.phone }); }}>
+                {list.some((x) => phoneDigits(x.phone) === cur) ? null : <option value="">{fmtPhone(f.phone) || '—'} (เบอร์ในนัดเดิม)</option>}
+                {list.map((x) => <option key={x.phone} value={phoneDigits(x.phone)}>{fmtPhone(x.phone)}{x.primary ? ' (เบอร์หลัก)' : x.label ? ` (${x.label})` : ''}</option>)}
+              </select>
+            </Field>
+          );
+        })()}
 
         <div className="form-grid" style={{ gridTemplateColumns: '1fr 1fr', gap: 13 }}>
           <Field label="วันที่นัด *">

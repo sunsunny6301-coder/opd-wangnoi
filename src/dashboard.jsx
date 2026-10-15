@@ -40,7 +40,7 @@ function GlobalSearch({ pets, onOpenPet, onWalkIn, onDirectWalkIn }) {
     if (!s) return [];
     return pets.filter((p) =>
       p.name.toLowerCase().includes(s) || p.hn.includes(s) ||
-      p.owner.name.toLowerCase().includes(s) || p.owner.phone.replace(/-/g, '').includes(s.replace(/-/g, ''))
+      p.owner.name.toLowerCase().includes(s) || (phoneDigits(s).length >= 3 && ownerPhoneDigits(p.owner).some((d) => d.includes(phoneDigits(s))))
     ).slice(0, 8);
   }, [q, pets]);
   return (
@@ -64,7 +64,7 @@ function GlobalSearch({ pets, onOpenPet, onWalkIn, onDirectWalkIn }) {
                     <div style={{ fontWeight: 700, display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' }}>
                       {p.name} <span style={{ color: 'var(--ink-faint)', fontWeight: 500, fontSize: 12.5 }}>HN {p.hn}</span> <DeceasedTag pet={p} />
                     </div>
-                    <div style={{ fontSize: 12.5, color: 'var(--ink-soft)' }}>{p.species} · {p.breed} · {p.owner.name} · {p.owner.phone}</div>
+                    <div style={{ fontSize: 12.5, color: 'var(--ink-soft)' }}>{p.species} · {p.breed} · {p.owner.name} · {ownerPhones(p.owner).map((x) => fmtPhone(x.phone)).join(', ') || '-'}</div>
                   </div>
                   <button className="btn btn-sm btn-primary" style={{ fontSize: 12, whiteSpace: 'nowrap', flexShrink: 0 }}
                     onClick={(e) => { e.stopPropagation(); setSvcFor(svcFor === p.hn ? null : p.hn); }}>
@@ -108,13 +108,14 @@ function WalkInModal({ pets, onClose, onSubmit, prefillHn, prefillOwner }) {
   // addNewPet = เพิ่มสัตว์ใหม่ให้เจ้าของเดิม (ใช้เมื่อเจอเจ้าของแล้วแต่ไม่ใช่สัตว์เดิม)
   const [addNewPet, setAddNewPet] = useState(!!prefillOwner);
   const [pickedOwner, setPickedOwner] = useState(prefillOwner || null); // เจ้าของที่เลือกไว้ (ยังไม่มีสัตว์ตัวใหม่)
-  const [f, setF] = useState({ owner: '', phone: '', pet: '', species: 'สุนัข', sex: 'ผู้', ageY: '', ageM: '', weight: '', type: 'ตรวจรักษา', cc: '' });
+  const [f, setF] = useState({ owner: '', phone: '', altPhones: [], pet: '', species: 'สุนัข', sex: 'ผู้', ageY: '', ageM: '', weight: '', type: 'ตรวจรักษา', cc: '' });
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
 
   const oldResults = useMemo(() => {
     const s = oldQuery.trim().toLowerCase();
     if (!s) return [];
-    return pets.filter((p) => p.name.toLowerCase().includes(s) || p.hn.includes(s) || p.owner.phone.replace(/-/g, '').includes(s.replace(/-/g, '')) || p.owner.name.toLowerCase().includes(s)).slice(0, 8);
+    const sd = phoneDigits(s);
+    return pets.filter((p) => p.name.toLowerCase().includes(s) || p.hn.includes(s) || (sd.length >= 3 && ownerPhoneDigits(p.owner).some((d) => d.includes(sd))) || p.owner.name.toLowerCase().includes(s)).slice(0, 8);
   }, [oldQuery, pets]);
 
   // จัดกลุ่มผลค้นหาตามเจ้าของ เพื่อแสดงตัวเลือก "เพิ่มสัตว์ใหม่"
@@ -133,26 +134,26 @@ function WalkInModal({ pets, onClose, onSubmit, prefillHn, prefillOwner }) {
   const [openMatch, setOpenMatch] = useState(null);   // key ของกลุ่มที่กางดูรายชื่อสัตว์
   const phoneMatches = useMemo(() => {
     if (mode !== 'new' || addNewPet) return [];
-    const digits = (x) => String(x || '').replace(/\D/g, '');
-    const d = digits(f.phone), nm = f.owner.trim();
-    if (d.length < 4 && nm.length < 2) return [];
+    const typed = [f.phone, ...(f.altPhones || []).map((x) => x.phone)].map(phoneDigits).filter((d) => d.length >= 4);
+    const nm = f.owner.trim();
+    if (!typed.length && nm.length < 2) return [];
     const map = {};
     pets.forEach((p) => {
       if (!p.owner) return;
-      const pd = digits(p.owner.phone), pn = String(p.owner.name || '').trim();
-      const byPhone = d.length >= 4 && pd.length >= 4 && pd.startsWith(d);
+      const pds = ownerPhoneDigits(p.owner), pd = phoneDigits(p.owner.phone), pn = String(p.owner.name || '').trim();
+      const byPhone = typed.some((d) => pds.some((x) => x.startsWith(d)));
       const byName = nm.length >= 2 && pn === nm;
       if (!byPhone && !byName) return;
       const key = pd.length >= 4 ? pd : 'n:' + pn;
       if (!map[key]) map[key] = { key, owner: p.owner, phone: pd, pets: [], exact: false, byName: false };
       map[key].pets.push(p);
-      if (d.length >= 9 && pd === d) map[key].exact = true;
+      if (typed.some((d) => d.length >= 9 && pds.includes(d))) map[key].exact = true;
       if (byName) map[key].byName = true;
     });
     return Object.values(map)
       .sort((a, b) => (b.exact - a.exact) || (b.byName - a.byName) || (b.pets.length - a.pets.length))
       .slice(0, 5);
-  }, [mode, addNewPet, f.phone, f.owner, pets]);
+  }, [mode, addNewPet, f.phone, f.altPhones, f.owner, pets]);
   const exactDup = phoneMatches.find((g) => g.exact);
   const usePetFromMatch = (p) => { setMode('old'); setAddNewPet(false); setPickedOwner(null); setOldQuery(''); setPick(p); setOpenMatch(null); };
   const newPetForMatch = (g) => { setAddNewPet(true); setPickedOwner(g.owner); setPick(null); setOpenMatch(null); };
@@ -164,7 +165,7 @@ function WalkInModal({ pets, onClose, onSubmit, prefillHn, prefillOwner }) {
   const submit = () => {
     // ด่านสุดท้าย: เบอร์ซ้ำเป๊ะกับลูกค้าเดิม แต่ยังจะสร้างลูกค้าใหม่ → ถามก่อน (สาเหตุหลักของประวัติซ้ำ)
     if (mode === 'new' && !addNewPet && exactDup &&
-      !window.confirm(`เบอร์ ${f.phone} มีในระบบแล้ว (${exactDup.owner.name} · ${exactDup.pets.map((p) => p.name).join(', ')})\n\nต้องการสร้างลูกค้าใหม่ซ้ำจริงไหม?\n(กด "ยกเลิก" แล้วเลือกจากกล่องใต้ช่องเบอร์แทน)`)) return;
+      !window.confirm(`เบอร์ ${fmtPhone(exactDup.phone) || f.phone} มีในระบบแล้ว (${exactDup.owner.name} · ${exactDup.pets.map((p) => p.name).join(', ')})\n\nต้องการสร้างลูกค้าใหม่ซ้ำจริงไหม?\n(กด "ยกเลิก" แล้วเลือกจากกล่องใต้ช่องเบอร์แทน)`)) return;
     if (addNewPet && pickedOwner) {
       // สัตว์ใหม่ + เจ้าของเดิม
       onSubmit({ newPet: { ...f, owner: pickedOwner.name, phone: pickedOwner.phone }, type: f.type, cc: f.cc, keepOwner: pickedOwner });
@@ -199,7 +200,7 @@ function WalkInModal({ pets, onClose, onSubmit, prefillHn, prefillOwner }) {
             <div style={{ fontSize: 28 }}>👤</div>
             <div style={{ flex: 1 }}>
               <div style={{ fontWeight: 700 }}>{pickedOwner.name}</div>
-              <div style={{ fontSize: 13, color: 'var(--ink-soft)' }}>{pickedOwner.phone}</div>
+              <div style={{ fontSize: 13, color: 'var(--ink-soft)', marginTop: 2 }}><PhoneLinks owner={pickedOwner} size={12.5} /></div>
             </div>
             <button className="btn btn-sm" onClick={() => { setAddNewPet(false); setPickedOwner(null); }}>เปลี่ยน</button>
           </div>
@@ -212,7 +213,7 @@ function WalkInModal({ pets, onClose, onSubmit, prefillHn, prefillOwner }) {
               // บ้านนี้มีตัวชื่อนี้อยู่แล้ว → น่าจะเป็นตัวเดิม ให้กดใช้ตัวเดิมแทนการทำประวัติซ้ำ
               const digits = (x) => String(x || '').replace(/\D/g, '');
               const ph = digits(pickedOwner.phone), nm = f.pet.trim();
-              const same = nm ? pets.find((p) => p.owner && p.name.trim() === nm && (ph.length >= 4 ? digits(p.owner.phone) === ph : String(p.owner.name || '').trim() === String(pickedOwner.name || '').trim())) : null;
+              const same = nm ? pets.find((p) => p.owner && p.name.trim() === nm && (ph.length >= 4 ? ownerPhoneDigits(p.owner).includes(ph) : String(p.owner.name || '').trim() === String(pickedOwner.name || '').trim())) : null;
               return same ? (
                 <div style={{ alignSelf: 'end', fontSize: 12.5, color: 'var(--blush-deep)', background: 'var(--blush-soft)', border: '1px solid var(--blush-deep)', borderRadius: 'var(--radius-sm)', padding: '7px 10px', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                   ⚠️ บ้านนี้มี “{same.name}” อยู่แล้ว (HN {same.hn})
@@ -256,7 +257,7 @@ function WalkInModal({ pets, onClose, onSubmit, prefillHn, prefillOwner }) {
               <div className="pet-avatar" style={{ width: 46, height: 46, fontSize: 22 }}>{SPECIES_EMOJI[pick.species] || '🐾'}</div>
               <div style={{ flex: 1 }}>
                 <div style={{ fontWeight: 700 }}>{pick.name} · HN {pick.hn}</div>
-                <div style={{ fontSize: 13, color: 'var(--ink-soft)' }}>{pick.species} {pick.breed} · {pick.owner.name} · {pick.owner.phone}</div>
+                <div style={{ fontSize: 13, color: 'var(--ink-soft)' }}>{pick.species} {pick.breed} · {pick.owner.name} · {ownerPhones(pick.owner).map((x) => fmtPhone(x.phone)).join(', ') || '-'}</div>
               </div>
               <button className="btn btn-sm" onClick={() => setPick(null)}>เปลี่ยน</button>
             </div>
@@ -307,7 +308,7 @@ function WalkInModal({ pets, onClose, onSubmit, prefillHn, prefillOwner }) {
       ) : (
         <div className="form-grid">
           <Field label="ชื่อเจ้าของ *"><input className="input" value={f.owner} onChange={set('owner')} placeholder="ชื่อ-นามสกุล" autoFocus /></Field>
-          <Field label="เบอร์โทร"><input className="input" value={f.phone} onChange={set('phone')} placeholder="08x-xxx-xxxx" /></Field>
+          <Field label="เบอร์โทร"><PhoneListInput phone={f.phone} altPhones={f.altPhones} onChange={(ph, alts) => setF((x) => ({ ...x, phone: ph, altPhones: alts }))} /></Field>
           {phoneMatches.length > 0 ? (
             <div className="walkin-match" style={{ gridColumn: '1 / -1', border: `1.5px solid ${exactDup ? 'var(--blush-deep)' : 'var(--butter)'}`, background: exactDup ? 'var(--blush-soft)' : 'var(--butter-soft)', borderRadius: 'var(--radius-sm)', padding: '8px 10px', display: 'flex', flexDirection: 'column', gap: 4 }}>
               <div style={{ fontSize: 12.5, fontWeight: 800, color: exactDup ? 'var(--blush-deep)' : 'var(--butter-deep)' }}>
@@ -319,7 +320,7 @@ function WalkInModal({ pets, onClose, onSubmit, prefillHn, prefillOwner }) {
                     style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 8, padding: '7px 10px', border: 'none', background: 'none', cursor: 'pointer', font: 'inherit', fontSize: 13.5, textAlign: 'left', color: 'var(--ink)' }}>
                     <span>👤</span>
                     <b>{g.owner.name}</b>
-                    <span style={{ color: 'var(--ink-soft)' }}>{g.owner.phone}</span>
+                    <span style={{ color: 'var(--ink-soft)' }}>{ownerPhones(g.owner).map((x) => fmtPhone(x.phone)).join(', ')}</span>
                     <span style={{ fontSize: 12, color: 'var(--ink-faint)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1, minWidth: 0 }}>
                       · {g.pets.length} ตัว: {g.pets.map((p) => `${SPECIES_EMOJI[p.species] || '🐾'}${p.name}`).join(' ')}
                     </span>
@@ -382,9 +383,9 @@ function WalkInModal({ pets, onClose, onSubmit, prefillHn, prefillOwner }) {
 function householdOf(pet, pets) {
   if (!pet || !pet.owner) return [];
   const digits = (x) => String(x || '').replace(/\D/g, '');
-  const ph = digits(pet.owner.phone), nm = String(pet.owner.name || '').trim();
+  const mine = ownerPhoneDigits(pet.owner).filter((d) => d.length >= 6), nm = String(pet.owner.name || '').trim();
   return (pets || []).filter((p) => p.hn !== pet.hn && p.owner && (
-    ph.length >= 6 ? digits(p.owner.phone) === ph : (nm && String(p.owner.name || '').trim() === nm)));
+    mine.length ? ownerPhoneDigits(p.owner).some((d) => mine.includes(d)) : (nm && String(p.owner.name || '').trim() === nm)));
 }
 
 function QueueCard({ item, pet, pets = [], activeHns, onOpen, onOpenCase, onMove, onPay, onCancel, onChangeType, onQueuePet, onNewPetForOwner, zoneBorder }) {
@@ -1057,7 +1058,7 @@ function Dashboard({ pets, queue, appointments, admitted, receipts = [], loading
                   </div>
                   {/* ชื่อเจ้าของ + เบอร์ (แตะเพื่อโทรบนมือถือ/แท็บเล็ต) — ใช้คู่กับปุ่มติ๊ก "โทร" ด้านล่าง */}
                   {(() => {
-                    const pet = !a.phone ? (pets || []).find((p) => p.hn === a.hn) : null;
+                    const pet = (pets || []).find((p) => p.hn === a.hn);
                     const raw = String(a.phone || (pet && pet.owner && pet.owner.phone) || '');
                     const digits = raw.replace(/[^\d+]/g, '');
                     const shown = /^0\d{9}$/.test(digits) ? `${digits.slice(0, 3)}-${digits.slice(3, 6)}-${digits.slice(6)}`
@@ -1069,6 +1070,11 @@ function Dashboard({ pets, queue, appointments, admitted, receipts = [], loading
                           <a href={`tel:${digits}`} className="appt-phone" title="แตะเพื่อโทร (มือถือ/แท็บเล็ต) · คลุมเพื่อคัดลอกเบอร์"
                             onClick={(e) => e.stopPropagation()}>📞 {shown}</a>
                         ) : <span style={{ color: 'var(--ink-faint)' }}>— ไม่มีเบอร์ —</span>}
+                        {/* เบอร์อื่นของเจ้าของ (เผื่อเบอร์หลักไม่รับสาย) */}
+                        {pet ? ownerPhones(pet.owner).filter((x) => phoneDigits(x.phone) !== digits).map((x) => (
+                          <a key={x.phone} href={`tel:${phoneDigits(x.phone)}`} className="appt-phone" style={{ fontWeight: 600, opacity: .85 }} onClick={(e) => e.stopPropagation()}
+                            title={`${x.label || 'เบอร์สำรอง'} · แตะเพื่อโทร`}>📞 {fmtPhone(x.phone)}{x.label ? <span style={{ fontWeight: 500 }}> ({x.label})</span> : null}</a>
+                        )) : null}
                       </div>
                     );
                   })()}

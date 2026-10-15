@@ -1772,6 +1772,72 @@ function FestivalFloat({ override }) {
   );
 }
 
+// ════════ เบอร์โทรหลายเบอร์ของเจ้าของ ════════
+// owner.phone = เบอร์หลัก (ใช้ส่ง SMS/ค้นหา/จับบ้านเดียวกัน — ทุกระบบเดิมใช้ต่อได้)
+// owner.altPhones = [{ phone, label }] เบอร์อื่น (เช่น แม่, ที่ทำงาน) — ข้อมูลเก่าไม่มีช่องนี้ = มีเบอร์เดียว
+const phoneDigits = (x) => String(x || '').replace(/\D/g, '');
+function fmtPhone(x) {
+  const d = phoneDigits(x);
+  if (/^0\d{9}$/.test(d)) return `${d.slice(0, 3)}-${d.slice(3, 6)}-${d.slice(6)}`;
+  if (/^0\d{8}$/.test(d)) return `${d.slice(0, 2)}-${d.slice(2, 5)}-${d.slice(5)}`;
+  return String(x || '');
+}
+// ทุกเบอร์ของเจ้าของ (เบอร์หลักก่อน · ตัดเบอร์ว่าง/ซ้ำ)
+function ownerPhones(owner) {
+  const o = owner || {}; const seen = new Set(); const out = [];
+  const add = (phone, label, primary) => { const d = phoneDigits(phone); if (d.length < 6 || seen.has(d)) return; seen.add(d); out.push({ phone: String(phone).trim(), label: String(label || '').trim(), primary }); };
+  add(o.phone, '', true);
+  (Array.isArray(o.altPhones) ? o.altPhones : []).forEach((p) => add(p && p.phone, p && p.label, false));
+  return out;
+}
+const ownerPhoneDigits = (owner) => ownerPhones(owner).map((p) => phoneDigits(p.phone));
+// ล้างช่องที่กรอก → { phone, altPhones } พร้อมเก็บ (ช่องว่างหาย · ถ้าเบอร์หลักว่างแต่มีเบอร์อื่น เลื่อนขึ้นมาเป็นเบอร์หลัก)
+function cleanOwnerPhones(primary, alts) {
+  const list = [{ phone: primary, label: '' }, ...(alts || [])].map((p) => ({ phone: String((p && p.phone) || '').trim(), label: String((p && p.label) || '').trim() })).filter((p) => p.phone);
+  const seen = new Set(); const uniq = list.filter((p) => { const d = phoneDigits(p.phone); if (!d || seen.has(d)) return false; seen.add(d); return true; });
+  return { phone: uniq[0] ? uniq[0].phone : '', altPhones: uniq.slice(1) };
+}
+
+// ช่องกรอกเบอร์หลายเบอร์ — เบอร์หลัก + "+ เพิ่มเบอร์" (ใส่ชื่อกำกับได้ เช่น แม่/ที่ทำงาน)
+function PhoneListInput({ phone, altPhones, onChange, autoFocus, max = 4 }) {
+  const alts = altPhones || [];
+  const setAlt = (i, k, v) => onChange(phone, alts.map((p, j) => (j === i ? { ...p, [k]: v } : p)));
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+      <input className="input" value={phone || ''} autoFocus={autoFocus} inputMode="tel" placeholder="08x-xxx-xxxx"
+        onChange={(e) => onChange(e.target.value, alts)} />
+      {alts.map((p, i) => (
+        <div key={i} style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+          <input className="input" style={{ flex: 1.3 }} value={p.phone || ''} inputMode="tel" placeholder={`เบอร์ที่ ${i + 2}`} onChange={(e) => setAlt(i, 'phone', e.target.value)} />
+          <input className="input" style={{ flex: 1 }} value={p.label || ''} placeholder="ของใคร เช่น แม่" onChange={(e) => setAlt(i, 'label', e.target.value)} />
+          <button type="button" className="btn btn-icon" title="ลบเบอร์นี้" style={{ color: 'var(--blush-deep)', fontSize: 18, lineHeight: 1 }}
+            onClick={() => onChange(phone, alts.filter((_, j) => j !== i))}>×</button>
+        </div>
+      ))}
+      {alts.length < max - 1 ? (
+        <button type="button" className="btn btn-sm" style={{ alignSelf: 'flex-start', fontSize: 12, color: 'var(--navy)' }}
+          onClick={() => onChange(phone, [...alts, { phone: '', label: '' }])}>+ เพิ่มเบอร์</button>
+      ) : null}
+      {alts.length ? <span style={{ fontSize: 11, color: 'var(--ink-faint)' }}>เบอร์แรก = เบอร์หลัก (ใช้ส่ง SMS เตือนนัด)</span> : null}
+    </div>
+  );
+}
+// แสดงทุกเบอร์ แตะเพื่อโทร (มือถือ/แท็บเล็ต)
+function PhoneLinks({ owner, size = 13, gap = 6, wrap = true }) {
+  const list = ownerPhones(owner);
+  if (!list.length) return <span style={{ color: 'var(--ink-faint)' }}>— ไม่มีเบอร์ —</span>;
+  return (
+    <span style={{ display: 'inline-flex', flexWrap: wrap ? 'wrap' : 'nowrap', gap, alignItems: 'center' }}>
+      {list.map((p) => (
+        <a key={p.phone} href={`tel:${phoneDigits(p.phone)}`} className="appt-phone" style={{ fontSize: size }} onClick={(e) => e.stopPropagation()}
+          title={p.primary ? 'เบอร์หลัก · แตะเพื่อโทร' : `${p.label || 'เบอร์สำรอง'} · แตะเพื่อโทร`}>
+          📞 {fmtPhone(p.phone)}{p.label ? <span style={{ fontWeight: 500, opacity: .75 }}> ({p.label})</span> : null}
+        </a>
+      ))}
+    </span>
+  );
+}
+
 // ════════ เครื่องคิดเลข (ป้อปอัพกลางจอ ปุ่ม 🧮 มุมขวาล่าง + แบบวางไว้ข้างจอในหน้าบันทึกตรวจ) ════════
 // คิดแบบเครื่องคิดเลขทั่วไปแต่ถูกลำดับ (× ÷ ก่อน + −) · ไม่ใช้ eval · ปัดทศนิยมกัน 0.1+0.2 = 0.30000000004
 const calcRound = (x) => parseFloat(Number(x).toPrecision(12));   // ตัดเศษทศนิยมลอย (0.1+0.2) โดยไม่ทำเลขใหญ่เพี้ยน
@@ -1992,7 +2058,7 @@ function MoneyInBreakdown({ m, revenue, light }) {
   );
 }
 
-Object.assign(window, { Icon, Modal, useToasts, Field, QtyInput, DeceasedTag, SPECIES_EMOJI, TYPE_CHIP, fmtB, todayTH, dateTH, timeNow, calcAge, todayISO, imageToDataURL, CountUp, celebrate, playDing, ConfettiLayer, getFestival, FestivalFloat, ThemeToggle, InstallPrompt, isStandalone, normPayMethod, moneyInOfDay, MoneyInBreakdown, Calculator, CalcFloat, CalcDock, calcEval });
+Object.assign(window, { Icon, Modal, useToasts, Field, QtyInput, DeceasedTag, SPECIES_EMOJI, TYPE_CHIP, fmtB, todayTH, dateTH, timeNow, calcAge, todayISO, imageToDataURL, CountUp, celebrate, playDing, ConfettiLayer, getFestival, FestivalFloat, ThemeToggle, InstallPrompt, isStandalone, normPayMethod, moneyInOfDay, MoneyInBreakdown, Calculator, CalcFloat, CalcDock, calcEval, phoneDigits, fmtPhone, ownerPhones, ownerPhoneDigits, cleanOwnerPhones, PhoneListInput, PhoneLinks });
 
 </script>
 
@@ -2450,7 +2516,7 @@ function GlobalSearch({ pets, onOpenPet, onWalkIn, onDirectWalkIn }) {
     if (!s) return [];
     return pets.filter((p) =>
       p.name.toLowerCase().includes(s) || p.hn.includes(s) ||
-      p.owner.name.toLowerCase().includes(s) || p.owner.phone.replace(/-/g, '').includes(s.replace(/-/g, ''))
+      p.owner.name.toLowerCase().includes(s) || (phoneDigits(s).length >= 3 && ownerPhoneDigits(p.owner).some((d) => d.includes(phoneDigits(s))))
     ).slice(0, 8);
   }, [q, pets]);
   return (
@@ -2474,7 +2540,7 @@ function GlobalSearch({ pets, onOpenPet, onWalkIn, onDirectWalkIn }) {
                     <div style={{ fontWeight: 700, display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' }}>
                       {p.name} <span style={{ color: 'var(--ink-faint)', fontWeight: 500, fontSize: 12.5 }}>HN {p.hn}</span> <DeceasedTag pet={p} />
                     </div>
-                    <div style={{ fontSize: 12.5, color: 'var(--ink-soft)' }}>{p.species} · {p.breed} · {p.owner.name} · {p.owner.phone}</div>
+                    <div style={{ fontSize: 12.5, color: 'var(--ink-soft)' }}>{p.species} · {p.breed} · {p.owner.name} · {ownerPhones(p.owner).map((x) => fmtPhone(x.phone)).join(', ') || '-'}</div>
                   </div>
                   <button className="btn btn-sm btn-primary" style={{ fontSize: 12, whiteSpace: 'nowrap', flexShrink: 0 }}
                     onClick={(e) => { e.stopPropagation(); setSvcFor(svcFor === p.hn ? null : p.hn); }}>
@@ -2518,13 +2584,14 @@ function WalkInModal({ pets, onClose, onSubmit, prefillHn, prefillOwner }) {
   // addNewPet = เพิ่มสัตว์ใหม่ให้เจ้าของเดิม (ใช้เมื่อเจอเจ้าของแล้วแต่ไม่ใช่สัตว์เดิม)
   const [addNewPet, setAddNewPet] = useState(!!prefillOwner);
   const [pickedOwner, setPickedOwner] = useState(prefillOwner || null); // เจ้าของที่เลือกไว้ (ยังไม่มีสัตว์ตัวใหม่)
-  const [f, setF] = useState({ owner: '', phone: '', pet: '', species: 'สุนัข', sex: 'ผู้', ageY: '', ageM: '', weight: '', type: 'ตรวจรักษา', cc: '' });
+  const [f, setF] = useState({ owner: '', phone: '', altPhones: [], pet: '', species: 'สุนัข', sex: 'ผู้', ageY: '', ageM: '', weight: '', type: 'ตรวจรักษา', cc: '' });
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
 
   const oldResults = useMemo(() => {
     const s = oldQuery.trim().toLowerCase();
     if (!s) return [];
-    return pets.filter((p) => p.name.toLowerCase().includes(s) || p.hn.includes(s) || p.owner.phone.replace(/-/g, '').includes(s.replace(/-/g, '')) || p.owner.name.toLowerCase().includes(s)).slice(0, 8);
+    const sd = phoneDigits(s);
+    return pets.filter((p) => p.name.toLowerCase().includes(s) || p.hn.includes(s) || (sd.length >= 3 && ownerPhoneDigits(p.owner).some((d) => d.includes(sd))) || p.owner.name.toLowerCase().includes(s)).slice(0, 8);
   }, [oldQuery, pets]);
 
   // จัดกลุ่มผลค้นหาตามเจ้าของ เพื่อแสดงตัวเลือก "เพิ่มสัตว์ใหม่"
@@ -2543,26 +2610,26 @@ function WalkInModal({ pets, onClose, onSubmit, prefillHn, prefillOwner }) {
   const [openMatch, setOpenMatch] = useState(null);   // key ของกลุ่มที่กางดูรายชื่อสัตว์
   const phoneMatches = useMemo(() => {
     if (mode !== 'new' || addNewPet) return [];
-    const digits = (x) => String(x || '').replace(/\D/g, '');
-    const d = digits(f.phone), nm = f.owner.trim();
-    if (d.length < 4 && nm.length < 2) return [];
+    const typed = [f.phone, ...(f.altPhones || []).map((x) => x.phone)].map(phoneDigits).filter((d) => d.length >= 4);
+    const nm = f.owner.trim();
+    if (!typed.length && nm.length < 2) return [];
     const map = {};
     pets.forEach((p) => {
       if (!p.owner) return;
-      const pd = digits(p.owner.phone), pn = String(p.owner.name || '').trim();
-      const byPhone = d.length >= 4 && pd.length >= 4 && pd.startsWith(d);
+      const pds = ownerPhoneDigits(p.owner), pd = phoneDigits(p.owner.phone), pn = String(p.owner.name || '').trim();
+      const byPhone = typed.some((d) => pds.some((x) => x.startsWith(d)));
       const byName = nm.length >= 2 && pn === nm;
       if (!byPhone && !byName) return;
       const key = pd.length >= 4 ? pd : 'n:' + pn;
       if (!map[key]) map[key] = { key, owner: p.owner, phone: pd, pets: [], exact: false, byName: false };
       map[key].pets.push(p);
-      if (d.length >= 9 && pd === d) map[key].exact = true;
+      if (typed.some((d) => d.length >= 9 && pds.includes(d))) map[key].exact = true;
       if (byName) map[key].byName = true;
     });
     return Object.values(map)
       .sort((a, b) => (b.exact - a.exact) || (b.byName - a.byName) || (b.pets.length - a.pets.length))
       .slice(0, 5);
-  }, [mode, addNewPet, f.phone, f.owner, pets]);
+  }, [mode, addNewPet, f.phone, f.altPhones, f.owner, pets]);
   const exactDup = phoneMatches.find((g) => g.exact);
   const usePetFromMatch = (p) => { setMode('old'); setAddNewPet(false); setPickedOwner(null); setOldQuery(''); setPick(p); setOpenMatch(null); };
   const newPetForMatch = (g) => { setAddNewPet(true); setPickedOwner(g.owner); setPick(null); setOpenMatch(null); };
@@ -2574,7 +2641,7 @@ function WalkInModal({ pets, onClose, onSubmit, prefillHn, prefillOwner }) {
   const submit = () => {
     // ด่านสุดท้าย: เบอร์ซ้ำเป๊ะกับลูกค้าเดิม แต่ยังจะสร้างลูกค้าใหม่ → ถามก่อน (สาเหตุหลักของประวัติซ้ำ)
     if (mode === 'new' && !addNewPet && exactDup &&
-      !window.confirm(`เบอร์ ${f.phone} มีในระบบแล้ว (${exactDup.owner.name} · ${exactDup.pets.map((p) => p.name).join(', ')})\n\nต้องการสร้างลูกค้าใหม่ซ้ำจริงไหม?\n(กด "ยกเลิก" แล้วเลือกจากกล่องใต้ช่องเบอร์แทน)`)) return;
+      !window.confirm(`เบอร์ ${fmtPhone(exactDup.phone) || f.phone} มีในระบบแล้ว (${exactDup.owner.name} · ${exactDup.pets.map((p) => p.name).join(', ')})\n\nต้องการสร้างลูกค้าใหม่ซ้ำจริงไหม?\n(กด "ยกเลิก" แล้วเลือกจากกล่องใต้ช่องเบอร์แทน)`)) return;
     if (addNewPet && pickedOwner) {
       // สัตว์ใหม่ + เจ้าของเดิม
       onSubmit({ newPet: { ...f, owner: pickedOwner.name, phone: pickedOwner.phone }, type: f.type, cc: f.cc, keepOwner: pickedOwner });
@@ -2609,7 +2676,7 @@ function WalkInModal({ pets, onClose, onSubmit, prefillHn, prefillOwner }) {
             <div style={{ fontSize: 28 }}>👤</div>
             <div style={{ flex: 1 }}>
               <div style={{ fontWeight: 700 }}>{pickedOwner.name}</div>
-              <div style={{ fontSize: 13, color: 'var(--ink-soft)' }}>{pickedOwner.phone}</div>
+              <div style={{ fontSize: 13, color: 'var(--ink-soft)', marginTop: 2 }}><PhoneLinks owner={pickedOwner} size={12.5} /></div>
             </div>
             <button className="btn btn-sm" onClick={() => { setAddNewPet(false); setPickedOwner(null); }}>เปลี่ยน</button>
           </div>
@@ -2622,7 +2689,7 @@ function WalkInModal({ pets, onClose, onSubmit, prefillHn, prefillOwner }) {
               // บ้านนี้มีตัวชื่อนี้อยู่แล้ว → น่าจะเป็นตัวเดิม ให้กดใช้ตัวเดิมแทนการทำประวัติซ้ำ
               const digits = (x) => String(x || '').replace(/\D/g, '');
               const ph = digits(pickedOwner.phone), nm = f.pet.trim();
-              const same = nm ? pets.find((p) => p.owner && p.name.trim() === nm && (ph.length >= 4 ? digits(p.owner.phone) === ph : String(p.owner.name || '').trim() === String(pickedOwner.name || '').trim())) : null;
+              const same = nm ? pets.find((p) => p.owner && p.name.trim() === nm && (ph.length >= 4 ? ownerPhoneDigits(p.owner).includes(ph) : String(p.owner.name || '').trim() === String(pickedOwner.name || '').trim())) : null;
               return same ? (
                 <div style={{ alignSelf: 'end', fontSize: 12.5, color: 'var(--blush-deep)', background: 'var(--blush-soft)', border: '1px solid var(--blush-deep)', borderRadius: 'var(--radius-sm)', padding: '7px 10px', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                   ⚠️ บ้านนี้มี “{same.name}” อยู่แล้ว (HN {same.hn})
@@ -2666,7 +2733,7 @@ function WalkInModal({ pets, onClose, onSubmit, prefillHn, prefillOwner }) {
               <div className="pet-avatar" style={{ width: 46, height: 46, fontSize: 22 }}>{SPECIES_EMOJI[pick.species] || '🐾'}</div>
               <div style={{ flex: 1 }}>
                 <div style={{ fontWeight: 700 }}>{pick.name} · HN {pick.hn}</div>
-                <div style={{ fontSize: 13, color: 'var(--ink-soft)' }}>{pick.species} {pick.breed} · {pick.owner.name} · {pick.owner.phone}</div>
+                <div style={{ fontSize: 13, color: 'var(--ink-soft)' }}>{pick.species} {pick.breed} · {pick.owner.name} · {ownerPhones(pick.owner).map((x) => fmtPhone(x.phone)).join(', ') || '-'}</div>
               </div>
               <button className="btn btn-sm" onClick={() => setPick(null)}>เปลี่ยน</button>
             </div>
@@ -2717,7 +2784,7 @@ function WalkInModal({ pets, onClose, onSubmit, prefillHn, prefillOwner }) {
       ) : (
         <div className="form-grid">
           <Field label="ชื่อเจ้าของ *"><input className="input" value={f.owner} onChange={set('owner')} placeholder="ชื่อ-นามสกุล" autoFocus /></Field>
-          <Field label="เบอร์โทร"><input className="input" value={f.phone} onChange={set('phone')} placeholder="08x-xxx-xxxx" /></Field>
+          <Field label="เบอร์โทร"><PhoneListInput phone={f.phone} altPhones={f.altPhones} onChange={(ph, alts) => setF((x) => ({ ...x, phone: ph, altPhones: alts }))} /></Field>
           {phoneMatches.length > 0 ? (
             <div className="walkin-match" style={{ gridColumn: '1 / -1', border: `1.5px solid ${exactDup ? 'var(--blush-deep)' : 'var(--butter)'}`, background: exactDup ? 'var(--blush-soft)' : 'var(--butter-soft)', borderRadius: 'var(--radius-sm)', padding: '8px 10px', display: 'flex', flexDirection: 'column', gap: 4 }}>
               <div style={{ fontSize: 12.5, fontWeight: 800, color: exactDup ? 'var(--blush-deep)' : 'var(--butter-deep)' }}>
@@ -2729,7 +2796,7 @@ function WalkInModal({ pets, onClose, onSubmit, prefillHn, prefillOwner }) {
                     style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 8, padding: '7px 10px', border: 'none', background: 'none', cursor: 'pointer', font: 'inherit', fontSize: 13.5, textAlign: 'left', color: 'var(--ink)' }}>
                     <span>👤</span>
                     <b>{g.owner.name}</b>
-                    <span style={{ color: 'var(--ink-soft)' }}>{g.owner.phone}</span>
+                    <span style={{ color: 'var(--ink-soft)' }}>{ownerPhones(g.owner).map((x) => fmtPhone(x.phone)).join(', ')}</span>
                     <span style={{ fontSize: 12, color: 'var(--ink-faint)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1, minWidth: 0 }}>
                       · {g.pets.length} ตัว: {g.pets.map((p) => `${SPECIES_EMOJI[p.species] || '🐾'}${p.name}`).join(' ')}
                     </span>
@@ -2792,9 +2859,9 @@ function WalkInModal({ pets, onClose, onSubmit, prefillHn, prefillOwner }) {
 function householdOf(pet, pets) {
   if (!pet || !pet.owner) return [];
   const digits = (x) => String(x || '').replace(/\D/g, '');
-  const ph = digits(pet.owner.phone), nm = String(pet.owner.name || '').trim();
+  const mine = ownerPhoneDigits(pet.owner).filter((d) => d.length >= 6), nm = String(pet.owner.name || '').trim();
   return (pets || []).filter((p) => p.hn !== pet.hn && p.owner && (
-    ph.length >= 6 ? digits(p.owner.phone) === ph : (nm && String(p.owner.name || '').trim() === nm)));
+    mine.length ? ownerPhoneDigits(p.owner).some((d) => mine.includes(d)) : (nm && String(p.owner.name || '').trim() === nm)));
 }
 
 function QueueCard({ item, pet, pets = [], activeHns, onOpen, onOpenCase, onMove, onPay, onCancel, onChangeType, onQueuePet, onNewPetForOwner, zoneBorder }) {
@@ -3467,7 +3534,7 @@ function Dashboard({ pets, queue, appointments, admitted, receipts = [], loading
                   </div>
                   {/* ชื่อเจ้าของ + เบอร์ (แตะเพื่อโทรบนมือถือ/แท็บเล็ต) — ใช้คู่กับปุ่มติ๊ก "โทร" ด้านล่าง */}
                   {(() => {
-                    const pet = !a.phone ? (pets || []).find((p) => p.hn === a.hn) : null;
+                    const pet = (pets || []).find((p) => p.hn === a.hn);
                     const raw = String(a.phone || (pet && pet.owner && pet.owner.phone) || '');
                     const digits = raw.replace(/[^\d+]/g, '');
                     const shown = /^0\d{9}$/.test(digits) ? `${digits.slice(0, 3)}-${digits.slice(3, 6)}-${digits.slice(6)}`
@@ -3479,6 +3546,11 @@ function Dashboard({ pets, queue, appointments, admitted, receipts = [], loading
                           <a href={`tel:${digits}`} className="appt-phone" title="แตะเพื่อโทร (มือถือ/แท็บเล็ต) · คลุมเพื่อคัดลอกเบอร์"
                             onClick={(e) => e.stopPropagation()}>📞 {shown}</a>
                         ) : <span style={{ color: 'var(--ink-faint)' }}>— ไม่มีเบอร์ —</span>}
+                        {/* เบอร์อื่นของเจ้าของ (เผื่อเบอร์หลักไม่รับสาย) */}
+                        {pet ? ownerPhones(pet.owner).filter((x) => phoneDigits(x.phone) !== digits).map((x) => (
+                          <a key={x.phone} href={`tel:${phoneDigits(x.phone)}`} className="appt-phone" style={{ fontWeight: 600, opacity: .85 }} onClick={(e) => e.stopPropagation()}
+                            title={`${x.label || 'เบอร์สำรอง'} · แตะเพื่อโทร`}>📞 {fmtPhone(x.phone)}{x.label ? <span style={{ fontWeight: 500 }}> ({x.label})</span> : null}</a>
+                        )) : null}
                       </div>
                     );
                   })()}
@@ -4224,7 +4296,7 @@ function ChargeSetModal({ sets, services, stock, shopStock, onSave, onApply, onC
   );
 }
 
-function CaseView({ pet, queueItem, vets, assistants = [], services, stock, shopStock = [], allPets, appointments = [], onBack, onFinish, onAddVet, onDeleteVet, onAddAssistant, onDeleteAssistant, onAddAdmitted, onUpdateAdmitted, onDischargeAdmitted, onAddAdmitPayment, onDeleteAdmitPayment, onAddAppointment, onUpdateAppointment, onDeleteAppointment, pushToast, onUpdatePet, onUpdateVisit, onAddService, onDeleteService, onUpdateService, onSaveDraft, previewReceiptNo, notePresets, onSavePresets, chargeSets = [], onSaveChargeSets }) {
+function CaseView({ pet, queueItem, vets, assistants = [], services, stock, shopStock = [], allPets, appointments = [], onBack, onFinish, onAddVet, onDeleteVet, onAddAssistant, onDeleteAssistant, onAddAdmitted, onUpdateAdmitted, onDischargeAdmitted, onAddAdmitPayment, onDeleteAdmitPayment, onAddAppointment, onUpdateAppointment, onDeleteAppointment, pushToast, onUpdatePet, onUpdateOwnerFor, onUpdateVisit, onAddService, onDeleteService, onUpdateService, onSaveDraft, previewReceiptNo, notePresets, onSavePresets, chargeSets = [], onSaveChargeSets }) {
   const latestWeight = pet.visits.length ? pet.visits[0].weight : pet.weight;
   const draft = queueItem?.draft;
   // เคสที่บันทึกประวัติไปแล้ว (ส่งแคชเชียร์/ชำระแล้ว) เปิดกลับเข้ามาใหม่ ต้องเห็นของเดิมครบทุกช่อง
@@ -4246,7 +4318,17 @@ function CaseView({ pet, queueItem, vets, assistants = [], services, stock, shop
   const avatarRef = useRef(null);
   const [media, setMedia] = useState(draft?.media || savedVisit?.media || []);
   const [showOwnerPets, setShowOwnerPets] = useState(false);
-  const ownerPets = useMemo(() => (allPets || []).filter((p) => p.owner.phone === pet.owner.phone), [allPets, pet.owner.phone]);
+  const ownerPets = useMemo(() => {
+    const mine = ownerPhoneDigits(pet.owner).filter((d) => d.length >= 6);
+    if (!mine.length) return (allPets || []).filter((p) => p.hn === pet.hn);
+    return (allPets || []).filter((p) => p.hn === pet.hn || (p.owner && ownerPhoneDigits(p.owner).some((d) => mine.includes(d))));
+  }, [allPets, pet.hn, pet.owner]);
+  // "แก้ทั้งบ้าน" แตะเฉพาะตัวที่เป็นเจ้าของคนเดียวกันแน่ๆ (เบอร์หลักเดียวกัน + ชื่อเจ้าของเดียวกัน)
+  // กันไปทับชื่อคนอื่นที่แค่ใส่เบอร์นี้เป็นเบอร์สำรอง (เช่น คู่สมรสที่มีประวัติแยก)
+  const sameOwnerPets = useMemo(() => {
+    const ph = phoneDigits(pet.owner && pet.owner.phone), nm = String((pet.owner && pet.owner.name) || '').trim();
+    return ownerPets.filter((x) => x.hn !== pet.hn && ph.length >= 6 && phoneDigits(x.owner.phone) === ph && String(x.owner.name || '').trim() === nm);
+  }, [ownerPets, pet.hn, pet.owner]);
   // charge = [ชื่อ, จำนวน, ราคา/หน่วย, stockId?, origin?] — stockId ไว้ตัดสต็อก/ปริ้นฉลาก, origin='shop' = สินค้าเพ็ทช้อป (ตัดสต็อกเพ็ทช้อป + ไม่คิด VAT)
   const [charges, setCharges] = useState(
     (draft?.charges || (queueItem && queueItem.charges) || savedVisit?.items || []).map((c) =>
@@ -4476,14 +4558,14 @@ function CaseView({ pet, queueItem, vets, assistants = [], services, stock, shop
               <div style={{ fontWeight: 700, fontSize: 13.5, color: 'var(--ink-soft)', marginBottom: 8 }}>เจ้าของ</div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 14 }}>
                 <span style={{ display: 'flex', gap: 8, alignItems: 'center' }}><Icon name="user" size={15} style={{ color: 'var(--ink-faint)' }} /> {pet.owner.name}</span>
-                <span style={{ display: 'flex', gap: 8, alignItems: 'center' }}><Icon name="phone" size={15} style={{ color: 'var(--ink-faint)' }} /> {pet.owner.phone}</span>
+                <span style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}><Icon name="phone" size={15} style={{ color: 'var(--ink-faint)', marginTop: 3, flexShrink: 0 }} /> <PhoneLinks owner={pet.owner} size={13} gap={5} /></span>
               </div>
               <button className="btn btn-sm" style={{ marginTop: 8, alignSelf: 'flex-start', fontSize: 12, color: 'var(--navy)' }} onClick={() => setShowOwnerPets(true)}>
                 🐾 สัตว์เลี้ยงทั้งหมด ({ownerPets.length} ตัว)
               </button>
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
-              <button className="btn btn-sm" onClick={() => setEditPetInfo({ kind: 'owner', ownerName: pet.owner.name, phone: pet.owner.phone || '' })}><Icon name="edit" size={14} /> แก้ไข</button>
+              <button className="btn btn-sm" onClick={() => setEditPetInfo({ kind: 'owner', ownerName: pet.owner.name, phone: (pet.owner.phone && pet.owner.phone !== '-') ? pet.owner.phone : '', altPhones: (pet.owner.altPhones || []).map((x) => ({ ...x })), allHouse: true })}><Icon name="edit" size={14} /> แก้ไข</button>
               <button className="btn btn-sm" style={{ color: 'var(--blush-deep)', fontSize: 12 }} onClick={() => setShowVaccineHistory(!showVaccineHistory)}><Icon name="syringe" size={14} /> ประวัติวัคซีน</button>
             </div>
           </div>
@@ -5256,7 +5338,16 @@ function CaseView({ pet, queueItem, vets, assistants = [], services, stock, shop
             if (f.kind === 'pet') onUpdatePet && onUpdatePet({ ...pet, name: f.name.trim() || pet.name, species: f.species || pet.species, breed: f.breed, sex: f.sex, sterilized: f.sterilized === 'true' ? true : f.sterilized === 'false' ? false : null, color: f.color, birth: f.birth, caution: (f.caution || '').trim(), allergy: (f.allergy || '').trim(),
               // เสียชีวิต — ไม่ลบข้อมูลใดๆ แค่ทำเครื่องหมาย · ยกเลิกเครื่องหมายได้ถ้ากดผิด
               deceased: !!f.deceased, deceasedDate: f.deceased ? (f.deceasedDate || todayISO()) : undefined, deceasedCause: f.deceased ? (f.deceasedCause || '').trim() : undefined });
-            else onUpdatePet && onUpdatePet({ ...pet, owner: { ...pet.owner, name: f.ownerName.trim() || pet.owner.name, phone: f.phone } });
+            else {
+              // หลายเบอร์ → ล้างช่องว่าง/ซ้ำ · เบอร์แรก = เบอร์หลัก (ส่ง SMS) · เลือกได้ว่าแก้ให้สัตว์ทุกตัวในบ้านนี้ด้วย
+              const cp = cleanOwnerPhones(f.phone, f.altPhones);
+              const owner = { name: f.ownerName.trim() || pet.owner.name, phone: cp.phone || '-', altPhones: cp.altPhones };
+              const others = sameOwnerPets;
+              if (f.allHouse && others.length && onUpdateOwnerFor) onUpdateOwnerFor([pet.hn, ...others.map((x) => x.hn)], owner);
+              else if (onUpdateOwnerFor) onUpdateOwnerFor([pet.hn], owner);
+              else onUpdatePet && onUpdatePet({ ...pet, owner: { ...pet.owner, ...owner } });
+              setEditPetInfo(null); return;
+            }
             setEditPetInfo(null); pushToast && pushToast('บันทึกข้อมูลแล้ว');
           }}>บันทึก</button>
         </>}>
@@ -5310,7 +5401,17 @@ function CaseView({ pet, queueItem, vets, assistants = [], services, stock, shop
           ) : (
             <div className="form-grid" style={{ gridTemplateColumns: '1fr 1fr', gap: 13 }}>
               <Field label="ชื่อเจ้าของ *"><input className="input" value={editPetInfo.ownerName} onChange={(e) => setEditPetInfo({ ...editPetInfo, ownerName: e.target.value })} placeholder="ชื่อ-นามสกุล" /></Field>
-              <Field label="เบอร์โทรศัพท์ *"><input className="input" value={editPetInfo.phone} onChange={(e) => setEditPetInfo({ ...editPetInfo, phone: e.target.value })} placeholder="เช่น 08X-XXX-XXXX" /></Field>
+              <Field label="เบอร์โทรศัพท์ *">
+                <PhoneListInput phone={editPetInfo.phone} altPhones={editPetInfo.altPhones}
+                  onChange={(ph, alts) => setEditPetInfo((x) => ({ ...x, phone: ph, altPhones: alts }))} />
+              </Field>
+              {sameOwnerPets.length > 0 ? (
+                <label style={{ gridColumn: '1 / -1', display: 'flex', alignItems: 'flex-start', gap: 8, fontSize: 13, cursor: 'pointer', background: 'var(--paper)', borderRadius: 'var(--radius-sm)', padding: '9px 11px' }}>
+                  <input type="checkbox" style={{ marginTop: 2 }} checked={!!editPetInfo.allHouse} onChange={(e) => setEditPetInfo({ ...editPetInfo, allHouse: e.target.checked })} />
+                  <span>แก้ให้สัตว์ตัวอื่นของเจ้าของคนนี้ด้วย ({sameOwnerPets.length} ตัว: {sameOwnerPets.map((x) => x.name).join(', ')})
+                    <span style={{ display: 'block', fontSize: 11.5, color: 'var(--ink-faint)' }}>นัดที่ยังไม่ถึงวันของทุกตัวจะเปลี่ยนเป็นเบอร์ใหม่ด้วย (SMS ไปเบอร์หลัก)</span></span>
+                </label>
+              ) : null}
             </div>
           )}
         </Modal>
@@ -5404,7 +5505,7 @@ function CaseView({ pet, queueItem, vets, assistants = [], services, stock, shop
       {showOwnerPets ? (
         <Modal title={`🐾 สัตว์เลี้ยงของ ${pet.owner.name}`} onClose={() => setShowOwnerPets(false)}>
           <div style={{ marginBottom: 12, color: 'var(--ink-soft)', fontSize: 13 }}>
-            📞 {pet.owner.phone} &nbsp;·&nbsp; สัตว์เลี้ยง {ownerPets.length} ตัว
+            📞 {ownerPhones(pet.owner).map((x) => fmtPhone(x.phone) + (x.label ? ` (${x.label})` : '')).join(', ') || '-'} &nbsp;·&nbsp; สัตว์เลี้ยง {ownerPets.length} ตัว
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
             {ownerPets.map((p) => (
@@ -8872,6 +8973,22 @@ function ApptFormModal({ pets, defaultDate, defaultPet, defaultType, editAppt, o
             <Icon name="check" size={15} /> {SPECIES_EMOJI[f.species] || '🐾'} {f.petName} · HN {f.hn} · {f.ownerName} · {f.phone}
           </div>
         ) : null}
+        {/* เจ้าของมีหลายเบอร์ → เลือกได้ว่าจะส่ง SMS เตือนนัดไปเบอร์ไหน (ค่าเริ่มต้น = เบอร์หลัก) */}
+        {(() => {
+          const po = f.hn ? ((pets || []).find((p) => p.hn === f.hn) || {}).owner : null;
+          const list = po ? ownerPhones(po) : [];
+          if (list.length < 2) return null;
+          const cur = phoneDigits(f.phone);
+          return (
+            <Field label="ส่ง SMS ไปเบอร์">
+              <select className="select" value={list.some((x) => phoneDigits(x.phone) === cur) ? cur : ''}
+                onChange={(e) => { const x = list.find((y) => phoneDigits(y.phone) === e.target.value); if (x) setFClearSms({ phone: x.phone }); }}>
+                {list.some((x) => phoneDigits(x.phone) === cur) ? null : <option value="">{fmtPhone(f.phone) || '—'} (เบอร์ในนัดเดิม)</option>}
+                {list.map((x) => <option key={x.phone} value={phoneDigits(x.phone)}>{fmtPhone(x.phone)}{x.primary ? ' (เบอร์หลัก)' : x.label ? ` (${x.label})` : ''}</option>)}
+              </select>
+            </Field>
+          );
+        })()}
 
         <div className="form-grid" style={{ gridTemplateColumns: '1fr 1fr', gap: 13 }}>
           <Field label="วันที่นัด *">
@@ -10778,7 +10895,9 @@ function App() {
     pushToast((total > 0 ? `จำหน่าย ${adm.petName} — รับชำระ ${fmtB(total)}` : `จำหน่าย ${adm.petName} แล้ว`) + (deducted > 0 ? ` · ตัดสต็อก ${deducted} รายการ` : ''));
     if (total > 0) celebrate({ big: total >= 3000 });
   };
-  const updatePet = (updated) => {
+  // opts.quiet = ไม่ขึ้นแจ้งเตือนเอง (ใช้ตอนอัปเดตทั้งบ้าน แล้วสรุปแจ้งครั้งเดียว) · คืน { receipts, appts } ที่อัปเดตตาม
+  const updatePet = (updated, opts) => {
+    const quiet = !!(opts && opts.quiet);
     // ชื่อเจ้าของเปลี่ยน → ให้ใบเสร็จเก่าของ HN นี้ตามไปด้วย (ลิ้งกัน ไม่ค้างชื่อเดิม)
     // แตะเฉพาะใบที่ยังใช้ "ชื่อเดิม" อยู่ — ใบที่พิมพ์ชื่อผู้ซื้อเองไว้ (เช่นออกในนามบริษัท) จะไม่ถูกทับ
     const prevPet = (pets || []).find((p) => p.hn === updated.hn);
@@ -10825,9 +10944,20 @@ function App() {
         admitted: (s.admitted || []).map((x) => (contactChanged && x.hn === updated.hn ? { ...patch(x), owner: { ...(x.owner || {}), ...(updated.owner || {}) } } : patch(x))),
       };
     });
-    if (affected > 0) pushToast(`อัปเดตชื่อเจ้าของในใบเสร็จ ${affected} ใบแล้ว`);
+    if (affected > 0 && !quiet) pushToast(`อัปเดตชื่อเจ้าของในใบเสร็จ ${affected} ใบแล้ว`);
     const apptSynced = contactChanged ? (appointments || []).filter((a) => openAppt(a) && ((phoneChanged && digitsOf(a.phone) === oldPhone) || (renamed && String(a.ownerName || '').trim() === oldName))).length : 0;
-    if (apptSynced > 0) pushToast(`อัปเดตเบอร์/ชื่อเจ้าของในนัดที่ยังไม่ถึง ${apptSynced} นัดแล้ว`);
+    if (apptSynced > 0 && !quiet) pushToast(`อัปเดตเบอร์/ชื่อเจ้าของในนัดที่ยังไม่ถึง ${apptSynced} นัดแล้ว`);
+    return { receipts: affected, appts: apptSynced };
+  };
+  // แก้ข้อมูลเจ้าของทีเดียวทั้งบ้าน (สัตว์หลายตัวของเจ้าของคนเดียวกัน เก็บสำเนาเจ้าของแยกตัว)
+  const updateOwnerFor = (hns, owner) => {
+    let rc = 0, ac = 0;
+    (hns || []).forEach((hn) => {
+      const p = (pets || []).find((x) => x.hn === hn); if (!p) return;
+      const r = updatePet({ ...p, owner: { ...(p.owner || {}), ...owner } }, { quiet: true });
+      rc += r.receipts; ac += r.appts;
+    });
+    pushToast(`บันทึกข้อมูลเจ้าของแล้ว${hns.length > 1 ? ` (สัตว์ ${hns.length} ตัวในบ้านนี้)` : ''}${ac ? ` · อัปเดตเบอร์ในนัด ${ac} นัด` : ''}${rc ? ` · ชื่อในใบเสร็จ ${rc} ใบ` : ''}`);
   };
 
   const services = state.services || VetData.services;
@@ -11170,9 +11300,10 @@ function App() {
       d.setFullYear(d.getFullYear() - Math.max(0, parseInt(f.ageY) || 0));
       d.setMonth(d.getMonth() - Math.max(0, parseInt(f.ageM) || 0));
       // keepOwner = สัตว์ใหม่ให้เจ้าของเดิม → ใช้ข้อมูลเจ้าของที่ส่งมา
-      const ownerObj = payload.keepOwner
-        ? { name: payload.keepOwner.name, phone: payload.keepOwner.phone || '-' }
-        : { name: f.owner, phone: f.phone || '-' };
+      // หลายเบอร์: เบอร์หลักอยู่ phone (ใช้ส่ง SMS) · เบอร์อื่นอยู่ altPhones
+      const ko = payload.keepOwner;
+      const cp = ko ? { phone: ko.phone, altPhones: Array.isArray(ko.altPhones) ? ko.altPhones : [] } : cleanOwnerPhones(f.phone, f.altPhones);
+      const ownerObj = { name: ko ? ko.name : f.owner, phone: cp.phone || '-', ...(cp.altPhones.length ? { altPhones: cp.altPhones } : {}) };
       newPets = [...pets, {
         hn, name: f.pet, species: f.species, breed: '-', sex: f.sex,
         birth: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`, color: '-',
@@ -11660,7 +11791,7 @@ function App() {
           onAddAppointment={addAppointment} onUpdateAppointment={updateAppointment} onDeleteAppointment={deleteAppointment}
           onUpdateAdmitted={updateAdmitted} onDischargeAdmitted={dischargeAdmitted}
           onAddAdmitted={addAdmitted} onAddAdmitPayment={addAdmitPayment} onDeleteAdmitPayment={deleteAdmitPayment} pushToast={pushToast}
-          onUpdatePet={updatePet} onUpdateVisit={updateVisit} onAddService={addService} onDeleteService={deleteService} onUpdateService={updateService} onSaveDraft={saveDraft} previewReceiptNo={nextReceiptNo().no}
+          onUpdatePet={updatePet} onUpdateOwnerFor={updateOwnerFor} onUpdateVisit={updateVisit} onAddService={addService} onDeleteService={deleteService} onUpdateService={updateService} onSaveDraft={saveDraft} previewReceiptNo={nextReceiptNo().no}
           notePresets={notePresets} onSavePresets={saveNotePresets} chargeSets={chargeSets} onSaveChargeSets={saveChargeSets} /> :
           null}
           {page === 'appointments' ? <AppointmentsView appointments={appointments} pets={pets} onAdd={addAppointment} onUpdate={updateAppointment} onDelete={deleteAppointment} onOpenPet={openPet} pushToast={pushToast} notePresets={notePresets} onSavePresets={saveNotePresets} smsPresets={smsPresets} onSaveSmsPresets={saveSmsPresets} ownerMode={isOwner}
