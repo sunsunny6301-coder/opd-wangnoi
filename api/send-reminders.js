@@ -226,13 +226,25 @@ module.exports = async function handler(req, res) {
   }
 
   // ── กรอง appointments ที่ต้องส่ง ───────────────────────────────────────────
-  const toRemind = appointments.filter(a =>
+  // สัตว์ที่เสียชีวิตแล้ว (ดูทั้งป้ายบนนัด และประวัติสัตว์) → ห้ามส่ง SMS เตือนนัดไปหาเจ้าของเด็ดขาด
+  const deadHn = new Set((Array.isArray(appState.pets) ? appState.pets : []).filter(p => p && p.deceased).map(p => p.hn));
+  const candidates = appointments.filter(a =>
     a.date === targetIso &&
     a.smsAuto !== false &&
     !a.reminderSent &&
-    a.status !== 'cancelled' &&
+    a.status !== 'cancelled' && a.status !== 'done' && a.status !== 'missed' &&
+    !a.deceased && !deadHn.has(a.hn) &&
     a.phone
   );
+  // นัดซ้ำ (สัตว์ตัวเดียวกัน วัน/ประเภท/รายละเอียดเดียวกัน) → ส่งครั้งเดียว แต่ติ๊ก "ส่งแล้ว" ให้ทุกใบ
+  const dupOf = new Map();   // id ของนัดที่ถูกข้าม → id ของนัดที่ส่งจริง
+  const seenKey = new Map();
+  const toRemind = [];
+  for (const a of candidates) {
+    const k = [a.hn, String(a.phone).replace(/[^0-9+]/g, ''), a.type, a.note || '', a.smsText || ''].join('|');
+    if (seenKey.has(k)) { dupOf.set(a.id, seenKey.get(k)); continue; }
+    seenKey.set(k, a.id); toRemind.push(a);
+  }
 
   if (toRemind.length === 0) {
     return res.status(200).json({ sent: 0, targetDate: targetIso, message: 'ไม่มีนัดที่ต้องส่ง SMS' });
@@ -266,6 +278,9 @@ module.exports = async function handler(req, res) {
       results.push({ id: appt.id, petName: appt.petName, phone, ok: false, error: e.message });
     }
   }
+
+  // นัดซ้ำที่ถูกข้าม → ติ๊กส่งแล้วตามใบที่ส่งจริง (กันรอบหน้า/กดส่งเองซ้ำอีก)
+  dupOf.forEach((sentId, dupId) => { if (sentIds.has(sentId)) sentIds.add(dupId); });
 
   // ── บันทึก reminderSent กลับ Supabase ──────────────────────────────────────
   // ⚠️ สำคัญ: cron รัน 08:00 = ช่วงคลินิกเปิด อาจมีการบันทึกข้อมูลจากแอปพร้อมกัน

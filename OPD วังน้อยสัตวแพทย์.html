@@ -10650,7 +10650,13 @@ function App() {
   // createdAt = วันที่ทำนัด (ใช้แยก "มาก่อนนัด" ออกจากวันที่หมอสั่งนัด)
   const addAppointment = (appt) => {
     const a = { ...appt, createdAt: appt.createdAt || todayISO() };
-    setState((s) => ({ ...s, appointments: [...(s.appointments || []), a] }));
+    // กันนัดซ้ำ: สัตว์ตัวเดิม วันเดิม ประเภท+รายละเอียดเดิม (ที่ยังไม่ยกเลิก) → ไม่สร้างซ้ำ (ไม่งั้น SMS เตือนส่ง 2 รอบ)
+    const sameKey = (x) => x.hn === a.hn && x.date === a.date && x.type === a.type && String(x.note || '').trim() === String(a.note || '').trim() && x.status !== 'cancelled';
+    if ((appointments || []).some(sameKey)) {
+      pushToast(`มีนัดนี้อยู่แล้ว — ${appt.petName} ${appt.date} (${appt.type}) · ไม่ได้สร้างซ้ำ`);
+      return;
+    }
+    setState((s) => ({ ...s, appointments: (s.appointments || []).some(sameKey) ? (s.appointments || []) : [...(s.appointments || []), a] }));
     pushToast(`บันทึกนัด ${appt.petName} — ${appt.date} ${appt.time} (ประเภท: ${appt.type})`);
   };
   // อัปเดตนัด + จดข้อมูลไว้วัดผล:
@@ -10785,13 +10791,29 @@ function App() {
     const petRenamed = String((prevPet && prevPet.name) || '').trim() !== String(updated.name || '').trim();
     const speciesChanged = String((prevPet && prevPet.species) || '') !== String(updated.species || '');
     const deceasedChanged = !!(prevPet && prevPet.deceased) !== !!updated.deceased;
-    const syncCopies = petRenamed || speciesChanged || deceasedChanged;
+    // เบอร์/ชื่อเจ้าของเปลี่ยน → นัดที่ยังไม่ถึง (และเคสแอดมิด) ต้องได้ข้อมูลใหม่ด้วย ไม่งั้น SMS เตือนนัดไปเบอร์เก่า
+    // แตะเฉพาะนัดที่ยังใช้ "เบอร์/ชื่อเดิม" อยู่ — นัดที่ตั้งใจใส่เบอร์อื่นไว้จะไม่ถูกทับ
+    const digitsOf = (x) => String(x || '').replace(/\D/g, '');
+    const oldPhone = digitsOf(prevPet && prevPet.owner && prevPet.owner.phone);
+    const newPhone = String((updated.owner && updated.owner.phone) || '');
+    const phoneChanged = oldPhone !== digitsOf(newPhone);
+    const today = todayISO();
+    const openAppt = (a) => a.hn === updated.hn && a.date >= today && (a.status === 'scheduled' || a.status === 'arrived');
+    const contactChanged = renamed || phoneChanged;
+    const syncCopies = petRenamed || speciesChanged || deceasedChanged || contactChanged;
     setState((s) => {
       const nextPets = s.pets.map((p) => p.hn === updated.hn ? updated : p);
       const nextReceipts = renamed
         ? (s.receipts || []).map((r) => (r.hn === updated.hn && String(r.ownerName || '').trim() === oldName) ? { ...r, ownerName: newName } : r)
         : (s.receipts || []);
       if (!syncCopies) return { ...s, pets: nextPets, receipts: nextReceipts };
+      const contact = (a) => {
+        if (!contactChanged || !openAppt(a)) return a;
+        const out = { ...a };
+        if (phoneChanged && digitsOf(a.phone) === oldPhone) out.phone = newPhone;
+        if (renamed && String(a.ownerName || '').trim() === oldName) out.ownerName = newName;
+        return out;
+      };
       // deceased ติดไปด้วย เพื่อให้การ์ดนัด/คิวขึ้นป้ายและหยุดปุ่มตาม SMS ได้ทันที
       const patch = (x) => (x.hn === updated.hn
         ? { ...x, petName: updated.name, species: updated.species, deceased: !!updated.deceased, deceasedDate: updated.deceasedDate, deceasedCause: updated.deceasedCause }
@@ -10799,11 +10821,13 @@ function App() {
       return {
         ...s, pets: nextPets, receipts: nextReceipts,
         queue: (s.queue || []).map(patch),
-        appointments: (s.appointments || []).map(patch),
-        admitted: (s.admitted || []).map(patch),
+        appointments: (s.appointments || []).map((a) => contact(patch(a))),
+        admitted: (s.admitted || []).map((x) => (contactChanged && x.hn === updated.hn ? { ...patch(x), owner: { ...(x.owner || {}), ...(updated.owner || {}) } } : patch(x))),
       };
     });
     if (affected > 0) pushToast(`อัปเดตชื่อเจ้าของในใบเสร็จ ${affected} ใบแล้ว`);
+    const apptSynced = contactChanged ? (appointments || []).filter((a) => openAppt(a) && ((phoneChanged && digitsOf(a.phone) === oldPhone) || (renamed && String(a.ownerName || '').trim() === oldName))).length : 0;
+    if (apptSynced > 0) pushToast(`อัปเดตเบอร์/ชื่อเจ้าของในนัดที่ยังไม่ถึง ${apptSynced} นัดแล้ว`);
   };
 
   const services = state.services || VetData.services;
