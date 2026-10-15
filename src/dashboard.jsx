@@ -1055,7 +1055,23 @@ function Dashboard({ pets, queue, appointments, admitted, receipts = [], loading
                     <span style={{ fontWeight: 700, fontSize: 13.5 }}>{SPECIES_EMOJI[a.species] || '🐾'} {a.petName}</span>
                     {a.time ? <span style={{ fontSize: 12, fontWeight: 700, color: '#3A3F8F', fontVariantNumeric: 'tabular-nums' }}>{a.time}</span> : null}
                   </div>
-                  <div style={{ fontSize: 12, color: 'var(--ink-soft)', marginTop: 2 }}>{a.ownerName}</div>
+                  {/* ชื่อเจ้าของ + เบอร์ (แตะเพื่อโทรบนมือถือ/แท็บเล็ต) — ใช้คู่กับปุ่มติ๊ก "โทร" ด้านล่าง */}
+                  {(() => {
+                    const pet = !a.phone ? (pets || []).find((p) => p.hn === a.hn) : null;
+                    const raw = String(a.phone || (pet && pet.owner && pet.owner.phone) || '');
+                    const digits = raw.replace(/[^\d+]/g, '');
+                    const shown = /^0\d{9}$/.test(digits) ? `${digits.slice(0, 3)}-${digits.slice(3, 6)}-${digits.slice(6)}`
+                      : /^0\d{8}$/.test(digits) ? `${digits.slice(0, 2)}-${digits.slice(2, 5)}-${digits.slice(5)}` : raw;
+                    return (
+                      <div style={{ fontSize: 12, color: 'var(--ink-soft)', marginTop: 2, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                        <span>{a.ownerName}</span>
+                        {digits.length >= 6 ? (
+                          <a href={`tel:${digits}`} className="appt-phone" title="แตะเพื่อโทร (มือถือ/แท็บเล็ต) · คลุมเพื่อคัดลอกเบอร์"
+                            onClick={(e) => e.stopPropagation()}>📞 {shown}</a>
+                        ) : <span style={{ color: 'var(--ink-faint)' }}>— ไม่มีเบอร์ —</span>}
+                      </div>
+                    );
+                  })()}
                   <div style={{ display: 'flex', gap: 5, marginTop: 5, alignItems: 'center', flexWrap: 'wrap' }}>
                     <span className={`chip ${APPT_CHIP && APPT_CHIP[a.type] ? APPT_CHIP[a.type] : ''}`} style={{ fontSize: 11 }}>{a.type}</span>
                     {arrived ? <span className="chip chip-mint" style={{ fontSize: 11 }}>มาแล้ว</span> : null}

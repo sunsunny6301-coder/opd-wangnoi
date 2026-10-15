@@ -83,6 +83,11 @@
 .theme-toggle:active { transform: scale(.94); }
 @media print { .theme-toggle { display: none !important; } }
 
+/* เบอร์โทรในแผงนัดหน้าหลัก — แตะโทรได้ */
+.appt-phone { color: #3A3F8F; font-weight: 700; text-decoration: none; font-variant-numeric: tabular-nums; white-space: nowrap; padding: 1px 6px; border-radius: 99px; background: rgba(58, 63, 143, .08); user-select: text; }
+.appt-phone:hover { background: rgba(58, 63, 143, .16); text-decoration: underline; }
+:root[data-theme="dark"] .appt-phone { color: var(--navy); background: rgba(110, 151, 207, .14); }
+
 /* ── เครื่องคิดเลข 🧮 ── */
 .calc-fab {
   position: fixed; right: 16px; bottom: 68px; z-index: 70;
