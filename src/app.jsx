@@ -886,7 +886,7 @@ function App() {
       petName = p.name; species = p.species;
     }
     const entry = { q: nextQ(), hn, petName, species, type: payload.type, status: 'wait', time: timeNow(), cc: payload.cc, isNew };
-    setState((s) => ({ ...s, pets: newPets, queue: [...s.queue, entry] }));
+    setState((s) => ({ ...s, pets: newPets, queue: [...s.queue, entry], appointments: markApptArrived(s.appointments, hn) }));
     pushToast(`ออกบัตรคิว ${entry.q} — ${petName} เรียบร้อย`);
   };
 
@@ -903,6 +903,12 @@ function App() {
     pushToast(`เปลี่ยนบริการ ${qNo} ${item.petName}: ${item.type || '-'} → ${type}`);
   };
 
+  // สัตว์มาถึงคลินิกวันนี้ (เข้าคิวทางไหนก็ได้ / บันทึกเคส) → นัดวันนี้ของตัวนั้นขึ้น "มาแล้ว" ทันที
+  const markApptArrived = (appts, hn) => {
+    const t = todayISO();
+    return (appts || []).map((a) => (a.hn === hn && a.date === t && a.status === 'scheduled' && !a.deceased) ? { ...a, status: 'arrived', arrivedAt: t } : a);
+  };
+
   const moveQ = (qNo, status) =>
   setState((s) => ({ ...s, queue: s.queue.map((x) => x.q === qNo ? { ...x, status } : x) }));
 
@@ -915,7 +921,15 @@ function App() {
     setCaseCtx({ hn: adm.hn, admItem: adm });
     setPage('case');
   };
-  const openPet = (hn) => {setCaseCtx({ hn, q: null });setPage('case');};
+  // เปิดจากค้นหา/หน้านัด/ประวัติ: ถ้าสัตว์ตัวนี้อยู่ในคิว (รอตรวจ/กำลังตรวจ/รอชำระ) → ผูกกับคิวนั้นเลย
+  // ไม่งั้นกดปิดเคสแล้วคิวไม่ปิด (ค้างกำลังตรวจ) และประวัติไม่มีเลขคิว — เคยเกิดกับ นับตังค์ Q2022
+  const openPet = (hn) => {
+    const active = (queue || []).filter((x) => x.hn === hn && ['wait', 'exam', 'cashier'].includes(x.status));
+    const qi = active.length ? active[active.length - 1] : null;
+    if (qi && qi.status === 'wait') moveQ(qi.q, 'exam');
+    setCaseCtx({ hn, q: qi ? qi.q : null });
+    setPage('case');
+  };
 
   const addVet = (name) => {
     if (!name.trim() || vets.includes(name.trim())) return;
@@ -1074,7 +1088,8 @@ function App() {
       } else if (status === 'cashier') {
         newQueue = queueItem?.q ? newQueue.map((x) => x.q === queueItem.q ? { ...x, status: 'cashier', charges } : x) : newQueue;
       }
-      return { ...s, pets: newPets, queue: newQueue, receipts: newReceipts, receiptSeq: con.receiptSeq, receiptVoids: con.receiptVoids, stock: newStock, shopStock: newShopStock };
+      return { ...s, pets: newPets, queue: newQueue, receipts: newReceipts, receiptSeq: con.receiptSeq, receiptVoids: con.receiptVoids, stock: newStock, shopStock: newShopStock,
+        appointments: visit.date === todayISO() ? markApptArrived(s.appointments, updatedPet.hn) : s.appointments };
     });
     setPage('dashboard');
     setCaseCtx(null);
