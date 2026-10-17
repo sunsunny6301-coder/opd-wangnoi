@@ -108,6 +108,21 @@ if ('serviceWorker' in navigator) {
 .theme-toggle:active { transform: scale(.94); }
 @media print { .theme-toggle { display: none !important; } }
 
+/* ผลการโทรนัด (แผงนัดหน้าหลัก) */
+.appt-call.is-ok { color: var(--mint-deep); border-color: var(--mint-deep); background: var(--mint-soft); font-weight: 700; }
+.appt-call.is-moved { color: var(--powder-deep); border-color: var(--powder-deep); background: var(--powder-soft); font-weight: 700; }
+.appt-call.is-retry { color: #fff; border-color: var(--blush-deep); background: var(--blush-deep); font-weight: 800; animation: callRetry 1.6s ease-in-out infinite; }
+@keyframes callRetry { 0%, 100% { box-shadow: 0 0 0 0 rgba(192, 104, 92, .45); } 50% { box-shadow: 0 0 0 4px rgba(192, 104, 92, 0); } }
+@media (prefers-reduced-motion: reduce) { .appt-call.is-retry { animation: none; } }
+.call-menu { flex-basis: 100%; display: flex; flex-direction: column; gap: 5px; padding: 8px; border-radius: var(--radius-sm); background: var(--paper); border: 1px solid var(--line); }
+.call-menu .call-opt { justify-content: flex-start; font-size: 12.5px; font-weight: 700; }
+.call-menu .call-opt.ok { color: var(--mint-deep); }
+.call-menu .call-opt.moved { color: var(--powder-deep); }
+.call-menu .call-opt.retry { color: var(--blush-deep); }
+.call-summary { display: flex; gap: 6px; flex-wrap: wrap; padding: 6px 10px 0; font-size: 11.5px; font-weight: 700; color: var(--ink-soft); }
+.call-summary span { background: var(--paper); border-radius: 99px; padding: 2px 8px; }
+.call-summary span.retry { background: var(--blush-soft); color: var(--blush-deep); }
+
 /* เบอร์โทรในแผงนัดหน้าหลัก — แตะโทรได้ */
 .appt-phone { color: #3A3F8F; font-weight: 700; text-decoration: none; font-variant-numeric: tabular-nums; white-space: nowrap; padding: 1px 6px; border-radius: 99px; background: rgba(58, 63, 143, .08); user-select: text; }
 .appt-phone:hover { background: rgba(58, 63, 143, .16); text-decoration: underline; }
@@ -2855,6 +2870,82 @@ function WalkInModal({ pets, onClose, onSubmit, prefillHn, prefillOwner }) {
   );
 }
 
+// ── ผลการโทรนัด (แผงนัดหน้าหลัก) ──
+// กด "โทร" → เลือกผล: ✅ ยืนยันมาตามนัด · 📅 เลื่อนนัด (เลือกวันใหม่ได้ทันที) · 📵 ไม่รับสาย (ขึ้นแดงเตือนให้โทรใหม่)
+// เก็บที่นัด: callResult (ผลล่าสุด) · calledAt (คุยกับลูกค้าได้แล้วเมื่อไหร่) · noAnswerCount · callLog [{ at, result, from?, to? }]
+// ผลจริงยังวัดจาก "การมาจริง" — ข้อมูลนี้ใช้ติดตามงานโทร/รายงานเชื่อมโยง (เลื่อนแล้วมาไหม ยืนยันแล้วมาไหม)
+function apptCallState(a) {
+  if (!a) return null;
+  if (a.callResult) return a.callResult;
+  return a.calledAt ? 'called' : null;   // ติ๊ก "โทรแล้ว" แบบเดิม (ก่อนมีตัวเลือก) = โทรแล้ว ไม่รู้ผล
+}
+const CALL_LABEL = {
+  confirmed: { text: '✅ ยืนยันแล้ว', cls: 'is-ok' },
+  called: { text: '☑ โทรแล้ว', cls: 'is-ok' },
+  rescheduled: { text: '📅 เลื่อนแล้ว', cls: 'is-moved' },
+  noanswer: { text: '📵 ไม่รับ · โทรใหม่', cls: 'is-retry' },
+};
+function ApptCallControl({ a, onUpdate, todayStr }) {
+  const [open, setOpen] = useState(false);
+  const [moving, setMoving] = useState(false);
+  const [newDate, setNewDate] = useState('');
+  const [err, setErr] = useState('');
+  const st = apptCallState(a);
+  const stamp = () => `${todayISO()} ${typeof timeNow !== 'undefined' ? timeNow() : ''}`.trim();
+  const close = () => { setOpen(false); setMoving(false); setErr(''); };
+  const record = (result, patch) => {
+    const at = stamp();
+    const entry = { at, result, ...(patch && patch.date && patch.date !== a.date ? { from: a.date, to: patch.date } : {}) };
+    onUpdate({
+      ...a, ...(patch || {}),
+      callResult: result,
+      calledAt: result === 'noanswer' ? (a.calledAt || null) : at,
+      noAnswerCount: result === 'noanswer' ? (Number(a.noAnswerCount) || 0) + 1 : (Number(a.noAnswerCount) || 0),
+      callLog: [...(a.callLog || []), entry],
+    });
+    close();
+  };
+  const doMove = () => {
+    if (!newDate) { setErr('เลือกวันนัดใหม่ก่อน'); return; }
+    if (newDate < todayStr) { setErr('วันใหม่ต้องไม่ย้อนหลัง'); return; }
+    if (newDate === a.date) { setErr('วันใหม่ต้องไม่ใช่วันเดิม'); return; }
+    // SMS ที่ส่งไปเป็นวันเก่า → updateAppointment ล้างสถานะส่งแล้วให้เอง (ส่งใหม่ของวันใหม่)
+    record('rescheduled', { date: newDate, smsText: undefined });
+  };
+  const lab = st ? CALL_LABEL[st] : null;
+  const nTry = Number(a.noAnswerCount) || 0;
+  return (
+    <>
+      <button className={'btn btn-sm appt-call' + (lab ? ' ' + lab.cls : '')} style={{ flexShrink: 0, fontSize: 11.5 }}
+        title={a.callLog && a.callLog.length ? a.callLog.map((c) => `${c.at} · ${c.result === 'confirmed' ? 'ยืนยัน' : c.result === 'rescheduled' ? `เลื่อน ${c.from || ''}→${c.to || ''}` : c.result === 'noanswer' ? 'ไม่รับสาย' : 'ล้างสถานะ'}`).join('\n') : 'กดเพื่อบันทึกผลการโทร'}
+        onClick={() => { setOpen((v) => !v); setMoving(false); setErr(''); }}>
+        {lab ? (st === 'noanswer' && nTry > 1 ? `📵 ไม่รับ ×${nTry} · โทรใหม่` : lab.text) : '☐ โทร'}
+      </button>
+      {open ? (
+        <div className="call-menu" onClick={(e) => e.stopPropagation()}>
+          {!moving ? (<>
+            <button className="btn btn-sm call-opt ok" onClick={() => record('confirmed')}>✅ ยืนยันมาตามนัด</button>
+            <button className="btn btn-sm call-opt moved" onClick={() => { setMoving(true); setNewDate(''); }}>📅 เลื่อนนัด</button>
+            <button className="btn btn-sm call-opt retry" onClick={() => record('noanswer')}>📵 ไม่รับสาย{nTry ? ` (ครั้งที่ ${nTry + 1})` : ''}</button>
+            {st ? <button className="btn btn-sm" style={{ fontSize: 11, color: 'var(--ink-faint)' }}
+              onClick={() => { onUpdate({ ...a, callResult: null, calledAt: null, callLog: [...(a.callLog || []), { at: stamp(), result: 'cleared' }] }); close(); }}>ล้างสถานะ</button> : null}
+          </>) : (<>
+            <div style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--ink-soft)' }}>เลื่อนนัดไปวันไหน (เวลาเดิม {a.time || '-'})</div>
+            <input type="date" className="input" style={{ padding: '4px 8px', fontSize: 13 }} min={todayStr} value={newDate}
+              onChange={(e) => { setNewDate(e.target.value); setErr(''); }} />
+            {err ? <div style={{ fontSize: 11.5, color: 'var(--blush-deep)', fontWeight: 700 }}>{err}</div> : null}
+            <div style={{ display: 'flex', gap: 5 }}>
+              <button className="btn btn-sm btn-primary" style={{ flex: 1, fontSize: 12 }} onClick={doMove}>ยืนยันเลื่อนนัด</button>
+              <button className="btn btn-sm" style={{ fontSize: 12 }} onClick={() => setMoving(false)}>ย้อนกลับ</button>
+            </div>
+            <div style={{ fontSize: 11, color: 'var(--ink-faint)' }}>นัดจะย้ายไปวันใหม่ · SMS เตือนส่งใหม่ของวันใหม่อัตโนมัติ</div>
+          </>)}
+        </div>
+      ) : null}
+    </>
+  );
+}
+
 // สัตว์บ้านเดียวกัน = เบอร์โทรเดียวกัน (ถ้ามี) ไม่งั้นใช้ชื่อเจ้าของ — เหมือนการจัดกลุ่มในหน้ารับเคส
 function householdOf(pet, pets) {
   if (!pet || !pet.owner) return [];
@@ -3510,6 +3601,21 @@ function Dashboard({ pets, queue, appointments, admitted, receipts = [], loading
             </button>
             <button className="btn btn-sm" style={{ padding: '2px 9px', fontSize: 15, lineHeight: 1 }} title="วันถัดไป" onClick={() => shiftApptDay(1)}>›</button>
           </div>
+          {/* สรุปงานโทรของวันที่เลือก (เฉพาะวันนี้/อนาคต) — ต้องโทรซ้ำ = ไม่รับสาย */}
+          {apptDay >= todayStr ? (() => {
+            const open = dayAppts.filter((a) => (a.status === 'scheduled' || a.status === 'arrived') && !a.deceased);
+            if (!open.length) return null;
+            const ok = open.filter((a) => ['confirmed', 'rescheduled', 'called'].includes(apptCallState(a))).length;
+            const retry = open.filter((a) => apptCallState(a) === 'noanswer').length;
+            const none = open.length - ok - retry;
+            return (
+              <div className="call-summary">
+                <span title="คุยแล้ว ยืนยัน/เลื่อน">✅ {ok}</span>
+                <span className={retry ? 'retry' : ''} title="ไม่รับสาย ต้องโทรซ้ำ">📵 โทรซ้ำ {retry}</span>
+                <span title="ยังไม่ได้โทร">☐ ยังไม่โทร {none}</span>
+              </div>
+            );
+          })() : null}
           <div style={{ padding: '10px 8px', display: 'flex', flexDirection: 'column', gap: 7, maxHeight: 540, overflowY: 'auto' }}>
             {dayAppts.length === 0 ?
             <div className="queue-empty" style={{ background: 'transparent', border: '1.5px dashed #B0B8E0', fontSize: 12.5 }}>{apptDay === todayStr ? 'ไม่มีนัดวันนี้' : `ไม่มีนัดวันที่ ${typeof dateTHShort !== 'undefined' ? dateTHShort(apptDay) : apptDay}`}</div> :
@@ -3575,15 +3681,11 @@ function Dashboard({ pets, queue, appointments, admitted, receipts = [], loading
                   <div style={{ fontSize: 12, color: 'var(--powder-deep)', marginTop: 5, fontWeight: 600, textAlign: 'center' }}>อยู่ในคิวแล้ว</div> :
                   null}
                   {/* ส่ง SMS + แก้ไขนัด — ลิงก์กับหน้านัดหมาย/OPD */}
-                  <div style={{ display: 'flex', gap: 5, marginTop: 6 }}>
+                  <div style={{ display: 'flex', gap: 5, marginTop: 6, flexWrap: 'wrap' }}>
                     {/* ติ๊ก "โทรแล้ว" — เช็คลิสต์ของเวชระเบียน (ไม่ใช้วัดผล · ผลวัดจากการมาจริง) */}
-                    {!closed ? (
-                      <button className={'btn btn-sm appt-call' + (a.calledAt ? ' on' : '')} style={{ flexShrink: 0, fontSize: 11.5 }}
-                        title={a.calledAt ? `โทรแล้ว ${a.calledAt} · กดเพื่อยกเลิกติ๊ก` : 'กดเมื่อโทรนัดแล้ว'}
-                        onClick={() => onUpdateAppointment && onUpdateAppointment({ ...a, calledAt: a.calledAt ? null : `${todayISO()} ${typeof timeNow !== 'undefined' ? timeNow() : ''}`.trim() })}>
-                        {a.calledAt ? '☑ โทรแล้ว' : '☐ โทร'}
-                      </button>
-                    ) : a.calledAt ? <span className="chip" style={{ fontSize: 10.5, color: 'var(--ink-faint)', alignSelf: 'center' }}>📞 โทรแล้ว</span> : null}
+                    {!closed && onUpdateAppointment ? (
+                      <ApptCallControl a={a} onUpdate={onUpdateAppointment} todayStr={todayStr} />
+                    ) : apptCallState(a) ? <span className="chip" style={{ fontSize: 10.5, color: 'var(--ink-faint)', alignSelf: 'center' }}>{CALL_LABEL[apptCallState(a)].text.replace(' · โทรใหม่', '')}</span> : null}
                     {!closed && typeof SmsComposerModal !== 'undefined' ? (
                       <button className="btn btn-sm" style={{ flex: 1, fontSize: 11.5,
                         ...(a.reminderSent ? { color: 'var(--mint-deep)', borderColor: 'var(--mint-deep)', background: 'var(--mint-soft)', fontWeight: 700 } : {}) }}
@@ -8278,6 +8380,9 @@ const ST_LABEL = { ontime: '✓ มาตามนัด', late: '⏱ มาช�
 function _weekStart(iso) { const [y, m, d] = iso.split('-').map(Number); const dt = new Date(y, m - 1, d); const wd = (dt.getDay() + 6) % 7; dt.setDate(dt.getDate() - wd); return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`; }
 function _isoPlus(iso, n) { const [y, m, d] = iso.split('-').map(Number); const dt = new Date(y, m - 1, d + n); return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`; }
 const _calledBefore = (a) => !!a.calledAt && String(a.calledAt).slice(0, 10) <= a.date;
+// ผลการโทรล่าสุดของนัด (ตรงกับ apptCallState ในหน้าหลัก) — ติ๊กแบบเดิม (calledAt) = คุยแล้ว/ยืนยัน
+const _callState = (a) => (a ? (a.callResult || (a.calledAt ? 'called' : null)) : null);
+const CALL_TXT = { confirmed: '✅ ยืนยัน', rescheduled: '📅 เลื่อน', noanswer: '📵 ไม่รับสาย', called: '☑ โทรแล้ว' };
 
 // แผนภูมิแท่งซ้อน (มาตามนัด / มาช้า / ไม่มา) + ตัวเลข % มาตามนัดบนแท่ง + tooltip ตอนชี้ + เส้นวันเริ่มเวชระเบียน
 function ApptStackBars({ buckets, selectedKey, onPick, markerKey }) {
@@ -8383,10 +8488,13 @@ function ApptOutcomeReport({ appointments, todayStr, staffStart, onSaveStaffStar
     const from = _isoPlus(staffStart, -90);
     return { before: apptStats(all.filter((a) => a.date >= from && a.date < staffStart), todayStr), after: apptStats(all.filter((a) => a.date >= staffStart), todayStr) };
   }, [all, staffStart, todayStr]);
-  // ข้อมูลประกอบ: นัดที่ติ๊กโทรไว้ก่อนวันนัด vs ไม่ได้ติ๊ก (เดือนที่เลือก)
+  // ผลการโทร → มาจริงไหม (เดือนที่เลือก · นัดที่ตัดสินแล้ว) — แยกตามผลการโทรล่าสุด
   const callFx = useMemo(() => {
     const judged = inMonth.filter((a) => a.date < todayStr && (a.status === 'done' || a.status === 'missed'));
-    return { called: apptStats(judged.filter(_calledBefore), todayStr), not: apptStats(judged.filter((a) => !_calledBefore(a)), todayStr) };
+    const g = (k) => apptStats(judged.filter((a) => _callState(a) === k), todayStr);
+    const out = { confirmed: g('confirmed'), rescheduled: g('rescheduled'), noanswer: g('noanswer'), called: g('called'), none: apptStats(judged.filter((a) => !_callState(a)), todayStr) };
+    out.reached = out.confirmed.judged + out.rescheduled.judged + out.called.judged;
+    return out;
   }, [inMonth, todayStr]);
   // มาช้ากี่วัน (เดือนที่เลือก)
   const lateDist = useMemo(() => {
@@ -8400,7 +8508,9 @@ function ApptOutcomeReport({ appointments, todayStr, staffStart, onSaveStaffStar
     for (let i = 0; i < 7; i++) {
       const d = _isoPlus(todayStr, i);
       const l = all.filter((a) => a.date === d && (a.status === 'scheduled' || a.status === 'arrived'));
-      out.push({ d, n: l.length, called: l.filter((a) => a.calledAt).length });
+      const ok = l.filter((a) => ['confirmed', 'rescheduled', 'called'].includes(_callState(a))).length;
+      const retry = l.filter((a) => _callState(a) === 'noanswer').length;
+      out.push({ d, n: l.length, called: ok, retry });
     }
     return out;
   }, [all, todayStr]);
@@ -8450,7 +8560,7 @@ function ApptOutcomeReport({ appointments, todayStr, staffStart, onSaveStaffStar
             {tile('⏱ มาช้า (≤7 วัน)', st.late, `${pct(st.late)}%`, ST_COL.late)}
             {tile('✕ ไม่มา', st.missed, `${pct(st.missed)}%`, ST_COL.missed)}
             {tile('📅 เลื่อนนัด', st.moved, st.moved ? `มาตามนัด ${st.movedCame}${st.movedLate ? ` · เลื่อนกระชั้น ${st.movedLate}` : ''}` : '', 'var(--powder-deep)')}
-            {tile('📞 ติ๊กโทรแล้ว', st.called, `จาก ${st.judged} นัด`, 'var(--line)')}
+            {tile('📞 โทรถึงตัว', callFx.reached, `ไม่รับสาย ${callFx.noanswer.judged} · ไม่ได้โทร ${callFx.none.judged}`, 'var(--navy)')}
           </div>
           {st.pending ? <div style={{ fontSize: 12, color: 'var(--ink-faint)' }}>ยังรอผลอีก {st.pending} นัด (ยังไม่ถึงวัน/วันนี้) — ระบบตัดสินให้อัตโนมัติวันถัดไป</div> : null}
         </>)}
@@ -8501,11 +8611,14 @@ function ApptOutcomeReport({ appointments, todayStr, staffStart, onSaveStaffStar
 
         {/* ── ข้อมูลประกอบ 3 ส่วน ── */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 14 }}>
-          {section('📞 โทรแล้ว vs ไม่ได้โทร (เดือนนี้ · ข้อมูลประกอบ)', (
+          {section('📞 ผลการโทร → มาตามนัดจริงไหม (เดือนนี้)', (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-              <HBar label={`ติ๊กโทรก่อนวันนัด (${callFx.called.judged})`} pct={callFx.called.rate} color={ST_COL.ontime} />
-              <HBar label={`ไม่ได้ติ๊ก (${callFx.not.judged})`} pct={callFx.not.rate} color="var(--ink-faint)" />
-              <div style={{ fontSize: 11.5, color: 'var(--ink-faint)' }}>% = มาตามนัด · ใช้ดูว่าการโทรช่วยให้มาตรงขึ้นไหม (ไม่ใช่ตัวตัดสินผล)</div>
+              <HBar label={`✅ ยืนยันมา (${callFx.confirmed.judged})`} pct={callFx.confirmed.rate} color={ST_COL.ontime} />
+              <HBar label={`📅 เลื่อนตอนโทร (${callFx.rescheduled.judged})`} pct={callFx.rescheduled.rate} color="var(--powder-deep)" />
+              <HBar label={`📵 ไม่รับสาย (${callFx.noanswer.judged})`} pct={callFx.noanswer.rate} color={ST_COL.missed} />
+              {callFx.called.judged ? <HBar label={`☑ โทรแล้ว·แบบเดิม (${callFx.called.judged})`} pct={callFx.called.rate} color="var(--navy)" /> : null}
+              <HBar label={`☐ ไม่ได้โทร (${callFx.none.judged})`} pct={callFx.none.rate} color="var(--ink-faint)" />
+              <div style={{ fontSize: 11.5, color: 'var(--ink-faint)' }}>% = มาตามนัด (วัดจากการมาจริง) · เลื่อนตอนโทร = วัดกับวันใหม่</div>
             </div>
           ))}
           {section('⏱ มาช้ากี่วัน (เดือนนี้)', (
@@ -8524,13 +8637,14 @@ function ApptOutcomeReport({ appointments, todayStr, staffStart, onSaveStaffStar
               {upcoming.map((u, i) => (
                 <div key={u.d} style={{ display: 'grid', gridTemplateColumns: '78px 1fr 60px', gap: 6, alignItems: 'center', fontSize: 12 }}>
                   <span style={{ color: i === 1 ? 'var(--blush-deep)' : 'var(--ink-soft)', fontWeight: i <= 1 ? 800 : 500 }}>{i === 0 ? 'วันนี้' : i === 1 ? 'พรุ่งนี้' : dateTHShort(u.d).replace(/ \d{4}$/, '')}</span>
-                  <div style={{ height: 12, background: 'var(--paper)', borderRadius: 4, overflow: 'hidden', width: `${Math.max(8, u.n / maxUp * 100)}%` }} title={`${u.n} นัด · โทรแล้ว ${u.called}`}>
-                    <div style={{ width: u.n ? `${u.called / u.n * 100}%` : 0, height: '100%', background: 'var(--navy)' }} />
+                  <div style={{ height: 12, background: 'var(--paper)', borderRadius: 4, overflow: 'hidden', display: 'flex', gap: 1, width: `${Math.max(8, u.n / maxUp * 100)}%` }} title={`${u.n} นัด · คุยแล้ว ${u.called} · ไม่รับสาย ${u.retry} · ยังไม่โทร ${u.n - u.called - u.retry}`}>
+                    <div style={{ width: u.n ? `${u.called / u.n * 100}%` : 0, height: '100%', background: ST_COL.ontime }} />
+                    <div style={{ width: u.n ? `${u.retry / u.n * 100}%` : 0, height: '100%', background: ST_COL.missed }} />
                   </div>
-                  <span style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: 'var(--ink-soft)' }}>{u.called}/{u.n}</span>
+                  <span style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: u.retry ? ST_COL.missed : 'var(--ink-soft)', fontWeight: u.retry ? 800 : 500 }}>{u.called}/{u.n}{u.retry ? ` · 📵${u.retry}` : ''}</span>
                 </div>
               ))}
-              <div style={{ fontSize: 11.5, color: 'var(--ink-faint)' }}>แท่งเข้ม = ติ๊กโทรแล้ว · ทั้งแท่ง = นัดทั้งหมดของวัน</div>
+              <div style={{ fontSize: 11.5, color: 'var(--ink-faint)' }}>เขียว = คุยแล้ว (ยืนยัน/เลื่อน) · แดง = ไม่รับสาย ต้องโทรซ้ำ · เทา = ยังไม่โทร</div>
             </div>
           ))}
         </div>
@@ -8556,11 +8670,11 @@ function ApptOutcomeReport({ appointments, todayStr, staffStart, onSaveStaffStar
             <button className="btn btn-sm" onClick={() => setShowMissed((v) => !v)}>{showMissed ? '▴' : '▾'} รายชื่อที่ไม่มาตามนัด ({missedList.length})</button>
             {showMissed ? (
               <table className="tbl" style={{ fontSize: 12.5, marginTop: 8 }}>
-                <thead><tr><th>วันนัด</th><th>สัตว์</th><th>เจ้าของ / เบอร์</th><th>ประเภท</th><th>โทรแล้ว</th></tr></thead>
+                <thead><tr><th>วันนัด</th><th>สัตว์</th><th>เจ้าของ / เบอร์</th><th>ประเภท</th><th>ผลการโทร</th></tr></thead>
                 <tbody>
                   {missedList.map((a) => (
                     <tr key={a.id}><td>{dateTHShort(a.date)}</td><td><b>{a.petName}</b> <span style={{ color: 'var(--ink-faint)' }}>HN {a.hn}</span></td>
-                      <td>{a.ownerName} · {a.phone}</td><td>{a.type}</td><td>{a.calledAt ? '☑' : '—'}</td></tr>
+                      <td>{a.ownerName} · {a.phone}</td><td>{a.type}</td><td>{_callState(a) ? CALL_TXT[_callState(a)] + (a.noAnswerCount > 1 && _callState(a) === 'noanswer' ? ` ×${a.noAnswerCount}` : '') : '—'}</td></tr>
                   ))}
                 </tbody>
               </table>
@@ -8598,7 +8712,8 @@ function ApptCard({ appt, onUpdate, onEdit, onOpenPet, onSendSms, onDelete }) {
           {appt.time ? <span style={{ fontWeight: 800, fontSize: 16, fontVariantNumeric: 'tabular-nums' }}>{appt.time}</span> : null}
           {(() => { const o = apptOutcome(appt); return o ? <span className={`chip ${o.cls}`} style={{ fontSize: 11 }}>{o.label}</span>
             : <span className={`chip ${statusCls[appt.status] || ''}`} style={{ fontSize: 11 }}>{statusLabel[appt.status] || 'นัด'}</span>; })()}
-          {appt.calledAt ? <span className="chip" style={{ fontSize: 10.5, color: 'var(--ink-faint)' }} title={`โทรแล้ว ${appt.calledAt}`}>📞 โทรแล้ว</span> : null}
+          {_callState(appt) ? <span className={'chip' + (_callState(appt) === 'noanswer' ? ' chip-blush' : '')} style={{ fontSize: 10.5, ...(_callState(appt) === 'noanswer' ? {} : { color: 'var(--ink-faint)' }) }}
+            title={(appt.callLog || []).map((c) => `${c.at} ${c.result}`).join('\n') || `โทรแล้ว ${appt.calledAt}`}>{CALL_TXT[_callState(appt)]}{_callState(appt) === 'noanswer' ? ' · โทรใหม่' : ''}</span> : null}
         </div>
       </div>
       <div style={{ display: 'flex', gap: 6, marginTop: 8, flexWrap: 'wrap', alignItems: 'center' }}>
@@ -10787,6 +10902,8 @@ function App() {
       if ((a.status === 'done' || a.status === 'missed') && appt.date && appt.date !== a.date) next.date = a.date;
       if (appt.date && a.date && appt.date !== a.date && (a.status === 'scheduled' || a.status === 'arrived')) {
         next.reschedules = [...(a.reschedules || []), { from: a.date, to: appt.date, at: todayISO() }];
+        // เลื่อนวัน → SMS ที่เคยส่งเป็นวันเก่า ต้องส่งใหม่ของวันใหม่ (ล้างตรงนี้ เพราะ {...a, ...appt} จะคงค่าเก่าไว้ถ้าฝั่งเรียกแค่ลบ key)
+        next.reminderSent = false; next.reminderSentAt = null; next.reminderVia = null;
       }
       if (next.status === 'arrived' && a.status !== 'arrived' && !next.arrivedAt) next.arrivedAt = todayISO();
       if (next.status === 'scheduled' && a.status === 'arrived') next.arrivedAt = null;

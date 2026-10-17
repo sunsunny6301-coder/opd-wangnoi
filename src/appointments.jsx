@@ -571,6 +571,9 @@ const ST_LABEL = { ontime: '✓ มาตามนัด', late: '⏱ มาช�
 function _weekStart(iso) { const [y, m, d] = iso.split('-').map(Number); const dt = new Date(y, m - 1, d); const wd = (dt.getDay() + 6) % 7; dt.setDate(dt.getDate() - wd); return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`; }
 function _isoPlus(iso, n) { const [y, m, d] = iso.split('-').map(Number); const dt = new Date(y, m - 1, d + n); return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`; }
 const _calledBefore = (a) => !!a.calledAt && String(a.calledAt).slice(0, 10) <= a.date;
+// ผลการโทรล่าสุดของนัด (ตรงกับ apptCallState ในหน้าหลัก) — ติ๊กแบบเดิม (calledAt) = คุยแล้ว/ยืนยัน
+const _callState = (a) => (a ? (a.callResult || (a.calledAt ? 'called' : null)) : null);
+const CALL_TXT = { confirmed: '✅ ยืนยัน', rescheduled: '📅 เลื่อน', noanswer: '📵 ไม่รับสาย', called: '☑ โทรแล้ว' };
 
 // แผนภูมิแท่งซ้อน (มาตามนัด / มาช้า / ไม่มา) + ตัวเลข % มาตามนัดบนแท่ง + tooltip ตอนชี้ + เส้นวันเริ่มเวชระเบียน
 function ApptStackBars({ buckets, selectedKey, onPick, markerKey }) {
@@ -676,10 +679,13 @@ function ApptOutcomeReport({ appointments, todayStr, staffStart, onSaveStaffStar
     const from = _isoPlus(staffStart, -90);
     return { before: apptStats(all.filter((a) => a.date >= from && a.date < staffStart), todayStr), after: apptStats(all.filter((a) => a.date >= staffStart), todayStr) };
   }, [all, staffStart, todayStr]);
-  // ข้อมูลประกอบ: นัดที่ติ๊กโทรไว้ก่อนวันนัด vs ไม่ได้ติ๊ก (เดือนที่เลือก)
+  // ผลการโทร → มาจริงไหม (เดือนที่เลือก · นัดที่ตัดสินแล้ว) — แยกตามผลการโทรล่าสุด
   const callFx = useMemo(() => {
     const judged = inMonth.filter((a) => a.date < todayStr && (a.status === 'done' || a.status === 'missed'));
-    return { called: apptStats(judged.filter(_calledBefore), todayStr), not: apptStats(judged.filter((a) => !_calledBefore(a)), todayStr) };
+    const g = (k) => apptStats(judged.filter((a) => _callState(a) === k), todayStr);
+    const out = { confirmed: g('confirmed'), rescheduled: g('rescheduled'), noanswer: g('noanswer'), called: g('called'), none: apptStats(judged.filter((a) => !_callState(a)), todayStr) };
+    out.reached = out.confirmed.judged + out.rescheduled.judged + out.called.judged;
+    return out;
   }, [inMonth, todayStr]);
   // มาช้ากี่วัน (เดือนที่เลือก)
   const lateDist = useMemo(() => {
@@ -693,7 +699,9 @@ function ApptOutcomeReport({ appointments, todayStr, staffStart, onSaveStaffStar
     for (let i = 0; i < 7; i++) {
       const d = _isoPlus(todayStr, i);
       const l = all.filter((a) => a.date === d && (a.status === 'scheduled' || a.status === 'arrived'));
-      out.push({ d, n: l.length, called: l.filter((a) => a.calledAt).length });
+      const ok = l.filter((a) => ['confirmed', 'rescheduled', 'called'].includes(_callState(a))).length;
+      const retry = l.filter((a) => _callState(a) === 'noanswer').length;
+      out.push({ d, n: l.length, called: ok, retry });
     }
     return out;
   }, [all, todayStr]);
@@ -743,7 +751,7 @@ function ApptOutcomeReport({ appointments, todayStr, staffStart, onSaveStaffStar
             {tile('⏱ มาช้า (≤7 วัน)', st.late, `${pct(st.late)}%`, ST_COL.late)}
             {tile('✕ ไม่มา', st.missed, `${pct(st.missed)}%`, ST_COL.missed)}
             {tile('📅 เลื่อนนัด', st.moved, st.moved ? `มาตามนัด ${st.movedCame}${st.movedLate ? ` · เลื่อนกระชั้น ${st.movedLate}` : ''}` : '', 'var(--powder-deep)')}
-            {tile('📞 ติ๊กโทรแล้ว', st.called, `จาก ${st.judged} นัด`, 'var(--line)')}
+            {tile('📞 โทรถึงตัว', callFx.reached, `ไม่รับสาย ${callFx.noanswer.judged} · ไม่ได้โทร ${callFx.none.judged}`, 'var(--navy)')}
           </div>
           {st.pending ? <div style={{ fontSize: 12, color: 'var(--ink-faint)' }}>ยังรอผลอีก {st.pending} นัด (ยังไม่ถึงวัน/วันนี้) — ระบบตัดสินให้อัตโนมัติวันถัดไป</div> : null}
         </>)}
@@ -794,11 +802,14 @@ function ApptOutcomeReport({ appointments, todayStr, staffStart, onSaveStaffStar
 
         {/* ── ข้อมูลประกอบ 3 ส่วน ── */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 14 }}>
-          {section('📞 โทรแล้ว vs ไม่ได้โทร (เดือนนี้ · ข้อมูลประกอบ)', (
+          {section('📞 ผลการโทร → มาตามนัดจริงไหม (เดือนนี้)', (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-              <HBar label={`ติ๊กโทรก่อนวันนัด (${callFx.called.judged})`} pct={callFx.called.rate} color={ST_COL.ontime} />
-              <HBar label={`ไม่ได้ติ๊ก (${callFx.not.judged})`} pct={callFx.not.rate} color="var(--ink-faint)" />
-              <div style={{ fontSize: 11.5, color: 'var(--ink-faint)' }}>% = มาตามนัด · ใช้ดูว่าการโทรช่วยให้มาตรงขึ้นไหม (ไม่ใช่ตัวตัดสินผล)</div>
+              <HBar label={`✅ ยืนยันมา (${callFx.confirmed.judged})`} pct={callFx.confirmed.rate} color={ST_COL.ontime} />
+              <HBar label={`📅 เลื่อนตอนโทร (${callFx.rescheduled.judged})`} pct={callFx.rescheduled.rate} color="var(--powder-deep)" />
+              <HBar label={`📵 ไม่รับสาย (${callFx.noanswer.judged})`} pct={callFx.noanswer.rate} color={ST_COL.missed} />
+              {callFx.called.judged ? <HBar label={`☑ โทรแล้ว·แบบเดิม (${callFx.called.judged})`} pct={callFx.called.rate} color="var(--navy)" /> : null}
+              <HBar label={`☐ ไม่ได้โทร (${callFx.none.judged})`} pct={callFx.none.rate} color="var(--ink-faint)" />
+              <div style={{ fontSize: 11.5, color: 'var(--ink-faint)' }}>% = มาตามนัด (วัดจากการมาจริง) · เลื่อนตอนโทร = วัดกับวันใหม่</div>
             </div>
           ))}
           {section('⏱ มาช้ากี่วัน (เดือนนี้)', (
@@ -817,13 +828,14 @@ function ApptOutcomeReport({ appointments, todayStr, staffStart, onSaveStaffStar
               {upcoming.map((u, i) => (
                 <div key={u.d} style={{ display: 'grid', gridTemplateColumns: '78px 1fr 60px', gap: 6, alignItems: 'center', fontSize: 12 }}>
                   <span style={{ color: i === 1 ? 'var(--blush-deep)' : 'var(--ink-soft)', fontWeight: i <= 1 ? 800 : 500 }}>{i === 0 ? 'วันนี้' : i === 1 ? 'พรุ่งนี้' : dateTHShort(u.d).replace(/ \d{4}$/, '')}</span>
-                  <div style={{ height: 12, background: 'var(--paper)', borderRadius: 4, overflow: 'hidden', width: `${Math.max(8, u.n / maxUp * 100)}%` }} title={`${u.n} นัด · โทรแล้ว ${u.called}`}>
-                    <div style={{ width: u.n ? `${u.called / u.n * 100}%` : 0, height: '100%', background: 'var(--navy)' }} />
+                  <div style={{ height: 12, background: 'var(--paper)', borderRadius: 4, overflow: 'hidden', display: 'flex', gap: 1, width: `${Math.max(8, u.n / maxUp * 100)}%` }} title={`${u.n} นัด · คุยแล้ว ${u.called} · ไม่รับสาย ${u.retry} · ยังไม่โทร ${u.n - u.called - u.retry}`}>
+                    <div style={{ width: u.n ? `${u.called / u.n * 100}%` : 0, height: '100%', background: ST_COL.ontime }} />
+                    <div style={{ width: u.n ? `${u.retry / u.n * 100}%` : 0, height: '100%', background: ST_COL.missed }} />
                   </div>
-                  <span style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: 'var(--ink-soft)' }}>{u.called}/{u.n}</span>
+                  <span style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: u.retry ? ST_COL.missed : 'var(--ink-soft)', fontWeight: u.retry ? 800 : 500 }}>{u.called}/{u.n}{u.retry ? ` · 📵${u.retry}` : ''}</span>
                 </div>
               ))}
-              <div style={{ fontSize: 11.5, color: 'var(--ink-faint)' }}>แท่งเข้ม = ติ๊กโทรแล้ว · ทั้งแท่ง = นัดทั้งหมดของวัน</div>
+              <div style={{ fontSize: 11.5, color: 'var(--ink-faint)' }}>เขียว = คุยแล้ว (ยืนยัน/เลื่อน) · แดง = ไม่รับสาย ต้องโทรซ้ำ · เทา = ยังไม่โทร</div>
             </div>
           ))}
         </div>
@@ -849,11 +861,11 @@ function ApptOutcomeReport({ appointments, todayStr, staffStart, onSaveStaffStar
             <button className="btn btn-sm" onClick={() => setShowMissed((v) => !v)}>{showMissed ? '▴' : '▾'} รายชื่อที่ไม่มาตามนัด ({missedList.length})</button>
             {showMissed ? (
               <table className="tbl" style={{ fontSize: 12.5, marginTop: 8 }}>
-                <thead><tr><th>วันนัด</th><th>สัตว์</th><th>เจ้าของ / เบอร์</th><th>ประเภท</th><th>โทรแล้ว</th></tr></thead>
+                <thead><tr><th>วันนัด</th><th>สัตว์</th><th>เจ้าของ / เบอร์</th><th>ประเภท</th><th>ผลการโทร</th></tr></thead>
                 <tbody>
                   {missedList.map((a) => (
                     <tr key={a.id}><td>{dateTHShort(a.date)}</td><td><b>{a.petName}</b> <span style={{ color: 'var(--ink-faint)' }}>HN {a.hn}</span></td>
-                      <td>{a.ownerName} · {a.phone}</td><td>{a.type}</td><td>{a.calledAt ? '☑' : '—'}</td></tr>
+                      <td>{a.ownerName} · {a.phone}</td><td>{a.type}</td><td>{_callState(a) ? CALL_TXT[_callState(a)] + (a.noAnswerCount > 1 && _callState(a) === 'noanswer' ? ` ×${a.noAnswerCount}` : '') : '—'}</td></tr>
                   ))}
                 </tbody>
               </table>
@@ -891,7 +903,8 @@ function ApptCard({ appt, onUpdate, onEdit, onOpenPet, onSendSms, onDelete }) {
           {appt.time ? <span style={{ fontWeight: 800, fontSize: 16, fontVariantNumeric: 'tabular-nums' }}>{appt.time}</span> : null}
           {(() => { const o = apptOutcome(appt); return o ? <span className={`chip ${o.cls}`} style={{ fontSize: 11 }}>{o.label}</span>
             : <span className={`chip ${statusCls[appt.status] || ''}`} style={{ fontSize: 11 }}>{statusLabel[appt.status] || 'นัด'}</span>; })()}
-          {appt.calledAt ? <span className="chip" style={{ fontSize: 10.5, color: 'var(--ink-faint)' }} title={`โทรแล้ว ${appt.calledAt}`}>📞 โทรแล้ว</span> : null}
+          {_callState(appt) ? <span className={'chip' + (_callState(appt) === 'noanswer' ? ' chip-blush' : '')} style={{ fontSize: 10.5, ...(_callState(appt) === 'noanswer' ? {} : { color: 'var(--ink-faint)' }) }}
+            title={(appt.callLog || []).map((c) => `${c.at} ${c.result}`).join('\n') || `โทรแล้ว ${appt.calledAt}`}>{CALL_TXT[_callState(appt)]}{_callState(appt) === 'noanswer' ? ' · โทรใหม่' : ''}</span> : null}
         </div>
       </div>
       <div style={{ display: 'flex', gap: 6, marginTop: 8, flexWrap: 'wrap', alignItems: 'center' }}>

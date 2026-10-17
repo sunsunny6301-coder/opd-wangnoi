@@ -379,6 +379,82 @@ function WalkInModal({ pets, onClose, onSubmit, prefillHn, prefillOwner }) {
   );
 }
 
+// ── ผลการโทรนัด (แผงนัดหน้าหลัก) ──
+// กด "โทร" → เลือกผล: ✅ ยืนยันมาตามนัด · 📅 เลื่อนนัด (เลือกวันใหม่ได้ทันที) · 📵 ไม่รับสาย (ขึ้นแดงเตือนให้โทรใหม่)
+// เก็บที่นัด: callResult (ผลล่าสุด) · calledAt (คุยกับลูกค้าได้แล้วเมื่อไหร่) · noAnswerCount · callLog [{ at, result, from?, to? }]
+// ผลจริงยังวัดจาก "การมาจริง" — ข้อมูลนี้ใช้ติดตามงานโทร/รายงานเชื่อมโยง (เลื่อนแล้วมาไหม ยืนยันแล้วมาไหม)
+function apptCallState(a) {
+  if (!a) return null;
+  if (a.callResult) return a.callResult;
+  return a.calledAt ? 'called' : null;   // ติ๊ก "โทรแล้ว" แบบเดิม (ก่อนมีตัวเลือก) = โทรแล้ว ไม่รู้ผล
+}
+const CALL_LABEL = {
+  confirmed: { text: '✅ ยืนยันแล้ว', cls: 'is-ok' },
+  called: { text: '☑ โทรแล้ว', cls: 'is-ok' },
+  rescheduled: { text: '📅 เลื่อนแล้ว', cls: 'is-moved' },
+  noanswer: { text: '📵 ไม่รับ · โทรใหม่', cls: 'is-retry' },
+};
+function ApptCallControl({ a, onUpdate, todayStr }) {
+  const [open, setOpen] = useState(false);
+  const [moving, setMoving] = useState(false);
+  const [newDate, setNewDate] = useState('');
+  const [err, setErr] = useState('');
+  const st = apptCallState(a);
+  const stamp = () => `${todayISO()} ${typeof timeNow !== 'undefined' ? timeNow() : ''}`.trim();
+  const close = () => { setOpen(false); setMoving(false); setErr(''); };
+  const record = (result, patch) => {
+    const at = stamp();
+    const entry = { at, result, ...(patch && patch.date && patch.date !== a.date ? { from: a.date, to: patch.date } : {}) };
+    onUpdate({
+      ...a, ...(patch || {}),
+      callResult: result,
+      calledAt: result === 'noanswer' ? (a.calledAt || null) : at,
+      noAnswerCount: result === 'noanswer' ? (Number(a.noAnswerCount) || 0) + 1 : (Number(a.noAnswerCount) || 0),
+      callLog: [...(a.callLog || []), entry],
+    });
+    close();
+  };
+  const doMove = () => {
+    if (!newDate) { setErr('เลือกวันนัดใหม่ก่อน'); return; }
+    if (newDate < todayStr) { setErr('วันใหม่ต้องไม่ย้อนหลัง'); return; }
+    if (newDate === a.date) { setErr('วันใหม่ต้องไม่ใช่วันเดิม'); return; }
+    // SMS ที่ส่งไปเป็นวันเก่า → updateAppointment ล้างสถานะส่งแล้วให้เอง (ส่งใหม่ของวันใหม่)
+    record('rescheduled', { date: newDate, smsText: undefined });
+  };
+  const lab = st ? CALL_LABEL[st] : null;
+  const nTry = Number(a.noAnswerCount) || 0;
+  return (
+    <>
+      <button className={'btn btn-sm appt-call' + (lab ? ' ' + lab.cls : '')} style={{ flexShrink: 0, fontSize: 11.5 }}
+        title={a.callLog && a.callLog.length ? a.callLog.map((c) => `${c.at} · ${c.result === 'confirmed' ? 'ยืนยัน' : c.result === 'rescheduled' ? `เลื่อน ${c.from || ''}→${c.to || ''}` : c.result === 'noanswer' ? 'ไม่รับสาย' : 'ล้างสถานะ'}`).join('\n') : 'กดเพื่อบันทึกผลการโทร'}
+        onClick={() => { setOpen((v) => !v); setMoving(false); setErr(''); }}>
+        {lab ? (st === 'noanswer' && nTry > 1 ? `📵 ไม่รับ ×${nTry} · โทรใหม่` : lab.text) : '☐ โทร'}
+      </button>
+      {open ? (
+        <div className="call-menu" onClick={(e) => e.stopPropagation()}>
+          {!moving ? (<>
+            <button className="btn btn-sm call-opt ok" onClick={() => record('confirmed')}>✅ ยืนยันมาตามนัด</button>
+            <button className="btn btn-sm call-opt moved" onClick={() => { setMoving(true); setNewDate(''); }}>📅 เลื่อนนัด</button>
+            <button className="btn btn-sm call-opt retry" onClick={() => record('noanswer')}>📵 ไม่รับสาย{nTry ? ` (ครั้งที่ ${nTry + 1})` : ''}</button>
+            {st ? <button className="btn btn-sm" style={{ fontSize: 11, color: 'var(--ink-faint)' }}
+              onClick={() => { onUpdate({ ...a, callResult: null, calledAt: null, callLog: [...(a.callLog || []), { at: stamp(), result: 'cleared' }] }); close(); }}>ล้างสถานะ</button> : null}
+          </>) : (<>
+            <div style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--ink-soft)' }}>เลื่อนนัดไปวันไหน (เวลาเดิม {a.time || '-'})</div>
+            <input type="date" className="input" style={{ padding: '4px 8px', fontSize: 13 }} min={todayStr} value={newDate}
+              onChange={(e) => { setNewDate(e.target.value); setErr(''); }} />
+            {err ? <div style={{ fontSize: 11.5, color: 'var(--blush-deep)', fontWeight: 700 }}>{err}</div> : null}
+            <div style={{ display: 'flex', gap: 5 }}>
+              <button className="btn btn-sm btn-primary" style={{ flex: 1, fontSize: 12 }} onClick={doMove}>ยืนยันเลื่อนนัด</button>
+              <button className="btn btn-sm" style={{ fontSize: 12 }} onClick={() => setMoving(false)}>ย้อนกลับ</button>
+            </div>
+            <div style={{ fontSize: 11, color: 'var(--ink-faint)' }}>นัดจะย้ายไปวันใหม่ · SMS เตือนส่งใหม่ของวันใหม่อัตโนมัติ</div>
+          </>)}
+        </div>
+      ) : null}
+    </>
+  );
+}
+
 // สัตว์บ้านเดียวกัน = เบอร์โทรเดียวกัน (ถ้ามี) ไม่งั้นใช้ชื่อเจ้าของ — เหมือนการจัดกลุ่มในหน้ารับเคส
 function householdOf(pet, pets) {
   if (!pet || !pet.owner) return [];
@@ -1034,6 +1110,21 @@ function Dashboard({ pets, queue, appointments, admitted, receipts = [], loading
             </button>
             <button className="btn btn-sm" style={{ padding: '2px 9px', fontSize: 15, lineHeight: 1 }} title="วันถัดไป" onClick={() => shiftApptDay(1)}>›</button>
           </div>
+          {/* สรุปงานโทรของวันที่เลือก (เฉพาะวันนี้/อนาคต) — ต้องโทรซ้ำ = ไม่รับสาย */}
+          {apptDay >= todayStr ? (() => {
+            const open = dayAppts.filter((a) => (a.status === 'scheduled' || a.status === 'arrived') && !a.deceased);
+            if (!open.length) return null;
+            const ok = open.filter((a) => ['confirmed', 'rescheduled', 'called'].includes(apptCallState(a))).length;
+            const retry = open.filter((a) => apptCallState(a) === 'noanswer').length;
+            const none = open.length - ok - retry;
+            return (
+              <div className="call-summary">
+                <span title="คุยแล้ว ยืนยัน/เลื่อน">✅ {ok}</span>
+                <span className={retry ? 'retry' : ''} title="ไม่รับสาย ต้องโทรซ้ำ">📵 โทรซ้ำ {retry}</span>
+                <span title="ยังไม่ได้โทร">☐ ยังไม่โทร {none}</span>
+              </div>
+            );
+          })() : null}
           <div style={{ padding: '10px 8px', display: 'flex', flexDirection: 'column', gap: 7, maxHeight: 540, overflowY: 'auto' }}>
             {dayAppts.length === 0 ?
             <div className="queue-empty" style={{ background: 'transparent', border: '1.5px dashed #B0B8E0', fontSize: 12.5 }}>{apptDay === todayStr ? 'ไม่มีนัดวันนี้' : `ไม่มีนัดวันที่ ${typeof dateTHShort !== 'undefined' ? dateTHShort(apptDay) : apptDay}`}</div> :
@@ -1099,15 +1190,11 @@ function Dashboard({ pets, queue, appointments, admitted, receipts = [], loading
                   <div style={{ fontSize: 12, color: 'var(--powder-deep)', marginTop: 5, fontWeight: 600, textAlign: 'center' }}>อยู่ในคิวแล้ว</div> :
                   null}
                   {/* ส่ง SMS + แก้ไขนัด — ลิงก์กับหน้านัดหมาย/OPD */}
-                  <div style={{ display: 'flex', gap: 5, marginTop: 6 }}>
+                  <div style={{ display: 'flex', gap: 5, marginTop: 6, flexWrap: 'wrap' }}>
                     {/* ติ๊ก "โทรแล้ว" — เช็คลิสต์ของเวชระเบียน (ไม่ใช้วัดผล · ผลวัดจากการมาจริง) */}
-                    {!closed ? (
-                      <button className={'btn btn-sm appt-call' + (a.calledAt ? ' on' : '')} style={{ flexShrink: 0, fontSize: 11.5 }}
-                        title={a.calledAt ? `โทรแล้ว ${a.calledAt} · กดเพื่อยกเลิกติ๊ก` : 'กดเมื่อโทรนัดแล้ว'}
-                        onClick={() => onUpdateAppointment && onUpdateAppointment({ ...a, calledAt: a.calledAt ? null : `${todayISO()} ${typeof timeNow !== 'undefined' ? timeNow() : ''}`.trim() })}>
-                        {a.calledAt ? '☑ โทรแล้ว' : '☐ โทร'}
-                      </button>
-                    ) : a.calledAt ? <span className="chip" style={{ fontSize: 10.5, color: 'var(--ink-faint)', alignSelf: 'center' }}>📞 โทรแล้ว</span> : null}
+                    {!closed && onUpdateAppointment ? (
+                      <ApptCallControl a={a} onUpdate={onUpdateAppointment} todayStr={todayStr} />
+                    ) : apptCallState(a) ? <span className="chip" style={{ fontSize: 10.5, color: 'var(--ink-faint)', alignSelf: 'center' }}>{CALL_LABEL[apptCallState(a)].text.replace(' · โทรใหม่', '')}</span> : null}
                     {!closed && typeof SmsComposerModal !== 'undefined' ? (
                       <button className="btn btn-sm" style={{ flex: 1, fontSize: 11.5,
                         ...(a.reminderSent ? { color: 'var(--mint-deep)', borderColor: 'var(--mint-deep)', background: 'var(--mint-soft)', fontWeight: 700 } : {}) }}
