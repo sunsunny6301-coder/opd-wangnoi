@@ -1288,7 +1288,7 @@ function ApptFormModal({ pets, defaultDate, defaultPet, defaultType, editAppt, o
           return (
             <Field label="ส่ง SMS ไปเบอร์">
               <select className="select" value={list.some((x) => phoneDigits(x.phone) === cur) ? cur : ''}
-                onChange={(e) => { const x = list.find((y) => phoneDigits(y.phone) === e.target.value); if (x) setFClearSms({ phone: x.phone }); }}>
+                onChange={(e) => { const x = list.find((y) => phoneDigits(y.phone) === e.target.value); if (x) setF((prev) => ({ ...prev, phone: x.phone })); }}>
                 {list.some((x) => phoneDigits(x.phone) === cur) ? null : <option value="">{fmtPhone(f.phone) || '—'} (เบอร์ในนัดเดิม)</option>}
                 {list.map((x) => <option key={x.phone} value={phoneDigits(x.phone)}>{fmtPhone(x.phone)}{x.primary ? ' (เบอร์หลัก)' : x.label ? ` (${x.label})` : ''}</option>)}
               </select>

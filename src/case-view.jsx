@@ -855,6 +855,8 @@ function CaseView({ pet, queueItem, vets, assistants = [], services, stock, shop
                         <b>{dateTHShort(a.date)}</b>{a.time ? ` ${a.time}` : ''}
                         {isToday ? <span className="chip chip-blush" style={{ fontSize: 10, marginLeft: 5, textDecoration: 'none' }}>วันนี้</span> : null}
                         {' · '}{a.type}{a.note ? ` — ${a.note}` : ''}
+                        {(a.reschedules || []).length ? <span style={{ fontSize: 10.5, color: 'var(--powder-deep)', fontWeight: 700, marginLeft: 5, textDecoration: 'none' }}>(เลื่อนจาก {dateTHShort(a.reschedules[a.reschedules.length - 1].from)})</span> : null}
+                        {past && typeof apptOutcome !== 'undefined' && apptOutcome(a) ? <span style={{ fontSize: 10.5, marginLeft: 5, fontWeight: 700, textDecoration: 'none', display: 'inline-block' }}>{apptOutcome(a).label}</span> : null}
                       </span>
                     </div>
                   );
@@ -1357,6 +1359,8 @@ function CaseView({ pet, queueItem, vets, assistants = [], services, stock, shop
                       <span className="chip" style={{ fontSize: 11.5, background: (APPT_COLORS[a.type] || 'var(--line)') + '22', textDecoration: 'none' }}>{a.type}</span>
                       {a.note ? <span style={{ fontSize: 13, color: isPast ? 'var(--ink-faint)' : 'var(--ink-soft)' }}>{a.note}</span> : null}
                       {typeof ApptSmsStatus !== 'undefined' ? <span style={{ textDecoration: 'none' }}><ApptSmsStatus a={a} past={isPast} onToggle={() => onUpdateAppointment && onUpdateAppointment({ ...a, smsAuto: a.smsAuto === false })} /></span> : null}
+                      {(a.reschedules || []).length ? <span className="chip" style={{ fontSize: 10.5, color: 'var(--powder-deep)', textDecoration: 'none' }} title={(a.reschedules || []).map((r) => `${r.from} → ${r.to} (เลื่อนเมื่อ ${r.at})`).join('\n')}>📅 เลื่อนจาก {dateTHShort(a.reschedules[a.reschedules.length - 1].from)}</span> : null}
+                      {isPast && typeof apptOutcome !== 'undefined' && apptOutcome(a) ? <span className={'chip ' + apptOutcome(a).cls} style={{ fontSize: 10.5, textDecoration: 'none' }}>{apptOutcome(a).label}</span> : null}
                     </div>
                   </div>
                   {/* ปุ่มส่ง SMS + แก้ไข + ลบนัด — ลิงก์กับหน้านัดหมาย/หน้าหลัก (ลบที่นี่ = หายทั้ง 2 ที่) */}

@@ -4698,6 +4698,8 @@ function CaseView({ pet, queueItem, vets, assistants = [], services, stock, shop
                         <b>{dateTHShort(a.date)}</b>{a.time ? ` ${a.time}` : ''}
                         {isToday ? <span className="chip chip-blush" style={{ fontSize: 10, marginLeft: 5, textDecoration: 'none' }}>วันนี้</span> : null}
                         {' · '}{a.type}{a.note ? ` — ${a.note}` : ''}
+                        {(a.reschedules || []).length ? <span style={{ fontSize: 10.5, color: 'var(--powder-deep)', fontWeight: 700, marginLeft: 5, textDecoration: 'none' }}>(เลื่อนจาก {dateTHShort(a.reschedules[a.reschedules.length - 1].from)})</span> : null}
+                        {past && typeof apptOutcome !== 'undefined' && apptOutcome(a) ? <span style={{ fontSize: 10.5, marginLeft: 5, fontWeight: 700, textDecoration: 'none', display: 'inline-block' }}>{apptOutcome(a).label}</span> : null}
                       </span>
                     </div>
                   );
@@ -5200,6 +5202,8 @@ function CaseView({ pet, queueItem, vets, assistants = [], services, stock, shop
                       <span className="chip" style={{ fontSize: 11.5, background: (APPT_COLORS[a.type] || 'var(--line)') + '22', textDecoration: 'none' }}>{a.type}</span>
                       {a.note ? <span style={{ fontSize: 13, color: isPast ? 'var(--ink-faint)' : 'var(--ink-soft)' }}>{a.note}</span> : null}
                       {typeof ApptSmsStatus !== 'undefined' ? <span style={{ textDecoration: 'none' }}><ApptSmsStatus a={a} past={isPast} onToggle={() => onUpdateAppointment && onUpdateAppointment({ ...a, smsAuto: a.smsAuto === false })} /></span> : null}
+                      {(a.reschedules || []).length ? <span className="chip" style={{ fontSize: 10.5, color: 'var(--powder-deep)', textDecoration: 'none' }} title={(a.reschedules || []).map((r) => `${r.from} → ${r.to} (เลื่อนเมื่อ ${r.at})`).join('\n')}>📅 เลื่อนจาก {dateTHShort(a.reschedules[a.reschedules.length - 1].from)}</span> : null}
+                      {isPast && typeof apptOutcome !== 'undefined' && apptOutcome(a) ? <span className={'chip ' + apptOutcome(a).cls} style={{ fontSize: 10.5, textDecoration: 'none' }}>{apptOutcome(a).label}</span> : null}
                     </div>
                   </div>
                   {/* ปุ่มส่ง SMS + แก้ไข + ลบนัด — ลิงก์กับหน้านัดหมาย/หน้าหลัก (ลบที่นี่ = หายทั้ง 2 ที่) */}
@@ -9097,7 +9101,7 @@ function ApptFormModal({ pets, defaultDate, defaultPet, defaultType, editAppt, o
           return (
             <Field label="ส่ง SMS ไปเบอร์">
               <select className="select" value={list.some((x) => phoneDigits(x.phone) === cur) ? cur : ''}
-                onChange={(e) => { const x = list.find((y) => phoneDigits(y.phone) === e.target.value); if (x) setFClearSms({ phone: x.phone }); }}>
+                onChange={(e) => { const x = list.find((y) => phoneDigits(y.phone) === e.target.value); if (x) setF((prev) => ({ ...prev, phone: x.phone })); }}>
                 {list.some((x) => phoneDigits(x.phone) === cur) ? null : <option value="">{fmtPhone(f.phone) || '—'} (เบอร์ในนัดเดิม)</option>}
                 {list.map((x) => <option key={x.phone} value={phoneDigits(x.phone)}>{fmtPhone(x.phone)}{x.primary ? ' (เบอร์หลัก)' : x.label ? ` (${x.label})` : ''}</option>)}
               </select>
@@ -10904,6 +10908,15 @@ function App() {
         next.reschedules = [...(a.reschedules || []), { from: a.date, to: appt.date, at: todayISO() }];
         // เลื่อนวัน → SMS ที่เคยส่งเป็นวันเก่า ต้องส่งใหม่ของวันใหม่ (ล้างตรงนี้ เพราะ {...a, ...appt} จะคงค่าเก่าไว้ถ้าฝั่งเรียกแค่ลบ key)
         next.reminderSent = false; next.reminderSentAt = null; next.reminderVia = null;
+        // เลื่อนผ่านปุ่ม ✏️ แก้ไขนัด (ไม่ได้มาจากเมนูผลการโทร) → สถานะการโทรต้องตามด้วย = "เลื่อนแล้ว"
+        // (เลื่อนนัดคือได้คุย/ตกลงกับเจ้าของแล้ว) · เมนูผลการโทรจดบันทึกเองอยู่แล้ว จึงไม่จดซ้ำ
+        const callerLogged = (appt.callLog || []).length > (a.callLog || []).length;
+        if (!callerLogged) {
+          const at = `${todayISO()} ${timeNow()}`;
+          next.callResult = 'rescheduled';
+          next.calledAt = at;
+          next.callLog = [...(a.callLog || []), { at, result: 'rescheduled', from: a.date, to: appt.date, via: 'edit' }];
+        }
       }
       if (next.status === 'arrived' && a.status !== 'arrived' && !next.arrivedAt) next.arrivedAt = todayISO();
       if (next.status === 'scheduled' && a.status === 'arrived') next.arrivedAt = null;

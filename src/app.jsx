@@ -360,6 +360,15 @@ function App() {
         next.reschedules = [...(a.reschedules || []), { from: a.date, to: appt.date, at: todayISO() }];
         // เลื่อนวัน → SMS ที่เคยส่งเป็นวันเก่า ต้องส่งใหม่ของวันใหม่ (ล้างตรงนี้ เพราะ {...a, ...appt} จะคงค่าเก่าไว้ถ้าฝั่งเรียกแค่ลบ key)
         next.reminderSent = false; next.reminderSentAt = null; next.reminderVia = null;
+        // เลื่อนผ่านปุ่ม ✏️ แก้ไขนัด (ไม่ได้มาจากเมนูผลการโทร) → สถานะการโทรต้องตามด้วย = "เลื่อนแล้ว"
+        // (เลื่อนนัดคือได้คุย/ตกลงกับเจ้าของแล้ว) · เมนูผลการโทรจดบันทึกเองอยู่แล้ว จึงไม่จดซ้ำ
+        const callerLogged = (appt.callLog || []).length > (a.callLog || []).length;
+        if (!callerLogged) {
+          const at = `${todayISO()} ${timeNow()}`;
+          next.callResult = 'rescheduled';
+          next.calledAt = at;
+          next.callLog = [...(a.callLog || []), { at, result: 'rescheduled', from: a.date, to: appt.date, via: 'edit' }];
+        }
       }
       if (next.status === 'arrived' && a.status !== 'arrived' && !next.arrivedAt) next.arrivedAt = todayISO();
       if (next.status === 'scheduled' && a.status === 'arrived') next.arrivedAt = null;
