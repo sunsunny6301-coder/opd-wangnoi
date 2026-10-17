@@ -10906,8 +10906,12 @@ function App() {
       if ((a.status === 'done' || a.status === 'missed') && appt.date && appt.date !== a.date) next.date = a.date;
       if (appt.date && a.date && appt.date !== a.date && (a.status === 'scheduled' || a.status === 'arrived')) {
         next.reschedules = [...(a.reschedules || []), { from: a.date, to: appt.date, at: todayISO() }];
+        // มาแล้วแต่เลื่อน (เช่น มาวันนี้แต่หมอให้เลื่อนฉีดไปสัปดาห์หน้า) → นัดวันใหม่ยังไม่มา ต้องรอผลของวันใหม่
+        if (a.status === 'arrived' && next.status === 'arrived') { next.status = 'scheduled'; next.arrivedAt = null; }
         // เลื่อนวัน → SMS ที่เคยส่งเป็นวันเก่า ต้องส่งใหม่ของวันใหม่ (ล้างตรงนี้ เพราะ {...a, ...appt} จะคงค่าเก่าไว้ถ้าฝั่งเรียกแค่ลบ key)
-        next.reminderSent = false; next.reminderSentAt = null; next.reminderVia = null;
+        // ยกเว้น: กดส่ง SMS เอง (ของวันใหม่) มาในจังหวะเดียวกัน (หน้าต่างส่ง SMS แก้วันแล้วส่งเลย) → ส่งแล้วจริง คงไว้ กันส่งซ้ำ
+        const justSent = !!appt.reminderSent && !!appt.reminderSentAt && appt.reminderSentAt !== a.reminderSentAt;
+        if (!justSent) { next.reminderSent = false; next.reminderSentAt = null; next.reminderVia = null; }
         // เลื่อนผ่านปุ่ม ✏️ แก้ไขนัด (ไม่ได้มาจากเมนูผลการโทร) → สถานะการโทรต้องตามด้วย = "เลื่อนแล้ว"
         // (เลื่อนนัดคือได้คุย/ตกลงกับเจ้าของแล้ว) · เมนูผลการโทรจดบันทึกเองอยู่แล้ว จึงไม่จดซ้ำ
         const callerLogged = (appt.callLog || []).length > (a.callLog || []).length;
