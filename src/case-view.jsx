@@ -925,6 +925,11 @@ function CaseView({ pet, queueItem, vets, assistants = [], services, stock, shop
                       )}
                       <span style={{ color: 'var(--ink-faint)' }}>จากครั้งก่อน {prevWeight.w} kg · {dateTH(prevWeight.date)}</span>
                     </div>
+                  ) : weightHistory.length === 0 ? (
+                    // ยังไม่เคยบันทึกน้ำหนัก → บอกให้รู้ว่าระบบกราฟ/ลูกศรมีอยู่ (ไม่ใช่หาย) จะขึ้นครั้งหน้า
+                    <div style={{ marginTop: 5, fontSize: 11.5, color: 'var(--ink-faint)' }}>
+                      📈 ยังไม่มีน้ำหนักครั้งก่อน — ใส่น้ำหนักวันนี้ไว้ ครั้งหน้าจะมีกราฟและลูกศรเทียบ ▲▼
+                    </div>
                   ) : null}
                 </Field>
               </div>

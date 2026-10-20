@@ -395,8 +395,21 @@ function FestivalFloat({ override }) {
 // เก็บเป็น HTML ชุดเล็กที่ปลอดภัยเท่านั้น: <b>, <br>, <span class="rt-…"> (สีจากชุดที่กำหนด — ปรับตามโหมดมืดด้วย CSS)
 // ไม่มีการจัดรูปแบบ → เก็บเป็นข้อความธรรมดาเหมือนเดิม (ข้อมูลเก่า/ที่อื่นที่ใช้ข้อความล้วนไม่กระทบ)
 // แสดงผลผ่าน sanitize ทุกครั้ง (กันข้อมูลแปลกปลอมจากเครื่องอื่น) · จุดที่ต้องการข้อความล้วนใช้ richToPlain
-const RT_TEXT = { red: '#c0392b', blue: '#1f5fad', green: '#1e7b4a', orange: '#b9650f' };
-const RT_HL = { yellow: '#ffe066', green: '#b7ebc6', pink: '#ffc9d6', blue: '#c3dcff' };
+// เรียงสีแบบสายรุ้ง (ค่าสีเดิมคงไว้ — ข้อความที่จัดรูปแบบไว้แล้วยังอ่านกลับได้)
+const RT_TEXT = { red: '#c0392b', orange: '#b9650f', green: '#1e7b4a', blue: '#1f5fad', purple: '#7b3fb0' };
+const RT_HL = { red: '#ffb3b3', orange: '#ffd1a3', yellow: '#ffe066', green: '#b7ebc6', blue: '#c3dcff', pink: '#ffc9d6', purple: '#e0c9ff' };
+const RT_HL_TH = { red: 'แดง', orange: 'ส้ม', yellow: 'เหลือง', green: 'เขียว', blue: 'ฟ้า', pink: 'ชมพู', purple: 'ม่วง' };
+const RT_TEXT_TH = { red: 'แดง', orange: 'ส้ม', green: 'เขียว', blue: 'น้ำเงิน', purple: 'ม่วง' };
+// ขนาดตัวอักษร: execCommand('fontSize', n) → <font size> หรือ font-size: small/large/x-large → เก็บเป็น class
+const RT_SIZES = [['sm', 2, 'เล็ก', 11], ['', 3, 'ปกติ', 13], ['lg', 5, 'ใหญ่', 16], ['xl', 6, 'ใหญ่มาก', 19]];
+function _rtSize(n) {
+  const fs = String((n.style && n.style.fontSize) || '').toLowerCase();
+  const attr = n.tagName === 'FONT' ? Number(n.getAttribute('size')) : 0;
+  if (/^(xx-small|x-small|small)$/.test(fs) || attr === 1 || attr === 2) return 'sm';
+  if (/^(large)$/.test(fs) || attr === 4 || attr === 5) return 'lg';
+  if (/^(x-large|xx-large|xxx-large)$/.test(fs) || attr >= 6) return 'xl';
+  return null;
+}
 const RT_RICH_RE = /<(b|br|span)(\s|>|\/)/i;
 const isRichText = (s) => typeof s === 'string' && RT_RICH_RE.test(s);
 const rtEsc = (t) => String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -433,9 +446,11 @@ function rtSerialize(root) {
       const tc = (tag === 'FONT' && n.getAttribute('color')) || st.color;
       const tn = tc ? _rtName(RT_TEXT, tc) : null; if (tn) classes.push('rt-c-' + tn);
       const hn = st.backgroundColor ? _rtName(RT_HL, st.backgroundColor) : null; if (hn) classes.push('rt-h-' + hn);
+      const sz = _rtSize(n); if (sz) classes.push('rt-s-' + sz);
       // ข้อมูลที่เก็บไว้แล้ว (class เดิม) — อ่านกลับได้
       (n.getAttribute && (n.getAttribute('class') || '').split(/\s+/) || []).forEach((c) => {
-        if (/^rt-c-(red|blue|green|orange)$/.test(c) || /^rt-h-(yellow|green|pink|blue)$/.test(c)) { if (!classes.includes(c)) classes.push(c); }
+        const ok = (c.startsWith('rt-c-') && RT_TEXT[c.slice(5)]) || (c.startsWith('rt-h-') && RT_HL[c.slice(5)]) || /^rt-s-(sm|lg|xl)$/.test(c);
+        if (ok && !classes.includes(c)) classes.push(c);
       });
       let html = inner;
       if (classes.length) html = `<span class="${classes.join(' ')}">${html}</span>`;
@@ -506,9 +521,11 @@ function RichTextArea({ value, onChange, placeholder, rows = 2, autoFocus }) {
       <div className="rt-toolbar" aria-hidden={!focus}>
         {tb(<b>B</b>, 'ตัวหนา (Ctrl+B)', () => cmd('bold'))}
         <span className="rt-sep" />
-        {Object.keys(RT_HL).map((k) => tb('', 'ไฮไลต์', () => cmd('hiliteColor', RT_HL[k]), { background: RT_HL[k], width: 18 }))}
+        {RT_SIZES.map(([k, n, th, px]) => tb(<span style={{ fontSize: px, fontWeight: 700, lineHeight: 1 }}>ก</span>, `ขนาด${th}`, () => cmd('fontSize', n), { width: 22 }))}
         <span className="rt-sep" />
-        {Object.keys(RT_TEXT).map((k) => tb(<span style={{ color: RT_TEXT[k], fontWeight: 800 }}>A</span>, 'สีตัวอักษร', () => cmd('foreColor', RT_TEXT[k])))}
+        {Object.keys(RT_HL).map((k) => tb('', `ไฮไลต์${RT_HL_TH[k]}`, () => cmd('hiliteColor', RT_HL[k]), { background: RT_HL[k], width: 18 }))}
+        <span className="rt-sep" />
+        {Object.keys(RT_TEXT).map((k) => tb(<span style={{ color: RT_TEXT[k], fontWeight: 800 }}>A</span>, `ตัวอักษรสี${RT_TEXT_TH[k]}`, () => cmd('foreColor', RT_TEXT[k])))}
         <span className="rt-sep" />
         {tb('ล้าง', 'ล้างรูปแบบของข้อความที่เลือก', () => { cmd('removeFormat'); cmd('hiliteColor', 'transparent'); }, { fontSize: 11, padding: '0 6px', width: 'auto' })}
       </div>

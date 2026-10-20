@@ -110,19 +110,23 @@ if ('serviceWorker' in navigator) {
 
 /* ข้อความจัดรูปแบบ CC/PE/Dx/Plan — ตัวหนา/ไฮไลต์/สีตัวอักษร */
 .rt-wrap { position: relative; }
-.rt-toolbar { display: flex; align-items: center; gap: 3px; flex-wrap: wrap; height: 0; overflow: hidden; opacity: 0; transition: height .15s, opacity .15s, margin .15s; }
-.rt-wrap.focused .rt-toolbar { height: 28px; opacity: 1; margin-bottom: 4px; }
+.rt-toolbar { display: flex; align-items: center; gap: 3px; flex-wrap: wrap; max-height: 0; overflow: hidden; opacity: 0; transition: max-height .15s, opacity .15s, margin .15s; }
+.rt-wrap.focused .rt-toolbar { max-height: 64px; opacity: 1; margin-bottom: 4px; }
 .rt-btn { width: 24px; height: 24px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--ink); cursor: pointer; font: inherit; font-size: 13px; line-height: 1; padding: 0; display: inline-flex; align-items: center; justify-content: center; }
 .rt-btn:hover { border-color: var(--navy); }
 .rt-sep { width: 1px; height: 16px; background: var(--line); margin: 0 3px; }
 .rt-edit { white-space: pre-wrap; overflow-wrap: anywhere; cursor: text; outline: none; }
 .rt-edit:empty::before { content: attr(data-placeholder); color: var(--ink-faint); pointer-events: none; }
 .rt b, .rt-edit b { font-weight: 800; }
-.rt-c-red { color: #c0392b; } .rt-c-blue { color: #1f5fad; } .rt-c-green { color: #1e7b4a; } .rt-c-orange { color: #b9650f; }
-.rt-h-yellow { background: #ffe066; } .rt-h-green { background: #b7ebc6; } .rt-h-pink { background: #ffc9d6; } .rt-h-blue { background: #c3dcff; }
-.rt [class*='rt-h-'] { border-radius: 3px; padding: 0 2px; color: #1b1b1b; }
+.rt-c-red { color: #c0392b; } .rt-c-orange { color: #b9650f; } .rt-c-green { color: #1e7b4a; } .rt-c-blue { color: #1f5fad; } .rt-c-purple { color: #7b3fb0; }
+.rt-h-red { background: #ffb3b3; } .rt-h-orange { background: #ffd1a3; } .rt-h-yellow { background: #ffe066; } .rt-h-green { background: #b7ebc6; }
+.rt-h-blue { background: #c3dcff; } .rt-h-pink { background: #ffc9d6; } .rt-h-purple { background: #e0c9ff; }
+.rt-s-sm { font-size: .85em; } .rt-s-lg { font-size: 1.25em; } .rt-s-xl { font-size: 1.55em; line-height: 1.25; }
+.rt [class*='rt-h-'] { border-radius: 3px; padding: 0 2px; }
+.rt [class*='rt-h-']:not([class*='rt-c-']) { color: #1b1b1b; }
+.rt-edit span[style*='background-color'] { color: #1b1b1b; }
 :root[data-theme='dark'] .rt-c-red { color: #ff8a7a; } :root[data-theme='dark'] .rt-c-blue { color: #8fb8ff; }
-:root[data-theme='dark'] .rt-c-green { color: #7fd8a4; } :root[data-theme='dark'] .rt-c-orange { color: #f2b25c; }
+:root[data-theme='dark'] .rt-c-green { color: #7fd8a4; } :root[data-theme='dark'] .rt-c-orange { color: #f2b25c; } :root[data-theme='dark'] .rt-c-purple { color: #c9a6f5; }
 
 /* ผลการโทรนัด (แผงนัดหน้าหลัก) */
 .appt-call.is-ok { color: var(--mint-deep); border-color: var(--mint-deep); background: var(--mint-soft); font-weight: 700; }
@@ -1807,8 +1811,21 @@ function FestivalFloat({ override }) {
 // เก็บเป็น HTML ชุดเล็กที่ปลอดภัยเท่านั้น: <b>, <br>, <span class="rt-…"> (สีจากชุดที่กำหนด — ปรับตามโหมดมืดด้วย CSS)
 // ไม่มีการจัดรูปแบบ → เก็บเป็นข้อความธรรมดาเหมือนเดิม (ข้อมูลเก่า/ที่อื่นที่ใช้ข้อความล้วนไม่กระทบ)
 // แสดงผลผ่าน sanitize ทุกครั้ง (กันข้อมูลแปลกปลอมจากเครื่องอื่น) · จุดที่ต้องการข้อความล้วนใช้ richToPlain
-const RT_TEXT = { red: '#c0392b', blue: '#1f5fad', green: '#1e7b4a', orange: '#b9650f' };
-const RT_HL = { yellow: '#ffe066', green: '#b7ebc6', pink: '#ffc9d6', blue: '#c3dcff' };
+// เรียงสีแบบสายรุ้ง (ค่าสีเดิมคงไว้ — ข้อความที่จัดรูปแบบไว้แล้วยังอ่านกลับได้)
+const RT_TEXT = { red: '#c0392b', orange: '#b9650f', green: '#1e7b4a', blue: '#1f5fad', purple: '#7b3fb0' };
+const RT_HL = { red: '#ffb3b3', orange: '#ffd1a3', yellow: '#ffe066', green: '#b7ebc6', blue: '#c3dcff', pink: '#ffc9d6', purple: '#e0c9ff' };
+const RT_HL_TH = { red: 'แดง', orange: 'ส้ม', yellow: 'เหลือง', green: 'เขียว', blue: 'ฟ้า', pink: 'ชมพู', purple: 'ม่วง' };
+const RT_TEXT_TH = { red: 'แดง', orange: 'ส้ม', green: 'เขียว', blue: 'น้ำเงิน', purple: 'ม่วง' };
+// ขนาดตัวอักษร: execCommand('fontSize', n) → <font size> หรือ font-size: small/large/x-large → เก็บเป็น class
+const RT_SIZES = [['sm', 2, 'เล็ก', 11], ['', 3, 'ปกติ', 13], ['lg', 5, 'ใหญ่', 16], ['xl', 6, 'ใหญ่มาก', 19]];
+function _rtSize(n) {
+  const fs = String((n.style && n.style.fontSize) || '').toLowerCase();
+  const attr = n.tagName === 'FONT' ? Number(n.getAttribute('size')) : 0;
+  if (/^(xx-small|x-small|small)$/.test(fs) || attr === 1 || attr === 2) return 'sm';
+  if (/^(large)$/.test(fs) || attr === 4 || attr === 5) return 'lg';
+  if (/^(x-large|xx-large|xxx-large)$/.test(fs) || attr >= 6) return 'xl';
+  return null;
+}
 const RT_RICH_RE = /<(b|br|span)(\s|>|\/)/i;
 const isRichText = (s) => typeof s === 'string' && RT_RICH_RE.test(s);
 const rtEsc = (t) => String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -1845,9 +1862,11 @@ function rtSerialize(root) {
       const tc = (tag === 'FONT' && n.getAttribute('color')) || st.color;
       const tn = tc ? _rtName(RT_TEXT, tc) : null; if (tn) classes.push('rt-c-' + tn);
       const hn = st.backgroundColor ? _rtName(RT_HL, st.backgroundColor) : null; if (hn) classes.push('rt-h-' + hn);
+      const sz = _rtSize(n); if (sz) classes.push('rt-s-' + sz);
       // ข้อมูลที่เก็บไว้แล้ว (class เดิม) — อ่านกลับได้
       (n.getAttribute && (n.getAttribute('class') || '').split(/\s+/) || []).forEach((c) => {
-        if (/^rt-c-(red|blue|green|orange)$/.test(c) || /^rt-h-(yellow|green|pink|blue)$/.test(c)) { if (!classes.includes(c)) classes.push(c); }
+        const ok = (c.startsWith('rt-c-') && RT_TEXT[c.slice(5)]) || (c.startsWith('rt-h-') && RT_HL[c.slice(5)]) || /^rt-s-(sm|lg|xl)$/.test(c);
+        if (ok && !classes.includes(c)) classes.push(c);
       });
       let html = inner;
       if (classes.length) html = `<span class="${classes.join(' ')}">${html}</span>`;
@@ -1918,9 +1937,11 @@ function RichTextArea({ value, onChange, placeholder, rows = 2, autoFocus }) {
       <div className="rt-toolbar" aria-hidden={!focus}>
         {tb(<b>B</b>, 'ตัวหนา (Ctrl+B)', () => cmd('bold'))}
         <span className="rt-sep" />
-        {Object.keys(RT_HL).map((k) => tb('', 'ไฮไลต์', () => cmd('hiliteColor', RT_HL[k]), { background: RT_HL[k], width: 18 }))}
+        {RT_SIZES.map(([k, n, th, px]) => tb(<span style={{ fontSize: px, fontWeight: 700, lineHeight: 1 }}>ก</span>, `ขนาด${th}`, () => cmd('fontSize', n), { width: 22 }))}
         <span className="rt-sep" />
-        {Object.keys(RT_TEXT).map((k) => tb(<span style={{ color: RT_TEXT[k], fontWeight: 800 }}>A</span>, 'สีตัวอักษร', () => cmd('foreColor', RT_TEXT[k])))}
+        {Object.keys(RT_HL).map((k) => tb('', `ไฮไลต์${RT_HL_TH[k]}`, () => cmd('hiliteColor', RT_HL[k]), { background: RT_HL[k], width: 18 }))}
+        <span className="rt-sep" />
+        {Object.keys(RT_TEXT).map((k) => tb(<span style={{ color: RT_TEXT[k], fontWeight: 800 }}>A</span>, `ตัวอักษรสี${RT_TEXT_TH[k]}`, () => cmd('foreColor', RT_TEXT[k])))}
         <span className="rt-sep" />
         {tb('ล้าง', 'ล้างรูปแบบของข้อความที่เลือก', () => { cmd('removeFormat'); cmd('hiliteColor', 'transparent'); }, { fontSize: 11, padding: '0 6px', width: 'auto' })}
       </div>
@@ -4913,6 +4934,11 @@ function CaseView({ pet, queueItem, vets, assistants = [], services, stock, shop
                         </span>
                       )}
                       <span style={{ color: 'var(--ink-faint)' }}>จากครั้งก่อน {prevWeight.w} kg · {dateTH(prevWeight.date)}</span>
+                    </div>
+                  ) : weightHistory.length === 0 ? (
+                    // ยังไม่เคยบันทึกน้ำหนัก → บอกให้รู้ว่าระบบกราฟ/ลูกศรมีอยู่ (ไม่ใช่หาย) จะขึ้นครั้งหน้า
+                    <div style={{ marginTop: 5, fontSize: 11.5, color: 'var(--ink-faint)' }}>
+                      📈 ยังไม่มีน้ำหนักครั้งก่อน — ใส่น้ำหนักวันนี้ไว้ ครั้งหน้าจะมีกราฟและลูกศรเทียบ ▲▼
                     </div>
                   ) : null}
                 </Field>
