@@ -391,6 +391,136 @@ function FestivalFloat({ override }) {
   );
 }
 
+// ════════ ข้อความจัดรูปแบบ (ตัวหนา / ไฮไลต์ / สีตัวอักษร) ในช่อง CC · PE · Dx · Plan ════════
+// เก็บเป็น HTML ชุดเล็กที่ปลอดภัยเท่านั้น: <b>, <br>, <span class="rt-…"> (สีจากชุดที่กำหนด — ปรับตามโหมดมืดด้วย CSS)
+// ไม่มีการจัดรูปแบบ → เก็บเป็นข้อความธรรมดาเหมือนเดิม (ข้อมูลเก่า/ที่อื่นที่ใช้ข้อความล้วนไม่กระทบ)
+// แสดงผลผ่าน sanitize ทุกครั้ง (กันข้อมูลแปลกปลอมจากเครื่องอื่น) · จุดที่ต้องการข้อความล้วนใช้ richToPlain
+const RT_TEXT = { red: '#c0392b', blue: '#1f5fad', green: '#1e7b4a', orange: '#b9650f' };
+const RT_HL = { yellow: '#ffe066', green: '#b7ebc6', pink: '#ffc9d6', blue: '#c3dcff' };
+const RT_RICH_RE = /<(b|br|span)(\s|>|\/)/i;
+const isRichText = (s) => typeof s === 'string' && RT_RICH_RE.test(s);
+const rtEsc = (t) => String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+function _rtHex(c) {
+  const s = String(c || '').trim().toLowerCase();
+  if (/^#[0-9a-f]{6}$/.test(s)) return s;
+  const m = s.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
+  return m ? '#' + [m[1], m[2], m[3]].map((n) => (+n).toString(16).padStart(2, '0')).join('') : '';
+}
+// สีที่ได้จาก execCommand → ชื่อในชุด (ไม่ตรงชุด = ทิ้ง)
+const _rtName = (map, c) => { const h = _rtHex(c); return Object.keys(map).find((k) => map[k] === h) || null; };
+// แปลง DOM (จาก editor หรือที่เก็บไว้) → HTML ชุดปลอดภัย
+function rtSerialize(root) {
+  const walk = (node, inBlockFirst) => {
+    let out = '';
+    node.childNodes.forEach((n, i) => {
+      if (n.nodeType === 3) { out += rtEsc(n.nodeValue); return; }
+      if (n.nodeType !== 1) return;
+      const tag = n.tagName;
+      if (/^(SCRIPT|STYLE|TEMPLATE|IFRAME|OBJECT|NOSCRIPT)$/.test(tag)) return;   // ทิ้งทั้งก้อน รวมเนื้อหา
+      if (tag === 'BR') { out += '<br>'; return; }
+      if (tag === 'DIV' || tag === 'P') {
+        // บรรทัดใหม่ของ contentEditable (กด Enter) → <br> คั่น
+        if (out && !out.endsWith('<br>')) out += '<br>';
+        const inner = walk(n);
+        out += inner === '<br>' ? '' : inner;
+        return;
+      }
+      const inner = walk(n);
+      if (!inner) return;
+      const st = n.style || {};
+      let bold = tag === 'B' || tag === 'STRONG' || /^(bold|[6-9]00)$/.test(String(st.fontWeight || ''));
+      const classes = [];
+      const tc = (tag === 'FONT' && n.getAttribute('color')) || st.color;
+      const tn = tc ? _rtName(RT_TEXT, tc) : null; if (tn) classes.push('rt-c-' + tn);
+      const hn = st.backgroundColor ? _rtName(RT_HL, st.backgroundColor) : null; if (hn) classes.push('rt-h-' + hn);
+      // ข้อมูลที่เก็บไว้แล้ว (class เดิม) — อ่านกลับได้
+      (n.getAttribute && (n.getAttribute('class') || '').split(/\s+/) || []).forEach((c) => {
+        if (/^rt-c-(red|blue|green|orange)$/.test(c) || /^rt-h-(yellow|green|pink|blue)$/.test(c)) { if (!classes.includes(c)) classes.push(c); }
+      });
+      let html = inner;
+      if (classes.length) html = `<span class="${classes.join(' ')}">${html}</span>`;
+      if (bold) html = `<b>${html}</b>`;
+      out += html;
+    });
+    return out;
+  };
+  return walk(root).replace(/(<br>)+$/, '');
+}
+function _rtParse(html) {
+  const doc = new DOMParser().parseFromString(`<div>${html}</div>`, 'text/html');
+  return doc.body.firstChild;
+}
+// HTML (ที่ไหนก็ได้) → HTML ปลอดภัย · ถ้าไม่มีการจัดรูปแบบเหลือ → คืนข้อความธรรมดา
+function rtNormalize(html) {
+  const safe = rtSerialize(_rtParse(html));
+  if (/<b>|class="rt-/.test(safe)) return safe;
+  // ไม่มีการจัดรูปแบบ → ข้อความธรรมดา (ถอด &lt; &amp; กลับเป็นตัวอักษรจริง เช่น "T < 39")
+  const el = _rtParse(safe.replace(/<br>/g, '\n'));
+  return el ? el.textContent : '';
+}
+// ข้อความล้วน (สำหรับ Excel / หมายเหตุ / ค้นหา)
+function richToPlain(s) {
+  if (!isRichText(s)) return s == null ? '' : String(s);
+  const el = _rtParse(String(s).replace(/<br\s*\/?>/gi, '\n'));
+  return el ? el.textContent : '';
+}
+// แสดงผลข้อความ CC/PE/Dx/Plan (รองรับทั้งข้อความเดิมและแบบจัดรูปแบบ)
+function RichText({ value, style, className }) {
+  if (!value) return null;
+  if (!isRichText(value)) return <span className={className} style={{ whiteSpace: 'pre-wrap', ...(style || {}) }}>{value}</span>;
+  return <span className={'rt ' + (className || '')} style={style} dangerouslySetInnerHTML={{ __html: rtSerialize(_rtParse(value)) }} />;
+}
+// ช่องพิมพ์ที่จัดรูปแบบได้ — แถบเครื่องมือโผล่ตอนกำลังพิมพ์ (ไม่รก) · Ctrl+B = ตัวหนา · วางข้อความ = ข้อความล้วน
+function RichTextArea({ value, onChange, placeholder, rows = 2, autoFocus }) {
+  const ref = useRef(null);
+  const [focus, setFocus] = useState(false);
+  const lastOut = useRef(null);
+  const toEditor = (v) => (isRichText(v) ? rtSerialize(_rtParse(v)) : rtEsc(v || '').replace(/\n/g, '<br>'));
+  // ค่าจากภายนอกเปลี่ยน (เปิดเคสใหม่/โหลดร่าง) → เขียนลง editor (ไม่ทับตอนที่เรากำลังพิมพ์เอง)
+  useEffect(() => {
+    const el = ref.current; if (!el) return;
+    if (value === lastOut.current) return;
+    el.innerHTML = toEditor(value);
+    lastOut.current = value;
+  }, [value]);
+  useEffect(() => { if (autoFocus && ref.current) ref.current.focus(); }, []);
+  const emit = () => {
+    const el = ref.current; if (!el) return;
+    const out = rtNormalize(el.innerHTML);
+    lastOut.current = out;
+    onChange && onChange(out);
+  };
+  const cmd = (name, arg) => {
+    const el = ref.current; if (!el) return;
+    el.focus();
+    try { document.execCommand('styleWithCSS', false, true); } catch (e) {}
+    document.execCommand(name, false, arg);
+    emit();
+  };
+  const tb = (label, title, fn, style) => (
+    <button type="button" className="rt-btn" title={title} style={style}
+      onMouseDown={(e) => { e.preventDefault(); fn(); }}>{label}</button>
+  );
+  return (
+    <div className={'rt-wrap' + (focus ? ' focused' : '')}>
+      <div className="rt-toolbar" aria-hidden={!focus}>
+        {tb(<b>B</b>, 'ตัวหนา (Ctrl+B)', () => cmd('bold'))}
+        <span className="rt-sep" />
+        {Object.keys(RT_HL).map((k) => tb('', 'ไฮไลต์', () => cmd('hiliteColor', RT_HL[k]), { background: RT_HL[k], width: 18 }))}
+        <span className="rt-sep" />
+        {Object.keys(RT_TEXT).map((k) => tb(<span style={{ color: RT_TEXT[k], fontWeight: 800 }}>A</span>, 'สีตัวอักษร', () => cmd('foreColor', RT_TEXT[k])))}
+        <span className="rt-sep" />
+        {tb('ล้าง', 'ล้างรูปแบบของข้อความที่เลือก', () => { cmd('removeFormat'); cmd('hiliteColor', 'transparent'); }, { fontSize: 11, padding: '0 6px', width: 'auto' })}
+      </div>
+      <div ref={ref} className="textarea rt-edit" contentEditable suppressContentEditableWarning
+        data-placeholder={placeholder || ''} style={{ minHeight: rows * 22 + 18 }}
+        onFocus={() => setFocus(true)} onBlur={() => { setFocus(false); emit(); }}
+        onInput={emit}
+        onPaste={(e) => { e.preventDefault(); const t = (e.clipboardData || window.clipboardData).getData('text/plain'); document.execCommand('insertText', false, t); }} />
+    </div>
+  );
+}
+
 // ════════ เบอร์โทรหลายเบอร์ของเจ้าของ ════════
 // owner.phone = เบอร์หลัก (ใช้ส่ง SMS/ค้นหา/จับบ้านเดียวกัน — ทุกระบบเดิมใช้ต่อได้)
 // owner.altPhones = [{ phone, label }] เบอร์อื่น (เช่น แม่, ที่ทำงาน) — ข้อมูลเก่าไม่มีช่องนี้ = มีเบอร์เดียว
@@ -677,4 +807,4 @@ function MoneyInBreakdown({ m, revenue, light }) {
   );
 }
 
-Object.assign(window, { Icon, Modal, useToasts, Field, QtyInput, DeceasedTag, SPECIES_EMOJI, TYPE_CHIP, fmtB, todayTH, dateTH, timeNow, calcAge, todayISO, imageToDataURL, CountUp, celebrate, playDing, ConfettiLayer, getFestival, FestivalFloat, ThemeToggle, InstallPrompt, isStandalone, normPayMethod, moneyInOfDay, MoneyInBreakdown, Calculator, CalcFloat, CalcDock, calcEval, phoneDigits, fmtPhone, ownerPhones, ownerPhoneDigits, cleanOwnerPhones, PhoneListInput, PhoneLinks });
+Object.assign(window, { Icon, Modal, useToasts, Field, QtyInput, DeceasedTag, SPECIES_EMOJI, TYPE_CHIP, fmtB, todayTH, dateTH, timeNow, calcAge, todayISO, imageToDataURL, CountUp, celebrate, playDing, ConfettiLayer, getFestival, FestivalFloat, ThemeToggle, InstallPrompt, isStandalone, normPayMethod, moneyInOfDay, MoneyInBreakdown, Calculator, CalcFloat, CalcDock, calcEval, phoneDigits, fmtPhone, ownerPhones, ownerPhoneDigits, cleanOwnerPhones, PhoneListInput, PhoneLinks, RichText, RichTextArea, richToPlain, isRichText, rtNormalize });

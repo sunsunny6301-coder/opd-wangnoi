@@ -256,8 +256,8 @@ function HistoryView({ pets, receipts = [], queue = [], admitted = [], ownerMode
                           : missingReceipt ? <span style={{ fontSize: 11, fontWeight: 800, color: '#A05A00', background: 'var(--butter-soft)', border: '1px solid var(--butter)', borderRadius: 6, padding: '1px 7px' }}>⚠️ ยังไม่ออกใบเสร็จ</span> : null}
                       </div>
                       <div style={{ fontSize: 13, color: 'var(--ink-soft)', marginTop: 3 }}>
-                        {visit.cc && <span><b>CC:</b> {visit.cc}</span>}
-                        {visit.dx && <span style={{ marginLeft: 10 }}><b>Dx:</b> {visit.dx}</span>}
+                        {visit.cc && <span><b>CC:</b> {richToPlain(visit.cc)}</span>}
+                        {visit.dx && <span style={{ marginLeft: 10 }}><b>Dx:</b> {richToPlain(visit.dx)}</span>}
                       </div>
                       {(visit.items || []).length > 0 && (
                         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 6 }}>

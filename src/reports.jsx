@@ -525,7 +525,7 @@ function exportToExcel(visits, receipts, rangeLabel, stock = [], dateRange = nul
       sumTreat += treat; sumFood += food; sumGroom += groom;
       return [
         r.date, r.hn || '', (r.petName && r.petName !== '-' ? r.petName : (v.petName || '')), v.petSpecies || '',
-        (r.ownerName && r.ownerName !== '-' ? r.ownerName : (v.owner?.name || '')), v.owner?.phone || '', v.cc || '', v.dx || '',
+        (r.ownerName && r.ownerName !== '-' ? r.ownerName : (v.owner?.name || '')), v.owner?.phone || '', richToPlain(v.cc), richToPlain(v.dx),
         names.join(', '), r.no || '', r.method || '', qtyTotal, cell(treat), cell(food), cell(groom), treat + food + groom,
       ];
     });

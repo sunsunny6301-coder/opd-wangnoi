@@ -108,6 +108,22 @@ if ('serviceWorker' in navigator) {
 .theme-toggle:active { transform: scale(.94); }
 @media print { .theme-toggle { display: none !important; } }
 
+/* ข้อความจัดรูปแบบ CC/PE/Dx/Plan — ตัวหนา/ไฮไลต์/สีตัวอักษร */
+.rt-wrap { position: relative; }
+.rt-toolbar { display: flex; align-items: center; gap: 3px; flex-wrap: wrap; height: 0; overflow: hidden; opacity: 0; transition: height .15s, opacity .15s, margin .15s; }
+.rt-wrap.focused .rt-toolbar { height: 28px; opacity: 1; margin-bottom: 4px; }
+.rt-btn { width: 24px; height: 24px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--ink); cursor: pointer; font: inherit; font-size: 13px; line-height: 1; padding: 0; display: inline-flex; align-items: center; justify-content: center; }
+.rt-btn:hover { border-color: var(--navy); }
+.rt-sep { width: 1px; height: 16px; background: var(--line); margin: 0 3px; }
+.rt-edit { white-space: pre-wrap; overflow-wrap: anywhere; cursor: text; outline: none; }
+.rt-edit:empty::before { content: attr(data-placeholder); color: var(--ink-faint); pointer-events: none; }
+.rt b, .rt-edit b { font-weight: 800; }
+.rt-c-red { color: #c0392b; } .rt-c-blue { color: #1f5fad; } .rt-c-green { color: #1e7b4a; } .rt-c-orange { color: #b9650f; }
+.rt-h-yellow { background: #ffe066; } .rt-h-green { background: #b7ebc6; } .rt-h-pink { background: #ffc9d6; } .rt-h-blue { background: #c3dcff; }
+.rt [class*='rt-h-'] { border-radius: 3px; padding: 0 2px; color: #1b1b1b; }
+:root[data-theme='dark'] .rt-c-red { color: #ff8a7a; } :root[data-theme='dark'] .rt-c-blue { color: #8fb8ff; }
+:root[data-theme='dark'] .rt-c-green { color: #7fd8a4; } :root[data-theme='dark'] .rt-c-orange { color: #f2b25c; }
+
 /* ผลการโทรนัด (แผงนัดหน้าหลัก) */
 .appt-call.is-ok { color: var(--mint-deep); border-color: var(--mint-deep); background: var(--mint-soft); font-weight: 700; }
 .appt-call.is-moved { color: var(--powder-deep); border-color: var(--powder-deep); background: var(--powder-soft); font-weight: 700; }
@@ -1787,6 +1803,136 @@ function FestivalFloat({ override }) {
   );
 }
 
+// ════════ ข้อความจัดรูปแบบ (ตัวหนา / ไฮไลต์ / สีตัวอักษร) ในช่อง CC · PE · Dx · Plan ════════
+// เก็บเป็น HTML ชุดเล็กที่ปลอดภัยเท่านั้น: <b>, <br>, <span class="rt-…"> (สีจากชุดที่กำหนด — ปรับตามโหมดมืดด้วย CSS)
+// ไม่มีการจัดรูปแบบ → เก็บเป็นข้อความธรรมดาเหมือนเดิม (ข้อมูลเก่า/ที่อื่นที่ใช้ข้อความล้วนไม่กระทบ)
+// แสดงผลผ่าน sanitize ทุกครั้ง (กันข้อมูลแปลกปลอมจากเครื่องอื่น) · จุดที่ต้องการข้อความล้วนใช้ richToPlain
+const RT_TEXT = { red: '#c0392b', blue: '#1f5fad', green: '#1e7b4a', orange: '#b9650f' };
+const RT_HL = { yellow: '#ffe066', green: '#b7ebc6', pink: '#ffc9d6', blue: '#c3dcff' };
+const RT_RICH_RE = /<(b|br|span)(\s|>|\/)/i;
+const isRichText = (s) => typeof s === 'string' && RT_RICH_RE.test(s);
+const rtEsc = (t) => String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+function _rtHex(c) {
+  const s = String(c || '').trim().toLowerCase();
+  if (/^#[0-9a-f]{6}$/.test(s)) return s;
+  const m = s.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
+  return m ? '#' + [m[1], m[2], m[3]].map((n) => (+n).toString(16).padStart(2, '0')).join('') : '';
+}
+// สีที่ได้จาก execCommand → ชื่อในชุด (ไม่ตรงชุด = ทิ้ง)
+const _rtName = (map, c) => { const h = _rtHex(c); return Object.keys(map).find((k) => map[k] === h) || null; };
+// แปลง DOM (จาก editor หรือที่เก็บไว้) → HTML ชุดปลอดภัย
+function rtSerialize(root) {
+  const walk = (node, inBlockFirst) => {
+    let out = '';
+    node.childNodes.forEach((n, i) => {
+      if (n.nodeType === 3) { out += rtEsc(n.nodeValue); return; }
+      if (n.nodeType !== 1) return;
+      const tag = n.tagName;
+      if (/^(SCRIPT|STYLE|TEMPLATE|IFRAME|OBJECT|NOSCRIPT)$/.test(tag)) return;   // ทิ้งทั้งก้อน รวมเนื้อหา
+      if (tag === 'BR') { out += '<br>'; return; }
+      if (tag === 'DIV' || tag === 'P') {
+        // บรรทัดใหม่ของ contentEditable (กด Enter) → <br> คั่น
+        if (out && !out.endsWith('<br>')) out += '<br>';
+        const inner = walk(n);
+        out += inner === '<br>' ? '' : inner;
+        return;
+      }
+      const inner = walk(n);
+      if (!inner) return;
+      const st = n.style || {};
+      let bold = tag === 'B' || tag === 'STRONG' || /^(bold|[6-9]00)$/.test(String(st.fontWeight || ''));
+      const classes = [];
+      const tc = (tag === 'FONT' && n.getAttribute('color')) || st.color;
+      const tn = tc ? _rtName(RT_TEXT, tc) : null; if (tn) classes.push('rt-c-' + tn);
+      const hn = st.backgroundColor ? _rtName(RT_HL, st.backgroundColor) : null; if (hn) classes.push('rt-h-' + hn);
+      // ข้อมูลที่เก็บไว้แล้ว (class เดิม) — อ่านกลับได้
+      (n.getAttribute && (n.getAttribute('class') || '').split(/\s+/) || []).forEach((c) => {
+        if (/^rt-c-(red|blue|green|orange)$/.test(c) || /^rt-h-(yellow|green|pink|blue)$/.test(c)) { if (!classes.includes(c)) classes.push(c); }
+      });
+      let html = inner;
+      if (classes.length) html = `<span class="${classes.join(' ')}">${html}</span>`;
+      if (bold) html = `<b>${html}</b>`;
+      out += html;
+    });
+    return out;
+  };
+  return walk(root).replace(/(<br>)+$/, '');
+}
+function _rtParse(html) {
+  const doc = new DOMParser().parseFromString(`<div>${html}</div>`, 'text/html');
+  return doc.body.firstChild;
+}
+// HTML (ที่ไหนก็ได้) → HTML ปลอดภัย · ถ้าไม่มีการจัดรูปแบบเหลือ → คืนข้อความธรรมดา
+function rtNormalize(html) {
+  const safe = rtSerialize(_rtParse(html));
+  if (/<b>|class="rt-/.test(safe)) return safe;
+  // ไม่มีการจัดรูปแบบ → ข้อความธรรมดา (ถอด &lt; &amp; กลับเป็นตัวอักษรจริง เช่น "T < 39")
+  const el = _rtParse(safe.replace(/<br>/g, '\n'));
+  return el ? el.textContent : '';
+}
+// ข้อความล้วน (สำหรับ Excel / หมายเหตุ / ค้นหา)
+function richToPlain(s) {
+  if (!isRichText(s)) return s == null ? '' : String(s);
+  const el = _rtParse(String(s).replace(/<br\s*\/?>/gi, '\n'));
+  return el ? el.textContent : '';
+}
+// แสดงผลข้อความ CC/PE/Dx/Plan (รองรับทั้งข้อความเดิมและแบบจัดรูปแบบ)
+function RichText({ value, style, className }) {
+  if (!value) return null;
+  if (!isRichText(value)) return <span className={className} style={{ whiteSpace: 'pre-wrap', ...(style || {}) }}>{value}</span>;
+  return <span className={'rt ' + (className || '')} style={style} dangerouslySetInnerHTML={{ __html: rtSerialize(_rtParse(value)) }} />;
+}
+// ช่องพิมพ์ที่จัดรูปแบบได้ — แถบเครื่องมือโผล่ตอนกำลังพิมพ์ (ไม่รก) · Ctrl+B = ตัวหนา · วางข้อความ = ข้อความล้วน
+function RichTextArea({ value, onChange, placeholder, rows = 2, autoFocus }) {
+  const ref = useRef(null);
+  const [focus, setFocus] = useState(false);
+  const lastOut = useRef(null);
+  const toEditor = (v) => (isRichText(v) ? rtSerialize(_rtParse(v)) : rtEsc(v || '').replace(/\n/g, '<br>'));
+  // ค่าจากภายนอกเปลี่ยน (เปิดเคสใหม่/โหลดร่าง) → เขียนลง editor (ไม่ทับตอนที่เรากำลังพิมพ์เอง)
+  useEffect(() => {
+    const el = ref.current; if (!el) return;
+    if (value === lastOut.current) return;
+    el.innerHTML = toEditor(value);
+    lastOut.current = value;
+  }, [value]);
+  useEffect(() => { if (autoFocus && ref.current) ref.current.focus(); }, []);
+  const emit = () => {
+    const el = ref.current; if (!el) return;
+    const out = rtNormalize(el.innerHTML);
+    lastOut.current = out;
+    onChange && onChange(out);
+  };
+  const cmd = (name, arg) => {
+    const el = ref.current; if (!el) return;
+    el.focus();
+    try { document.execCommand('styleWithCSS', false, true); } catch (e) {}
+    document.execCommand(name, false, arg);
+    emit();
+  };
+  const tb = (label, title, fn, style) => (
+    <button type="button" className="rt-btn" title={title} style={style}
+      onMouseDown={(e) => { e.preventDefault(); fn(); }}>{label}</button>
+  );
+  return (
+    <div className={'rt-wrap' + (focus ? ' focused' : '')}>
+      <div className="rt-toolbar" aria-hidden={!focus}>
+        {tb(<b>B</b>, 'ตัวหนา (Ctrl+B)', () => cmd('bold'))}
+        <span className="rt-sep" />
+        {Object.keys(RT_HL).map((k) => tb('', 'ไฮไลต์', () => cmd('hiliteColor', RT_HL[k]), { background: RT_HL[k], width: 18 }))}
+        <span className="rt-sep" />
+        {Object.keys(RT_TEXT).map((k) => tb(<span style={{ color: RT_TEXT[k], fontWeight: 800 }}>A</span>, 'สีตัวอักษร', () => cmd('foreColor', RT_TEXT[k])))}
+        <span className="rt-sep" />
+        {tb('ล้าง', 'ล้างรูปแบบของข้อความที่เลือก', () => { cmd('removeFormat'); cmd('hiliteColor', 'transparent'); }, { fontSize: 11, padding: '0 6px', width: 'auto' })}
+      </div>
+      <div ref={ref} className="textarea rt-edit" contentEditable suppressContentEditableWarning
+        data-placeholder={placeholder || ''} style={{ minHeight: rows * 22 + 18 }}
+        onFocus={() => setFocus(true)} onBlur={() => { setFocus(false); emit(); }}
+        onInput={emit}
+        onPaste={(e) => { e.preventDefault(); const t = (e.clipboardData || window.clipboardData).getData('text/plain'); document.execCommand('insertText', false, t); }} />
+    </div>
+  );
+}
+
 // ════════ เบอร์โทรหลายเบอร์ของเจ้าของ ════════
 // owner.phone = เบอร์หลัก (ใช้ส่ง SMS/ค้นหา/จับบ้านเดียวกัน — ทุกระบบเดิมใช้ต่อได้)
 // owner.altPhones = [{ phone, label }] เบอร์อื่น (เช่น แม่, ที่ทำงาน) — ข้อมูลเก่าไม่มีช่องนี้ = มีเบอร์เดียว
@@ -2073,7 +2219,7 @@ function MoneyInBreakdown({ m, revenue, light }) {
   );
 }
 
-Object.assign(window, { Icon, Modal, useToasts, Field, QtyInput, DeceasedTag, SPECIES_EMOJI, TYPE_CHIP, fmtB, todayTH, dateTH, timeNow, calcAge, todayISO, imageToDataURL, CountUp, celebrate, playDing, ConfettiLayer, getFestival, FestivalFloat, ThemeToggle, InstallPrompt, isStandalone, normPayMethod, moneyInOfDay, MoneyInBreakdown, Calculator, CalcFloat, CalcDock, calcEval, phoneDigits, fmtPhone, ownerPhones, ownerPhoneDigits, cleanOwnerPhones, PhoneListInput, PhoneLinks });
+Object.assign(window, { Icon, Modal, useToasts, Field, QtyInput, DeceasedTag, SPECIES_EMOJI, TYPE_CHIP, fmtB, todayTH, dateTH, timeNow, calcAge, todayISO, imageToDataURL, CountUp, celebrate, playDing, ConfettiLayer, getFestival, FestivalFloat, ThemeToggle, InstallPrompt, isStandalone, normPayMethod, moneyInOfDay, MoneyInBreakdown, Calculator, CalcFloat, CalcDock, calcEval, phoneDigits, fmtPhone, ownerPhones, ownerPhoneDigits, cleanOwnerPhones, PhoneListInput, PhoneLinks, RichText, RichTextArea, richToPlain, isRichText, rtNormalize });
 
 </script>
 
@@ -4457,6 +4603,7 @@ function CaseView({ pet, queueItem, vets, assistants = [], services, stock, shop
   const [smsAppt, setSmsAppt] = useState(null); // นัดที่กำลังเปิด modal ส่ง SMS
   const [editApptData, setEditApptData] = useState(null); // นัดที่กำลังแก้ไข (เปิด ApptFormModal)
   const setR = (k) => (e) => setRec({ ...rec, [k]: e.target.value });
+  const setRv = (k) => (v) => setRec((r) => ({ ...r, [k]: v }));   // ช่องจัดรูปแบบ (RichTextArea ส่งค่ามาตรงๆ)
   // เปิดหน้าต่างแก้ไขข้อมูลสัตว์ (รวมข้อควรระวัง/แพ้ยา)
   const openPetEdit = () => setEditPetInfo({ kind: 'pet', name: pet.name, species: pet.species || 'สุนัข', breed: pet.breed || '', sex: pet.sex || 'ผู้', sterilized: pet.sterilized === true ? 'true' : pet.sterilized === false ? 'false' : '', color: pet.color || '', birth: pet.birth || '', caution: pet.caution || '', allergy: pet.allergy || '', deceased: !!pet.deceased, deceasedDate: pet.deceasedDate || todayISO(), deceasedCause: pet.deceasedCause || '' });
   // เปิด modal แก้ไขประวัติ visit (normalize รายการเป็น object พร้อม stockId/origin)
@@ -4770,11 +4917,11 @@ function CaseView({ pet, queueItem, vets, assistants = [], services, stock, shop
                   ) : null}
                 </Field>
               </div>
-              <Field label="อาการสำคัญ (CC)"><textarea className="textarea" rows="2" value={rec.cc} onChange={setR('cc')} placeholder="อาการที่เจ้าของพามา..." /></Field>
-              <Field label="ผลการตรวจร่างกาย (PE)"><textarea className="textarea" rows="2" value={rec.pe} onChange={setR('pe')} placeholder="T, P, R, ผลตรวจตามระบบ..." /></Field>
+              <Field label="อาการสำคัญ (CC)"><RichTextArea value={rec.cc} onChange={setRv('cc')} placeholder="อาการที่เจ้าของพามา..." /></Field>
+              <Field label="ผลการตรวจร่างกาย (PE)"><RichTextArea value={rec.pe} onChange={setRv('pe')} placeholder="T, P, R, ผลตรวจตามระบบ..." /></Field>
               <div className="form-grid">
-                <Field label="การวินิจฉัย (Dx)"><textarea className="textarea" rows="2" value={rec.dx} onChange={setR('dx')} placeholder="โรค / ภาวะที่สงสัย..." /></Field>
-                <Field label="แผนการรักษา / นัดครั้งถัดไป"><textarea className="textarea" rows="2" value={rec.plan} onChange={setR('plan')} placeholder="เช่น กินยา 7 วัน นัดดูอาการ..." /></Field>
+                <Field label="การวินิจฉัย (Dx)"><RichTextArea value={rec.dx} onChange={setRv('dx')} placeholder="โรค / ภาวะที่สงสัย..." /></Field>
+                <Field label="แผนการรักษา / นัดครั้งถัดไป"><RichTextArea value={rec.plan} onChange={setRv('plan')} placeholder="เช่น กินยา 7 วัน นัดดูอาการ..." /></Field>
               </div>
             </div>
           </div>
@@ -4807,7 +4954,7 @@ function CaseView({ pet, queueItem, vets, assistants = [], services, stock, shop
                           <button className="btn btn-sm no-print" style={{ padding: '2px 8px', fontSize: 12, color: 'var(--blush-deep)' }} onClick={() => setDelDaily(i)}>🗑</button>
                         )}
                       </div>
-                      {[r.cc, r.dx].filter(Boolean).length ? <div style={{ fontSize: 12.5, color: 'var(--ink-soft)', marginBottom: 3 }}>{[r.cc, r.dx].filter(Boolean).join(' · ')}</div> : null}
+                      {[r.cc, r.dx].filter(Boolean).length ? <div style={{ fontSize: 12.5, color: 'var(--ink-soft)', marginBottom: 3 }}>{r.cc ? <RichText value={r.cc} /> : null}{r.cc && r.dx ? ' · ' : ''}{r.dx ? <RichText value={r.dx} /> : null}</div> : null}
                       {(r.charges || []).length === 0 ? <div style={{ fontSize: 12.5, color: 'var(--ink-faint)' }}>— ไม่มีค่าใช้จ่าย —</div> : null}
                       {(r.charges || []).map((c, j) => (
                         <div key={j} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13 }}>
@@ -4986,10 +5133,10 @@ function CaseView({ pet, queueItem, vets, assistants = [], services, stock, shop
                   <button className="btn btn-lg" style={{ color: '#7A3D35', borderColor: '#C0685C', background: '#FCF0E8' }}
                     onClick={() => {
                       // เก็บสิ่งที่คีย์ไว้ (CC/PE/Dx/แผน/รายการ/รูป/น้ำหนัก/หมอ) เป็น "บันทึกวันแรก" ของการแอดมิด — ไม่ให้หาย
-                      onAddAdmitted(pet.hn, 'กำลังรักษา', rec.dx || rec.cc, queueItem?.q, {
+                      onAddAdmitted(pet.hn, 'กำลังรักษา', richToPlain(rec.dx || rec.cc), queueItem?.q, {
                         date: todayISO(), vet: rec.vet, weight: rec.weight,
                         cc: rec.cc, pe: rec.pe, dx: rec.dx, plan: rec.plan,
-                        note: (rec.dx || rec.cc || '').trim(),
+                        note: richToPlain(rec.dx || rec.cc || '').trim(),
                         media: media.filter((m) => !m.session),
                         charges: charges.map((c) => [c[0], c[1], c[2], c[3] || null, c[4] || null]),
                       });
@@ -5039,14 +5186,14 @@ function CaseView({ pet, queueItem, vets, assistants = [], services, stock, shop
                     </button>
                     {!isExpanded && (
                       <div style={{ fontSize: 12, color: 'var(--ink-soft)', marginBottom: 4, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                        {v.cc || v.dx || '—'}
+                        {richToPlain(v.cc) || richToPlain(v.dx) || '—'}
                       </div>
                     )}
                     {isExpanded && (
                       <>
                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, fontSize: 12.5, marginBottom: 8 }}>
-                          <div><span style={{ color: 'var(--ink-faint)', fontSize: 10, fontWeight: 700, textTransform: 'uppercase' }}>CC</span><div>{v.cc}</div></div>
-                          <div><span style={{ color: 'var(--ink-faint)', fontSize: 10, fontWeight: 700, textTransform: 'uppercase' }}>Dx</span><div>{v.dx}</div></div>
+                          <div><span style={{ color: 'var(--ink-faint)', fontSize: 10, fontWeight: 700, textTransform: 'uppercase' }}>CC</span><div><RichText value={v.cc} /></div></div>
+                          <div><span style={{ color: 'var(--ink-faint)', fontSize: 10, fontWeight: 700, textTransform: 'uppercase' }}>Dx</span><div><RichText value={v.dx} /></div></div>
                         </div>
                         {v.items.length > 0 && (
                           <div>
@@ -5117,7 +5264,7 @@ function CaseView({ pet, queueItem, vets, assistants = [], services, stock, shop
               const field = (label, val) => (
                 <div>
                   <div style={{ fontSize: 10.5, fontWeight: 700, color: 'var(--ink-faint)', textTransform: 'uppercase', marginBottom: 2 }}>{label}</div>
-                  <div style={{ fontSize: 13.5, whiteSpace: 'pre-wrap', color: val ? 'var(--ink)' : 'var(--ink-faint)' }}>{val || '—'}</div>
+                  <div style={{ fontSize: 13.5, whiteSpace: 'pre-wrap', color: val ? 'var(--ink)' : 'var(--ink-faint)' }}>{val ? <RichText value={val} /> : '—'}</div>
                 </div>
               );
               return (
@@ -5293,10 +5440,10 @@ function CaseView({ pet, queueItem, vets, assistants = [], services, stock, shop
             <div className="form-grid" style={{ gridTemplateColumns: '1fr 1fr', gap: 13 }}>
               <Field label="วันที่"><input className="input" type="date" value={editVisit.date || ''} onChange={(e) => setEditVisit({ ...editVisit, date: e.target.value })} /></Field>
               <Field label="น้ำหนัก (kg)"><input className="input" type="number" value={editVisit.weight ?? ''} step="0.1" onChange={(e) => setEditVisit({ ...editVisit, weight: e.target.value })} /></Field>
-              <Field label="อาการสำคัญ (CC)" style={{ gridColumn: '1/-1' }}><textarea className="textarea" rows="2" value={editVisit.cc || ''} onChange={(e) => setEditVisit({ ...editVisit, cc: e.target.value })} placeholder="อาการที่เจ้าของบอก..." /></Field>
-              <Field label="ผลการตรวจร่างกาย (PE)" style={{ gridColumn: '1/-1' }}><textarea className="textarea" rows="2" value={editVisit.pe || ''} onChange={(e) => setEditVisit({ ...editVisit, pe: e.target.value })} placeholder="T, P, R, ผลตรวจ..." /></Field>
-              <Field label="การวินิจฉัย (Dx)" style={{ gridColumn: '1/-1' }}><textarea className="textarea" rows="2" value={editVisit.dx || ''} onChange={(e) => setEditVisit({ ...editVisit, dx: e.target.value })} placeholder="การวินิจฉัย..." /></Field>
-              <Field label="แผนการรักษา (Plan)" style={{ gridColumn: '1/-1' }}><textarea className="textarea" rows="2" value={editVisit.plan || ''} onChange={(e) => setEditVisit({ ...editVisit, plan: e.target.value })} placeholder="ขั้นตอนการรักษา..." /></Field>
+              <Field label="อาการสำคัญ (CC)" style={{ gridColumn: '1/-1' }}><RichTextArea value={editVisit.cc || ''} onChange={(v) => setEditVisit((x) => ({ ...x, cc: v }))} placeholder="อาการที่เจ้าของบอก..." /></Field>
+              <Field label="ผลการตรวจร่างกาย (PE)" style={{ gridColumn: '1/-1' }}><RichTextArea value={editVisit.pe || ''} onChange={(v) => setEditVisit((x) => ({ ...x, pe: v }))} placeholder="T, P, R, ผลตรวจ..." /></Field>
+              <Field label="การวินิจฉัย (Dx)" style={{ gridColumn: '1/-1' }}><RichTextArea value={editVisit.dx || ''} onChange={(v) => setEditVisit((x) => ({ ...x, dx: v }))} placeholder="การวินิจฉัย..." /></Field>
+              <Field label="แผนการรักษา (Plan)" style={{ gridColumn: '1/-1' }}><RichTextArea value={editVisit.plan || ''} onChange={(v) => setEditVisit((x) => ({ ...x, plan: v }))} placeholder="ขั้นตอนการรักษา..." /></Field>
             </div>
             {/* รายการค่าใช้จ่าย — แก้ไขได้ (เพิ่ม/ลบ/แก้จำนวน·ราคา) เมื่อบันทึกจะซิงก์ไปใบเสร็จที่ผูกกันด้วย */}
             <div>
@@ -5398,10 +5545,10 @@ function CaseView({ pet, queueItem, vets, assistants = [], services, stock, shop
                   {editDaily.vet && !vets.includes(editDaily.vet) ? <option value={editDaily.vet}>{editDaily.vet}</option> : null}
                 </select>
               </Field>
-              <Field label="อาการสำคัญ (CC)" style={{ gridColumn: '1/-1' }}><textarea className="textarea" rows="2" value={editDaily.cc || ''} onChange={(e) => setEditDaily({ ...editDaily, cc: e.target.value })} /></Field>
-              <Field label="ผลการตรวจร่างกาย (PE)" style={{ gridColumn: '1/-1' }}><textarea className="textarea" rows="2" value={editDaily.pe || ''} onChange={(e) => setEditDaily({ ...editDaily, pe: e.target.value })} /></Field>
-              <Field label="การวินิจฉัย (Dx)" style={{ gridColumn: '1/-1' }}><textarea className="textarea" rows="2" value={editDaily.dx || ''} onChange={(e) => setEditDaily({ ...editDaily, dx: e.target.value })} /></Field>
-              <Field label="แผนการรักษา (Plan)" style={{ gridColumn: '1/-1' }}><textarea className="textarea" rows="2" value={editDaily.plan || ''} onChange={(e) => setEditDaily({ ...editDaily, plan: e.target.value })} /></Field>
+              <Field label="อาการสำคัญ (CC)" style={{ gridColumn: '1/-1' }}><RichTextArea value={editDaily.cc || ''} onChange={(v) => setEditDaily((x) => ({ ...x, cc: v }))} /></Field>
+              <Field label="ผลการตรวจร่างกาย (PE)" style={{ gridColumn: '1/-1' }}><RichTextArea value={editDaily.pe || ''} onChange={(v) => setEditDaily((x) => ({ ...x, pe: v }))} /></Field>
+              <Field label="การวินิจฉัย (Dx)" style={{ gridColumn: '1/-1' }}><RichTextArea value={editDaily.dx || ''} onChange={(v) => setEditDaily((x) => ({ ...x, dx: v }))} /></Field>
+              <Field label="แผนการรักษา (Plan)" style={{ gridColumn: '1/-1' }}><RichTextArea value={editDaily.plan || ''} onChange={(v) => setEditDaily((x) => ({ ...x, plan: v }))} /></Field>
             </div>
             <div>
               <div style={{ fontWeight: 700, fontSize: 13, color: 'var(--ink-soft)', marginBottom: 8 }}>💊 รายการค่าใช้จ่ายของวันนี้</div>
@@ -6874,7 +7021,7 @@ function exportToExcel(visits, receipts, rangeLabel, stock = [], dateRange = nul
       sumTreat += treat; sumFood += food; sumGroom += groom;
       return [
         r.date, r.hn || '', (r.petName && r.petName !== '-' ? r.petName : (v.petName || '')), v.petSpecies || '',
-        (r.ownerName && r.ownerName !== '-' ? r.ownerName : (v.owner?.name || '')), v.owner?.phone || '', v.cc || '', v.dx || '',
+        (r.ownerName && r.ownerName !== '-' ? r.ownerName : (v.owner?.name || '')), v.owner?.phone || '', richToPlain(v.cc), richToPlain(v.dx),
         names.join(', '), r.no || '', r.method || '', qtyTotal, cell(treat), cell(food), cell(groom), treat + food + groom,
       ];
     });
@@ -9674,8 +9821,8 @@ function HistoryView({ pets, receipts = [], queue = [], admitted = [], ownerMode
                           : missingReceipt ? <span style={{ fontSize: 11, fontWeight: 800, color: '#A05A00', background: 'var(--butter-soft)', border: '1px solid var(--butter)', borderRadius: 6, padding: '1px 7px' }}>⚠️ ยังไม่ออกใบเสร็จ</span> : null}
                       </div>
                       <div style={{ fontSize: 13, color: 'var(--ink-soft)', marginTop: 3 }}>
-                        {visit.cc && <span><b>CC:</b> {visit.cc}</span>}
-                        {visit.dx && <span style={{ marginLeft: 10 }}><b>Dx:</b> {visit.dx}</span>}
+                        {visit.cc && <span><b>CC:</b> {richToPlain(visit.cc)}</span>}
+                        {visit.dx && <span style={{ marginLeft: 10 }}><b>Dx:</b> {richToPlain(visit.dx)}</span>}
                       </div>
                       {(visit.items || []).length > 0 && (
                         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 6 }}>

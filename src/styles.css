@@ -83,6 +83,22 @@
 .theme-toggle:active { transform: scale(.94); }
 @media print { .theme-toggle { display: none !important; } }
 
+/* ข้อความจัดรูปแบบ CC/PE/Dx/Plan — ตัวหนา/ไฮไลต์/สีตัวอักษร */
+.rt-wrap { position: relative; }
+.rt-toolbar { display: flex; align-items: center; gap: 3px; flex-wrap: wrap; height: 0; overflow: hidden; opacity: 0; transition: height .15s, opacity .15s, margin .15s; }
+.rt-wrap.focused .rt-toolbar { height: 28px; opacity: 1; margin-bottom: 4px; }
+.rt-btn { width: 24px; height: 24px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--ink); cursor: pointer; font: inherit; font-size: 13px; line-height: 1; padding: 0; display: inline-flex; align-items: center; justify-content: center; }
+.rt-btn:hover { border-color: var(--navy); }
+.rt-sep { width: 1px; height: 16px; background: var(--line); margin: 0 3px; }
+.rt-edit { white-space: pre-wrap; overflow-wrap: anywhere; cursor: text; outline: none; }
+.rt-edit:empty::before { content: attr(data-placeholder); color: var(--ink-faint); pointer-events: none; }
+.rt b, .rt-edit b { font-weight: 800; }
+.rt-c-red { color: #c0392b; } .rt-c-blue { color: #1f5fad; } .rt-c-green { color: #1e7b4a; } .rt-c-orange { color: #b9650f; }
+.rt-h-yellow { background: #ffe066; } .rt-h-green { background: #b7ebc6; } .rt-h-pink { background: #ffc9d6; } .rt-h-blue { background: #c3dcff; }
+.rt [class*='rt-h-'] { border-radius: 3px; padding: 0 2px; color: #1b1b1b; }
+:root[data-theme='dark'] .rt-c-red { color: #ff8a7a; } :root[data-theme='dark'] .rt-c-blue { color: #8fb8ff; }
+:root[data-theme='dark'] .rt-c-green { color: #7fd8a4; } :root[data-theme='dark'] .rt-c-orange { color: #f2b25c; }
+
 /* ผลการโทรนัด (แผงนัดหน้าหลัก) */
 .appt-call.is-ok { color: var(--mint-deep); border-color: var(--mint-deep); background: var(--mint-soft); font-weight: 700; }
 .appt-call.is-moved { color: var(--powder-deep); border-color: var(--powder-deep); background: var(--powder-soft); font-weight: 700; }

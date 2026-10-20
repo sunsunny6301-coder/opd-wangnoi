@@ -614,6 +614,7 @@ function CaseView({ pet, queueItem, vets, assistants = [], services, stock, shop
   const [smsAppt, setSmsAppt] = useState(null); // นัดที่กำลังเปิด modal ส่ง SMS
   const [editApptData, setEditApptData] = useState(null); // นัดที่กำลังแก้ไข (เปิด ApptFormModal)
   const setR = (k) => (e) => setRec({ ...rec, [k]: e.target.value });
+  const setRv = (k) => (v) => setRec((r) => ({ ...r, [k]: v }));   // ช่องจัดรูปแบบ (RichTextArea ส่งค่ามาตรงๆ)
   // เปิดหน้าต่างแก้ไขข้อมูลสัตว์ (รวมข้อควรระวัง/แพ้ยา)
   const openPetEdit = () => setEditPetInfo({ kind: 'pet', name: pet.name, species: pet.species || 'สุนัข', breed: pet.breed || '', sex: pet.sex || 'ผู้', sterilized: pet.sterilized === true ? 'true' : pet.sterilized === false ? 'false' : '', color: pet.color || '', birth: pet.birth || '', caution: pet.caution || '', allergy: pet.allergy || '', deceased: !!pet.deceased, deceasedDate: pet.deceasedDate || todayISO(), deceasedCause: pet.deceasedCause || '' });
   // เปิด modal แก้ไขประวัติ visit (normalize รายการเป็น object พร้อม stockId/origin)
@@ -927,11 +928,11 @@ function CaseView({ pet, queueItem, vets, assistants = [], services, stock, shop
                   ) : null}
                 </Field>
               </div>
-              <Field label="อาการสำคัญ (CC)"><textarea className="textarea" rows="2" value={rec.cc} onChange={setR('cc')} placeholder="อาการที่เจ้าของพามา..." /></Field>
-              <Field label="ผลการตรวจร่างกาย (PE)"><textarea className="textarea" rows="2" value={rec.pe} onChange={setR('pe')} placeholder="T, P, R, ผลตรวจตามระบบ..." /></Field>
+              <Field label="อาการสำคัญ (CC)"><RichTextArea value={rec.cc} onChange={setRv('cc')} placeholder="อาการที่เจ้าของพามา..." /></Field>
+              <Field label="ผลการตรวจร่างกาย (PE)"><RichTextArea value={rec.pe} onChange={setRv('pe')} placeholder="T, P, R, ผลตรวจตามระบบ..." /></Field>
               <div className="form-grid">
-                <Field label="การวินิจฉัย (Dx)"><textarea className="textarea" rows="2" value={rec.dx} onChange={setR('dx')} placeholder="โรค / ภาวะที่สงสัย..." /></Field>
-                <Field label="แผนการรักษา / นัดครั้งถัดไป"><textarea className="textarea" rows="2" value={rec.plan} onChange={setR('plan')} placeholder="เช่น กินยา 7 วัน นัดดูอาการ..." /></Field>
+                <Field label="การวินิจฉัย (Dx)"><RichTextArea value={rec.dx} onChange={setRv('dx')} placeholder="โรค / ภาวะที่สงสัย..." /></Field>
+                <Field label="แผนการรักษา / นัดครั้งถัดไป"><RichTextArea value={rec.plan} onChange={setRv('plan')} placeholder="เช่น กินยา 7 วัน นัดดูอาการ..." /></Field>
               </div>
             </div>
           </div>
@@ -964,7 +965,7 @@ function CaseView({ pet, queueItem, vets, assistants = [], services, stock, shop
                           <button className="btn btn-sm no-print" style={{ padding: '2px 8px', fontSize: 12, color: 'var(--blush-deep)' }} onClick={() => setDelDaily(i)}>🗑</button>
                         )}
                       </div>
-                      {[r.cc, r.dx].filter(Boolean).length ? <div style={{ fontSize: 12.5, color: 'var(--ink-soft)', marginBottom: 3 }}>{[r.cc, r.dx].filter(Boolean).join(' · ')}</div> : null}
+                      {[r.cc, r.dx].filter(Boolean).length ? <div style={{ fontSize: 12.5, color: 'var(--ink-soft)', marginBottom: 3 }}>{r.cc ? <RichText value={r.cc} /> : null}{r.cc && r.dx ? ' · ' : ''}{r.dx ? <RichText value={r.dx} /> : null}</div> : null}
                       {(r.charges || []).length === 0 ? <div style={{ fontSize: 12.5, color: 'var(--ink-faint)' }}>— ไม่มีค่าใช้จ่าย —</div> : null}
                       {(r.charges || []).map((c, j) => (
                         <div key={j} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13 }}>
@@ -1143,10 +1144,10 @@ function CaseView({ pet, queueItem, vets, assistants = [], services, stock, shop
                   <button className="btn btn-lg" style={{ color: '#7A3D35', borderColor: '#C0685C', background: '#FCF0E8' }}
                     onClick={() => {
                       // เก็บสิ่งที่คีย์ไว้ (CC/PE/Dx/แผน/รายการ/รูป/น้ำหนัก/หมอ) เป็น "บันทึกวันแรก" ของการแอดมิด — ไม่ให้หาย
-                      onAddAdmitted(pet.hn, 'กำลังรักษา', rec.dx || rec.cc, queueItem?.q, {
+                      onAddAdmitted(pet.hn, 'กำลังรักษา', richToPlain(rec.dx || rec.cc), queueItem?.q, {
                         date: todayISO(), vet: rec.vet, weight: rec.weight,
                         cc: rec.cc, pe: rec.pe, dx: rec.dx, plan: rec.plan,
-                        note: (rec.dx || rec.cc || '').trim(),
+                        note: richToPlain(rec.dx || rec.cc || '').trim(),
                         media: media.filter((m) => !m.session),
                         charges: charges.map((c) => [c[0], c[1], c[2], c[3] || null, c[4] || null]),
                       });
@@ -1196,14 +1197,14 @@ function CaseView({ pet, queueItem, vets, assistants = [], services, stock, shop
                     </button>
                     {!isExpanded && (
                       <div style={{ fontSize: 12, color: 'var(--ink-soft)', marginBottom: 4, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                        {v.cc || v.dx || '—'}
+                        {richToPlain(v.cc) || richToPlain(v.dx) || '—'}
                       </div>
                     )}
                     {isExpanded && (
                       <>
                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, fontSize: 12.5, marginBottom: 8 }}>
-                          <div><span style={{ color: 'var(--ink-faint)', fontSize: 10, fontWeight: 700, textTransform: 'uppercase' }}>CC</span><div>{v.cc}</div></div>
-                          <div><span style={{ color: 'var(--ink-faint)', fontSize: 10, fontWeight: 700, textTransform: 'uppercase' }}>Dx</span><div>{v.dx}</div></div>
+                          <div><span style={{ color: 'var(--ink-faint)', fontSize: 10, fontWeight: 700, textTransform: 'uppercase' }}>CC</span><div><RichText value={v.cc} /></div></div>
+                          <div><span style={{ color: 'var(--ink-faint)', fontSize: 10, fontWeight: 700, textTransform: 'uppercase' }}>Dx</span><div><RichText value={v.dx} /></div></div>
                         </div>
                         {v.items.length > 0 && (
                           <div>
@@ -1274,7 +1275,7 @@ function CaseView({ pet, queueItem, vets, assistants = [], services, stock, shop
               const field = (label, val) => (
                 <div>
                   <div style={{ fontSize: 10.5, fontWeight: 700, color: 'var(--ink-faint)', textTransform: 'uppercase', marginBottom: 2 }}>{label}</div>
-                  <div style={{ fontSize: 13.5, whiteSpace: 'pre-wrap', color: val ? 'var(--ink)' : 'var(--ink-faint)' }}>{val || '—'}</div>
+                  <div style={{ fontSize: 13.5, whiteSpace: 'pre-wrap', color: val ? 'var(--ink)' : 'var(--ink-faint)' }}>{val ? <RichText value={val} /> : '—'}</div>
                 </div>
               );
               return (
@@ -1450,10 +1451,10 @@ function CaseView({ pet, queueItem, vets, assistants = [], services, stock, shop
             <div className="form-grid" style={{ gridTemplateColumns: '1fr 1fr', gap: 13 }}>
               <Field label="วันที่"><input className="input" type="date" value={editVisit.date || ''} onChange={(e) => setEditVisit({ ...editVisit, date: e.target.value })} /></Field>
               <Field label="น้ำหนัก (kg)"><input className="input" type="number" value={editVisit.weight ?? ''} step="0.1" onChange={(e) => setEditVisit({ ...editVisit, weight: e.target.value })} /></Field>
-              <Field label="อาการสำคัญ (CC)" style={{ gridColumn: '1/-1' }}><textarea className="textarea" rows="2" value={editVisit.cc || ''} onChange={(e) => setEditVisit({ ...editVisit, cc: e.target.value })} placeholder="อาการที่เจ้าของบอก..." /></Field>
-              <Field label="ผลการตรวจร่างกาย (PE)" style={{ gridColumn: '1/-1' }}><textarea className="textarea" rows="2" value={editVisit.pe || ''} onChange={(e) => setEditVisit({ ...editVisit, pe: e.target.value })} placeholder="T, P, R, ผลตรวจ..." /></Field>
-              <Field label="การวินิจฉัย (Dx)" style={{ gridColumn: '1/-1' }}><textarea className="textarea" rows="2" value={editVisit.dx || ''} onChange={(e) => setEditVisit({ ...editVisit, dx: e.target.value })} placeholder="การวินิจฉัย..." /></Field>
-              <Field label="แผนการรักษา (Plan)" style={{ gridColumn: '1/-1' }}><textarea className="textarea" rows="2" value={editVisit.plan || ''} onChange={(e) => setEditVisit({ ...editVisit, plan: e.target.value })} placeholder="ขั้นตอนการรักษา..." /></Field>
+              <Field label="อาการสำคัญ (CC)" style={{ gridColumn: '1/-1' }}><RichTextArea value={editVisit.cc || ''} onChange={(v) => setEditVisit((x) => ({ ...x, cc: v }))} placeholder="อาการที่เจ้าของบอก..." /></Field>
+              <Field label="ผลการตรวจร่างกาย (PE)" style={{ gridColumn: '1/-1' }}><RichTextArea value={editVisit.pe || ''} onChange={(v) => setEditVisit((x) => ({ ...x, pe: v }))} placeholder="T, P, R, ผลตรวจ..." /></Field>
+              <Field label="การวินิจฉัย (Dx)" style={{ gridColumn: '1/-1' }}><RichTextArea value={editVisit.dx || ''} onChange={(v) => setEditVisit((x) => ({ ...x, dx: v }))} placeholder="การวินิจฉัย..." /></Field>
+              <Field label="แผนการรักษา (Plan)" style={{ gridColumn: '1/-1' }}><RichTextArea value={editVisit.plan || ''} onChange={(v) => setEditVisit((x) => ({ ...x, plan: v }))} placeholder="ขั้นตอนการรักษา..." /></Field>
             </div>
             {/* รายการค่าใช้จ่าย — แก้ไขได้ (เพิ่ม/ลบ/แก้จำนวน·ราคา) เมื่อบันทึกจะซิงก์ไปใบเสร็จที่ผูกกันด้วย */}
             <div>
@@ -1555,10 +1556,10 @@ function CaseView({ pet, queueItem, vets, assistants = [], services, stock, shop
                   {editDaily.vet && !vets.includes(editDaily.vet) ? <option value={editDaily.vet}>{editDaily.vet}</option> : null}
                 </select>
               </Field>
-              <Field label="อาการสำคัญ (CC)" style={{ gridColumn: '1/-1' }}><textarea className="textarea" rows="2" value={editDaily.cc || ''} onChange={(e) => setEditDaily({ ...editDaily, cc: e.target.value })} /></Field>
-              <Field label="ผลการตรวจร่างกาย (PE)" style={{ gridColumn: '1/-1' }}><textarea className="textarea" rows="2" value={editDaily.pe || ''} onChange={(e) => setEditDaily({ ...editDaily, pe: e.target.value })} /></Field>
-              <Field label="การวินิจฉัย (Dx)" style={{ gridColumn: '1/-1' }}><textarea className="textarea" rows="2" value={editDaily.dx || ''} onChange={(e) => setEditDaily({ ...editDaily, dx: e.target.value })} /></Field>
-              <Field label="แผนการรักษา (Plan)" style={{ gridColumn: '1/-1' }}><textarea className="textarea" rows="2" value={editDaily.plan || ''} onChange={(e) => setEditDaily({ ...editDaily, plan: e.target.value })} /></Field>
+              <Field label="อาการสำคัญ (CC)" style={{ gridColumn: '1/-1' }}><RichTextArea value={editDaily.cc || ''} onChange={(v) => setEditDaily((x) => ({ ...x, cc: v }))} /></Field>
+              <Field label="ผลการตรวจร่างกาย (PE)" style={{ gridColumn: '1/-1' }}><RichTextArea value={editDaily.pe || ''} onChange={(v) => setEditDaily((x) => ({ ...x, pe: v }))} /></Field>
+              <Field label="การวินิจฉัย (Dx)" style={{ gridColumn: '1/-1' }}><RichTextArea value={editDaily.dx || ''} onChange={(v) => setEditDaily((x) => ({ ...x, dx: v }))} /></Field>
+              <Field label="แผนการรักษา (Plan)" style={{ gridColumn: '1/-1' }}><RichTextArea value={editDaily.plan || ''} onChange={(v) => setEditDaily((x) => ({ ...x, plan: v }))} /></Field>
             </div>
             <div>
               <div style={{ fontWeight: 700, fontSize: 13, color: 'var(--ink-soft)', marginBottom: 8 }}>💊 รายการค่าใช้จ่ายของวันนี้</div>
