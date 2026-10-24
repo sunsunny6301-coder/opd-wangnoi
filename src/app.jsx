@@ -826,6 +826,7 @@ function App() {
     if (be.ownerPhone) out.ownerPhone = be.ownerPhone;
     if (be.ownerAddr) out.ownerAddr = be.ownerAddr;
     if (be.ownerTaxId) out.ownerTaxId = be.ownerTaxId;
+    if (be.vatMode) out.vatMode = be.vatMode;   // โหมด VAT ที่เลือกตอนออกใบเสร็จ (ใช้ตอนพิมพ์ซ้ำ/แก้ใบเสร็จ)
     return out;
   };
   const updateReceipt = (no, patch) => {

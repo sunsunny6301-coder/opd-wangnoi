@@ -251,7 +251,7 @@ function ReceiptModal({ title, items, petName, ownerName, ownerPhone, receiptNo,
       footer={<>
         <button className="btn no-print" onClick={() => window.print()}><Icon name="printer" size={16} /> พิมพ์ใบเสร็จ</button>
         {onConfirm ? (
-          <button className="btn btn-primary no-print" onClick={() => onConfirm(method, grandTotal, editsToSave())}>
+          <button className="btn btn-primary no-print" onClick={() => onConfirm(method, grandTotal, { ...(editsToSave() || {}), vatMode: noVat ? 'none' : vatMode })}>
             <Icon name="check" size={16} /> {confirmLabel || 'รับชำระเงิน'} — {fmtB(grandTotal)}
           </button>
         ) : null}
@@ -402,4 +402,4 @@ function LabelModal({ drug, pet, onClose }) {
   );
 }
 
-Object.assign(window, { ReceiptModal, LabelModal, CLINIC });
+Object.assign(window, { ReceiptModal, LabelModal, CLINIC, calcVatItems, TaxInvoice });

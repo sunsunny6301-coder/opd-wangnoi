@@ -296,11 +296,11 @@ function ReceiptExportModal({ receipts, onClose }) {
             {filtered.map((r, i) => (
               <div key={i} className="print-receipt" style={{ marginBottom: 32 }}>
                 <TaxInvoice
-                  items={(r.items || []).map((it) => Array.isArray(it) ? { name: it[0], qty: it[1], price: it[2] } : it)}
+                  items={receiptInvoiceItems(r)}
                   petName={r.petName !== '-' ? r.petName : ''}
                   ownerName={r.ownerName !== '-' ? r.ownerName : ''}
                   ownerPhone={r.ownerPhone || ''} ownerAddr={r.ownerAddr || ''} ownerTaxId={r.ownerTaxId || ''}
-                  method={r.method} vatMode="none" no={r.no} date={r.date}
+                  method={r.method} vatMode={receiptVatMode(r)} no={r.no} date={r.date}
                 />
               </div>
             ))}
@@ -725,6 +725,14 @@ function SimpleBar({ label, value, max, color }) {
   );
 }
 
+// โหมด VAT ของใบเสร็จ — ใบใหม่จำไว้ตอนออก · ใบเก่า: OPD = ราคารวม VAT (ตรงกับหน้าเอกสารภาษี) · เพ็ทช้อป = ไม่มี VAT
+const receiptVatMode = (r) => (r && r.vatMode) || (((r && r.type) || 'opd') === 'shop' ? 'none' : 'included');
+// รายการในใบเสร็จ → แถวของใบกำกับภาษี (สินค้าเพ็ทช้อปในบิล OPD ไม่คิด VAT เหมือนตอนออกใบจริง)
+const receiptInvoiceItems = (r) => (r.items || []).map((it) => Array.isArray(it)
+  ? { name: it[0], qty: Number(it[1]) || 0, price: Number(it[2]) || 0, noVat: it[4] === 'shop' }
+  : { ...it, noVat: it.origin === 'shop' || !!it.noVat });
+const VAT_CHOICES = [['included', 'ราคารวม VAT 7%'], ['none', 'ไม่มี VAT'], ['added', 'บวก VAT 7% เพิ่ม']];
+
 // ── แก้ไขใบเสร็จถาวร (ชื่อ/รายการ/ยอด/วันที่) — บันทึกแล้วสะท้อนใน export ทันที ──
 function ReceiptEditModal({ receipt, onClose, onSave, onOpenPet, services = [], stock = [], shopStock = [] }) {
   const [petName, setPetName] = useState(receipt.petName || '');
@@ -735,6 +743,7 @@ function ReceiptEditModal({ receipt, onClose, onSave, onOpenPet, services = [], 
   const [ownerTaxId, setOwnerTaxId] = useState(receipt.ownerTaxId || '');
   const [method, setMethod] = useState(receipt.method || 'เงินสด');
   const [date, setDate] = useState(receipt.date || '');
+  const [vatMode, setVatMode] = useState(receiptVatMode(receipt));
   const [items, setItems] = useState(
     (receipt.items || []).map((it) => Array.isArray(it)
       ? { name: it[0] || '', qty: Number(it[1]) || 1, price: Number(it[2]) || 0, stockId: it[3] || null, origin: it[4] || null }
@@ -752,12 +761,15 @@ function ReceiptEditModal({ receipt, onClose, onSave, onOpenPet, services = [], 
     const newTotal = cleanItems.reduce((s, c) => s + c[1] * c[2], 0);
     // noVat = ยอดรายการเพ็ทช้อป (origin='shop') คำนวณใหม่จากรายการจริง (app.jsx จะ recompute ซ้ำอีกชั้น)
     const newNoVat = cleanItems.filter((c) => c[4] === 'shop').reduce((s, c) => s + c[1] * c[2], 0);
+    // ยอดเก็บจริง = ตามโหมด VAT (บวก VAT เพิ่ม = รวม VAT แล้ว · ราคารวม VAT/ไม่มี VAT = ยอดรายการเท่าเดิม)
+    const vatItems = cleanItems.map((c) => ({ qty: c[1], price: c[2], noVat: c[4] === 'shop' }));
+    const grand = calcVatItems(vatItems, vatMode).grandTotal;
     onSave({ petName: petName.trim() || '-', ownerName: ownerName.trim() || '-',
       ownerPhone: ownerPhone.trim(), ownerAddr: ownerAddr.trim(), ownerTaxId: ownerTaxId.trim(),
-      method, date, items: cleanItems, total: newTotal, noVat: newNoVat });
+      method, date, items: cleanItems, total: vatMode === 'added' ? grand : newTotal, noVat: newNoVat, vatMode });
   };
   const [showPreview, setShowPreview] = useState(false);
-  const previewItems = items.map((it) => ({ name: String(it.name || ''), qty: Number(it.qty) || 0, price: Number(it.price) || 0 }));
+  const previewItems = items.map((it) => ({ name: String(it.name || ''), qty: Number(it.qty) || 0, price: Number(it.price) || 0, noVat: it.origin === 'shop' }));
   const cellInput = { padding: '5px 8px', fontSize: 13 };
   return (
     <Modal title={`✏️ แก้ไขใบเสร็จ ${receipt.no}`} onClose={onClose} wide footer={<>
@@ -778,6 +790,12 @@ function ReceiptEditModal({ receipt, onClose, onSave, onOpenPet, services = [], 
           <Field label="ช่องทางชำระ">
             <select className="select" value={method} onChange={(e) => setMethod(e.target.value)}>
               {['เงินสด', 'โอนเงิน', 'บัตรเครดิต'].map((m) => <option key={m}>{m}</option>)}
+            </select>
+          </Field>
+          {/* โหมด VAT ของใบนี้ (ใบเก่าที่ไม่ได้จำไว้ = ราคารวม VAT ตรงกับหน้าเอกสารภาษี) */}
+          <Field label="VAT ในใบเสร็จ">
+            <select className="select" value={vatMode} onChange={(e) => setVatMode(e.target.value)}>
+              {VAT_CHOICES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
             </select>
           </Field>
           <Field label="ชื่อสัตว์เลี้ยง"><input className="input" value={petName} onChange={(e) => setPetName(e.target.value)} placeholder="—" /></Field>
@@ -823,7 +841,7 @@ function ReceiptEditModal({ receipt, onClose, onSave, onOpenPet, services = [], 
               petName={petName !== '-' ? petName : ''}
               ownerName={ownerName !== '-' ? ownerName : ''}
               ownerPhone={ownerPhone} ownerAddr={ownerAddr} ownerTaxId={ownerTaxId}
-              method={method} vatMode="none" no={receipt.no} date={date}
+              method={method} vatMode={vatMode} no={receipt.no} date={date}
             />
           </div>
         ) : null}
