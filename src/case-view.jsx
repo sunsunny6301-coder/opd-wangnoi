@@ -390,6 +390,8 @@ function resolveSetItem(c, stock, shopStock, services) {
     if (st) return { name: st.name, qty, price: Number(st.price) || 0, stockId: st.id, origin, st, missing: false };
     return { name, qty, price: Number(c[2]) || 0, stockId: null, origin: null, st: null, missing: true };
   }
+  // รายการพิมพ์เอง (หัตถการที่ไม่มีในสต็อก/รายการบริการ) — ใช้ชื่อ+ราคาที่พิมพ์ไว้ ไม่ตัดสต็อก
+  if (c[5] === 'custom') return { name, qty, price: Number(c[2]) || 0, stockId: null, origin: null, st: null, missing: false, custom: true };
   const sv = (services || []).find((x) => x.name === name);
   return { name, qty, price: sv ? (Number(sv.price) || 0) : (Number(c[2]) || 0), stockId: null, origin: null, st: null, missing: false };
 }
@@ -406,9 +408,13 @@ function ChargeSetModal({ sets, services, stock, shopStock, onSave, onApply, onC
     const nameTrim = editing.name.trim();
     const isNew = !(sets || []).some((s) => s.id === editing.id);
     const dupName = !!nameTrim && (sets || []).some((s) => s.id !== editing.id && s.name.trim() === nameTrim);
-    const canSave = !!nameTrim && editing.items.length > 0 && !dupName;
+    const namedCount = editing.items.filter((c) => String(c[0] || '').trim()).length;
+    const canSave = !!nameTrim && namedCount > 0 && !dupName;
     const setItems = (fn) => setEditing((e) => ({ ...e, items: fn(e.items) }));
-    const setQtyAt = (i, n) => setItems((items) => items.map((c, j) => (j === i ? [c[0], Math.max(1, n), c[2], c[3], c[4]] : c)));
+    const setAt = (i, k, v) => setItems((items) => items.map((c, j) => { if (j !== i) return c; const x = [...c]; x[k] = v; return x; }));
+    const setQtyAt = (i, n) => setAt(i, 1, Math.max(1, n));
+    // + เพิ่มรายการ (พิมพ์เอง) — หัตถการ/ค่าบริการที่ไม่ได้ดึงจากสต็อก
+    const addCustom = () => setItems((items) => [...items, ['', 1, 0, null, null, 'custom']]);
     const addItem = (item) => {
       const stockId = (item.kind === 'stock' || item.kind === 'stk' || item.kind === 'shop') ? item.id : null;
       const origin = item.kind === 'shop' ? 'shop' : null;
@@ -424,8 +430,9 @@ function ChargeSetModal({ sets, services, stock, shopStock, onSave, onApply, onC
       // เก็บชื่อ/ราคาปัจจุบันไว้เป็นค่าสำรอง + ผูก id ใหม่ถ้าผูกกลับด้วยชื่อได้
       const items = editing.items.map((c, i) => {
         const r = rows[i];
+        if (r.custom) return String(r.name).trim() ? [String(r.name).trim(), r.qty, r.price, null, null, 'custom'] : null;   // ไม่ได้ตั้งชื่อ = ทิ้ง
         return r.stockId ? [r.name, r.qty, r.price, r.stockId, r.origin] : [r.name, r.qty, r.price, c[3] || null, c[4] || null];
-      });
+      }).filter(Boolean);
       const set = { id: editing.id, name: nameTrim, items };
       onSave((prev) => (prev.some((s) => s.id === set.id) ? prev.map((s) => (s.id === set.id ? set : s)) : [...prev, set]),
         `${isNew ? 'สร้าง' : 'บันทึก'}ยาชุด “${set.name}” แล้ว (${items.length} รายการ)`);
@@ -447,6 +454,8 @@ function ChargeSetModal({ sets, services, stock, shopStock, onSave, onApply, onC
           <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
             <label style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--ink-soft)' }}>เพิ่มรายการเข้าชุด (ยา/สินค้าในสต็อก หรือบริการ)</label>
             <ChargePicker services={services || []} stock={stock || []} shopStock={shopStock || []} onAdd={addItem} />
+            <button type="button" className="btn btn-sm" style={{ alignSelf: 'flex-start', marginTop: 2 }} onClick={addCustom}
+              title="หัตถการ/ค่าบริการที่ไม่ได้อยู่ในสต็อก — พิมพ์ชื่อและราคาเอง (ไม่ตัดสต็อก)">+ เพิ่มรายการ (พิมพ์เอง)</button>
           </div>
           {rows.length === 0 ? (
             <div style={{ padding: 22, textAlign: 'center', color: 'var(--ink-faint)', fontSize: 13, border: '1.5px dashed var(--line)', borderRadius: 'var(--radius-sm)' }}>
@@ -460,9 +469,13 @@ function ChargeSetModal({ sets, services, stock, shopStock, onSave, onApply, onC
                   {rows.map((r, i) => (
                     <tr key={i}>
                       <td>
-                        <b>{r.name}</b>
+                        {r.custom ? (
+                          <input className="input" value={editing.items[i][0]} placeholder="ชื่อหัตถการ เช่น ล้างกระเพาะปัสสาวะ" autoFocus={!editing.items[i][0]}
+                            onChange={(e) => setAt(i, 0, e.target.value)} style={{ fontSize: 13, padding: '4px 8px' }} />
+                        ) : <b>{r.name}</b>}
                         <div style={{ fontSize: 11.5, marginTop: 2 }}>
-                          {r.missing ? <span style={{ color: 'var(--blush-deep)', fontWeight: 700 }}>⚠️ ไม่พบในสต็อกแล้ว (จะไม่ตัดสต็อก)</span>
+                          {r.custom ? <span style={{ color: 'var(--ink-faint)' }}>✍️ พิมพ์เอง (ไม่ตัดสต็อก)</span>
+                            : r.missing ? <span style={{ color: 'var(--blush-deep)', fontWeight: 700 }}>⚠️ ไม่พบในสต็อกแล้ว (จะไม่ตัดสต็อก)</span>
                             : r.stockId ? <span style={{ color: 'var(--mint-deep)' }}>📦 ตัดสต็อก{r.origin === 'shop' ? ' (เพ็ทช้อป)' : ''} · คงเหลือ {r.st.qty}{r.st.unit ? ` ${r.st.unit}` : ''}</span>
                             : <span style={{ color: 'var(--ink-faint)' }}>💼 บริการ (ไม่ตัดสต็อก)</span>}
                         </div>
@@ -474,7 +487,10 @@ function ChargeSetModal({ sets, services, stock, shopStock, onSave, onApply, onC
                           <button onClick={() => setQtyAt(i, r.qty + 1)}>+</button>
                         </div>
                       </td>
-                      <td className="num">{fmtB(r.price)}</td>
+                      <td className="num">{r.custom ? (
+                        <input className="input" type="number" min="0" value={editing.items[i][2]} onChange={(e) => setAt(i, 2, Math.max(0, parseFloat(e.target.value) || 0))}
+                          style={{ width: 84, fontSize: 13, padding: '4px 6px', textAlign: 'right' }} />
+                      ) : fmtB(r.price)}</td>
                       <td className="num" style={{ fontWeight: 700 }}>{fmtB(r.qty * r.price)}</td>
                       <td><button className="btn btn-icon" title="เอาออกจากชุด" style={{ color: 'var(--blush-deep)', fontSize: 19, lineHeight: 1 }}
                         onClick={() => setItems((items) => items.filter((_, j) => j !== i))}>×</button></td>
@@ -486,7 +502,7 @@ function ChargeSetModal({ sets, services, stock, shopStock, onSave, onApply, onC
           )}
           {rows.length > 0 ? (
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, fontSize: 12.5, color: 'var(--ink-soft)', flexWrap: 'wrap' }}>
-              <span>ราคาตามราคาปัจจุบันในคลัง/บริการ — แก้ราคาในคลังแล้ว ชุดใช้ราคาใหม่อัตโนมัติ</span>
+              <span>ราคาตามราคาปัจจุบันในคลัง/บริการ (แก้ในคลังแล้วชุดใช้ราคาใหม่อัตโนมัติ) · รายการพิมพ์เองใช้ราคาที่ตั้งไว้ในชุด</span>
               <span style={{ fontWeight: 800, fontSize: 16, color: 'var(--navy)', whiteSpace: 'nowrap' }}>รวม {fmtB(sum)}</span>
             </div>
           ) : null}
@@ -528,7 +544,7 @@ function ChargeSetModal({ sets, services, stock, shopStock, onSave, onApply, onC
                     <button className="btn btn-sm" style={{ fontSize: 12 }} onClick={() => setConfirmDel(null)}>ไม่</button>
                   </>) : (<>
                     <button className="btn btn-sm" title="แก้ไขชุด" style={{ fontSize: 13, padding: '3px 8px' }}
-                      onClick={() => { setConfirmDel(null); setEditing({ id: s.id, name: s.name, items: (s.items || []).map((c) => [c[0], c[1], c[2], c[3] || null, c[4] || null]) }); }}>✏️</button>
+                      onClick={() => { setConfirmDel(null); setEditing({ id: s.id, name: s.name, items: (s.items || []).map((c) => (c[5] === 'custom' ? [c[0], c[1], c[2], null, null, 'custom'] : [c[0], c[1], c[2], c[3] || null, c[4] || null])) }); }}>✏️</button>
                     <button className="btn btn-sm" title="ลบชุด" style={{ fontSize: 13, padding: '3px 8px', color: 'var(--blush-deep)' }} onClick={() => setConfirmDel(s.id)}>🗑</button>
                     <button className="btn btn-sm btn-primary" style={{ fontWeight: 700 }} disabled={rows.length === 0} onClick={() => onApply(s)}>＋ ใส่ในบิล</button>
                   </>)}
@@ -537,7 +553,7 @@ function ChargeSetModal({ sets, services, stock, shopStock, onSave, onApply, onC
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
                 {rows.map((r, i) => (
                   <span key={i} className="chip" style={{ fontSize: 11.5, ...(r.missing ? { background: 'var(--blush-soft)', color: 'var(--blush-deep)' } : {}) }}>
-                    {r.stockId ? '📦' : r.missing ? '⚠️' : '💼'} {r.name} ×{r.qty}
+                    {r.stockId ? '📦' : r.missing ? '⚠️' : r.custom ? '✍️' : '💼'} {r.name} ×{r.qty}
                   </span>
                 ))}
               </div>
