@@ -925,6 +925,10 @@ button, input, select, textarea { font-family: inherit; font-size: inherit; colo
   .fg-cat-d { transform: translate(78vw, 30vh); }
   .fg-ball { display: none; }   /* ปิดลูกบอลเมื่อผู้ใช้ตั้งลดการเคลื่อนไหว */
 }
+
+/* แท่ง/แถวในหน้าสรุปที่กดดูรายละเอียดได้ */
+.bar-click { border-radius: 6px; transition: background .15s; }
+.bar-click:hover { background: var(--navy-soft); }
 </style>
 </head>
 <body style="font-family: 'Quicksand', 'Anuphan', sans-serif">
@@ -6750,8 +6754,14 @@ function calcMetrics(pets, queue, stock, visits, opdReceipts, extra) {
       const line = qty * price;
       const bucket = origin === 'shop' ? 'เพ็ทช้อป' : cat;
       revenueByCategory[bucket] = (revenueByCategory[bucket] || 0) + line;
-      if (!productSales[name]) productSales[name] = { qty: 0, revenue: 0 };
-      productSales[name].qty += qty; productSales[name].revenue += line;
+      if (!productSales[name]) productSales[name] = { qty: 0, revenue: 0, cases: [] };
+      const ps = productSales[name];
+      ps.qty += qty; ps.revenue += line;
+      // เคสที่คีย์รายการนี้ (1 แถว = 1 ใบเสร็จ · คีย์ซ้ำในใบเดียวกันรวมเป็นแถวเดียว)
+      const last = ps.cases[ps.cases.length - 1];
+      if (last && last.no === r.no) { last.qty += qty; last.line += line; }
+      else ps.cases.push({ no: r.no, hn: r.hn, petName: r.petName, ownerName: r.ownerName,
+        species: (petByHn[r.hn] && petByHn[r.hn].species) || '', date: r.date, qty, line });
     });
     const m = r.method || 'อื่นๆ';
     if (!byMethod[m]) byMethod[m] = { count: 0, revenue: 0 };
@@ -7112,6 +7122,94 @@ function ServiceCasesModal({ donutData, cases, selected, onSelectCat, onOpenPet,
   );
 }
 
+// ── สินค้า/บริการที่คีย์ในช่วงที่เลือก: เรียงลำดับทั้งหมด → กดรายการดูว่าคีย์ให้สัตว์ตัวไหน → กดเปิดประวัติ ──
+function ProductSalesModal({ productSales, selected, onSelect, onOpenPet, onClose, rangeLabel }) {
+  const [q, setQ] = useState('');
+  const [sortBy, setSortBy] = useState('revenue');   // 'revenue' ยอดเงิน | 'qty' จำนวน
+  const SP_EMOJI = { 'สุนัข': '🐶', 'แมว': '🐱', 'กระต่าย': '🐰', 'นก': '🐦' };
+  const all = useMemo(() => Object.entries(productSales || {}).map(([name, v]) => ({
+    name, qty: v.qty, revenue: v.revenue, cases: v.cases || [],
+    pets: new Set((v.cases || []).map((c) => c.hn).filter((h) => h && h !== '?')).size,
+  })).sort((a, b) => (sortBy === 'qty' ? (b.qty - a.qty) || (b.revenue - a.revenue) : (b.revenue - a.revenue) || (b.qty - a.qty))), [productSales, sortBy]);
+  const rankOf = {}; all.forEach((x, i) => { rankOf[x.name] = i + 1; });
+  const shown = all.filter((x) => !q.trim() || x.name.toLowerCase().includes(q.trim().toLowerCase()));
+  const sel = all.find((x) => x.name === selected) || null;
+  const cases = sel ? [...sel.cases].sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : String(b.no || '').localeCompare(String(a.no || '')))) : [];
+  const totalRev = all.reduce((a, x) => a + x.revenue, 0);
+  const canOpen = (c) => onOpenPet && c.hn && c.hn !== '?';
+  return (
+    <Modal title="📦 สินค้า/บริการที่คีย์ทั้งหมด" onClose={onClose} wide>
+      <div style={{ fontSize: 12.5, color: 'var(--ink-faint)', marginBottom: 10 }}>
+        ช่วง {rangeLabel} · {all.length} รายการ · รวม {fmtB(totalRev)} · นับจากใบเสร็จ OPD ที่ยังไม่ยกเลิก (ไม่รวมใบเพ็ทช้อปหน้าร้าน)
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(290px, 1fr))', gap: 16, alignItems: 'start' }}>
+        {/* ซ้าย: รายการทั้งหมด เรียงลำดับ */}
+        <div style={{ minWidth: 0 }}>
+          <div style={{ display: 'flex', gap: 8, marginBottom: 8, alignItems: 'center' }}>
+            <input className="input" value={q} onChange={(e) => setQ(e.target.value)} placeholder="ค้นหารายการ..." style={{ flex: 1, minWidth: 0 }} />
+            <div className="seg" style={{ flexShrink: 0 }}>
+              <button className={sortBy === 'revenue' ? 'on' : ''} onClick={() => setSortBy('revenue')}>฿ ยอดเงิน</button>
+              <button className={sortBy === 'qty' ? 'on' : ''} onClick={() => setSortBy('qty')}># จำนวน</button>
+            </div>
+          </div>
+          <div style={{ maxHeight: 430, overflowY: 'auto', border: '1px solid var(--line-soft)', borderRadius: 'var(--radius-sm)' }}>
+            {shown.length === 0 ? <div className="queue-empty">ไม่พบรายการ</div> : shown.map((x) => {
+              const on = sel && sel.name === x.name;
+              return (
+                <button key={x.name} onClick={() => onSelect(x.name)}
+                  style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', textAlign: 'left', font: 'inherit', fontSize: 13, cursor: 'pointer',
+                    padding: '8px 10px', border: 'none', borderBottom: '1px solid var(--line-soft)', borderLeft: '3px solid ' + (on ? 'var(--navy)' : 'transparent'),
+                    background: on ? 'var(--navy-soft)' : 'transparent', color: 'inherit' }}>
+                  <span style={{ width: 26, flexShrink: 0, textAlign: 'right', color: rankOf[x.name] <= 3 ? 'var(--butter-deep)' : 'var(--ink-faint)', fontWeight: 800, fontVariantNumeric: 'tabular-nums' }}>{rankOf[x.name]}</span>
+                  <span style={{ flex: 1, minWidth: 0, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={x.name}>{x.name}</span>
+                  <span style={{ color: 'var(--ink-faint)', fontSize: 11.5, flexShrink: 0, fontVariantNumeric: 'tabular-nums' }}>×{x.qty.toLocaleString('th-TH')}</span>
+                  <span style={{ fontWeight: 700, color: 'var(--mint-deep)', minWidth: 66, textAlign: 'right', flexShrink: 0, fontVariantNumeric: 'tabular-nums' }}>{fmtB(x.revenue)}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+        {/* ขวา: สัตว์ที่ถูกคีย์รายการที่เลือก */}
+        <div style={{ minWidth: 0 }}>
+          {!sel ? (
+            <div className="queue-empty" style={{ padding: 30 }}>👈 กดรายการทางซ้ายเพื่อดูว่าคีย์ให้สัตว์ตัวไหนบ้าง</div>
+          ) : (
+            <>
+              <div style={{ fontWeight: 800, fontSize: 15, marginBottom: 4 }}>{sel.name}</div>
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 8 }}>
+                <span className="chip chip-navy">อันดับ {rankOf[sel.name]}</span>
+                <span className="chip">{sel.qty.toLocaleString('th-TH')} ชิ้น/ครั้ง</span>
+                <span className="chip">{sel.pets} ตัว · {sel.cases.length} ใบเสร็จ</span>
+                <span className="chip chip-mint" style={{ fontWeight: 700 }}>{fmtB(sel.revenue)}</span>
+              </div>
+              <div style={{ maxHeight: 400, overflowY: 'auto', border: '1px solid var(--line-soft)', borderRadius: 'var(--radius-sm)' }}>
+                {cases.map((c, i) => (
+                  <div key={(c.no || '') + '_' + i} onClick={() => { if (canOpen(c)) { onClose(); onOpenPet(c.hn); } }}
+                    style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, padding: '8px 12px',
+                      borderBottom: '1px solid var(--line-soft)', fontSize: 13.5, cursor: canOpen(c) ? 'pointer' : 'default' }}>
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        {SP_EMOJI[c.species] || '🐾'} {c.petName || '-'}
+                        {c.hn && c.hn !== '?' ? <span style={{ color: 'var(--ink-faint)', fontSize: 11.5, fontWeight: 500 }}> · HN {c.hn}</span> : null}
+                      </div>
+                      <div style={{ color: 'var(--ink-faint)', fontSize: 11.5 }}>{c.ownerName || ''} · {dateTH(c.date)} · {c.no || ''}</div>
+                    </div>
+                    <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                      <div style={{ fontWeight: 700, color: 'var(--mint-deep)', fontVariantNumeric: 'tabular-nums' }}>{fmtB(c.line)}</div>
+                      <div style={{ color: 'var(--ink-faint)', fontSize: 11 }}>×{c.qty}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              {onOpenPet ? <div style={{ fontSize: 11.5, color: 'var(--ink-faint)', marginTop: 6 }}>👆 กดที่สัตว์เพื่อเปิดประวัติ</div> : null}
+            </>
+          )}
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
 // ── Excel Export ──
 // 1 แถว = 1 ใบเสร็จ/เคส แยกราคารักษา (รวม VAT แล้ว) กับราคาอาหารสัตว์ (ไม่คิด VAT) ออกจากกัน
 // เคส OPD = แยกอาหาร/รักษาตามหมวดสินค้า · ใบเสร็จเพ็ทช้อป = ลงช่องอาหารทั้งใบ (ไม่มีค่ารักษา)
@@ -7346,10 +7444,11 @@ function StaffPayrollModal({ vetPeople, asstPeople, pct, rangeLabel, onClose }) 
   );
 }
 
-function SimpleBar({ label, value, max, color }) {
+function SimpleBar({ label, value, max, color, onClick, title }) {
   const pct = max > 0 ? Math.round(value / max * 100) : 0;
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
+    <div onClick={onClick} title={title} className={onClick ? 'bar-click' : undefined}
+      style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8, cursor: onClick ? 'pointer' : undefined }}>
       <div style={{ width: 110, fontSize: 12.5, color: 'var(--ink-soft)', flexShrink: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{label}</div>
       <div style={{ flex: 1, height: 10, background: 'var(--line)', borderRadius: 99, overflow: 'hidden' }}>
         <div style={{ height: '100%', width: pct + '%', background: color || 'var(--navy)', borderRadius: 99, transition: 'width .4s' }} />
@@ -7494,7 +7593,8 @@ function ReportsView({ pets, queue, stock, shopStock = [], services = [], receip
   const [showExport, setShowExport] = useState(false);
   const [editReceipt, setEditReceipt] = useState(null);
   const [rcSearch, setRcSearch] = useState('');
-  const [donutSel, setDonutSel] = useState(null); // บริการที่กดในโดนัท → เปิดป๊อปอัพรายชื่อเคส
+  const [donutSel, setDonutSel] = useState(null);
+  const [prodSel, setProdSel] = useState(null);   // null = ปิด · '' = เปิดยังไม่เลือก · ชื่อ = เปิดที่รายการนั้น // บริการที่กดในโดนัท → เปิดป๊อปอัพรายชื่อเคส
   const [staffTab, setStaffTab] = useState('vet');  // ผลงานรายคน: 'vet' หมอ | 'asst' ผู้ช่วย
   const [staffSel, setStaffSel] = useState(null);   // ชื่อคนที่กดดูรายละเอียด
   const [staffModalCat, setStaffModalCat] = useState(null); // ประเภทที่กดในโดนัทรายคน → เปิดป๊อปอัพรายชื่อเคส
@@ -7883,13 +7983,20 @@ function ReportsView({ pets, queue, stock, shopStock = [], services = [], receip
 
         {/* Top products */}
         <div className="card">
-          <div className="card-head"><span>Top 5 สินค้า/บริการขายดี</span></div>
+          <div className="card-head">
+            <span>Top 5 สินค้า/บริการขายดี</span>
+            {Object.keys(m.productSales).length ? (
+              <button className="btn btn-sm" onClick={() => setProdSel(topProds[0] ? topProds[0].name : '')}>ดูทั้งหมด {Object.keys(m.productSales).length} รายการ ›</button>
+            ) : null}
+          </div>
           <div className="card-pad">
             {topProds.length === 0
               ? <div className="queue-empty">ยังไม่มีข้อมูล</div>
               : topProds.map((p) => (
-                <SimpleBar key={p.name} label={p.name} value={p.revenue} max={maxProd} color="var(--powder-deep)" />
+                <SimpleBar key={p.name} label={p.name} value={p.revenue} max={maxProd} color="var(--powder-deep)"
+                  onClick={() => setProdSel(p.name)} title={`${p.name} — กดดูว่าคีย์ให้สัตว์ตัวไหน`} />
               ))}
+            {topProds.length ? <div style={{ fontSize: 11.5, color: 'var(--ink-faint)' }}>👆 กดที่แท่งเพื่อดูสัตว์ที่ถูกคีย์รายการนั้น</div> : null}
           </div>
         </div>
 
@@ -7899,10 +8006,12 @@ function ReportsView({ pets, queue, stock, shopStock = [], services = [], receip
           <div className="card-pad">
             {Object.keys(m.serviceBreakdown).length === 0
               ? <div className="queue-empty">ยังไม่มีข้อมูล</div>
-              : Object.entries(m.serviceBreakdown).map(([k, v]) => (
-                <div key={k} style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', borderBottom: '1px solid var(--line-soft)', fontSize: 14 }}>
-                  <span>{k}</span>
+              : Object.entries(m.serviceBreakdown).sort((a, b) => b[1] - a[1]).map(([k, v]) => (
+                <div key={k} className="bar-click" onClick={() => setDonutSel(k)} title={`ดูรายชื่อสัตว์ — ${k}`}
+                  style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, padding: '6px 4px', borderBottom: '1px solid var(--line-soft)', fontSize: 14, cursor: 'pointer' }}>
+                  <span style={{ flex: 1 }}>{k}</span>
                   <span style={{ fontWeight: 700 }}>{v} เคส</span>
+                  <span style={{ color: 'var(--ink-faint)', fontSize: 13 }}>›</span>
                 </div>
               ))}
           </div>
@@ -8088,6 +8197,11 @@ function ReportsView({ pets, queue, stock, shopStock = [], services = [], receip
           ) : null}
         </div>
       </div>
+
+      {prodSel != null ? (
+        <ProductSalesModal productSales={m.productSales} selected={prodSel} onSelect={setProdSel}
+          onOpenPet={onOpenPet} onClose={() => setProdSel(null)} rangeLabel={rangeLabel} />
+      ) : null}
 
       {donutSel ? (
         <ServiceCasesModal

@@ -900,3 +900,7 @@ button, input, select, textarea { font-family: inherit; font-size: inherit; colo
   .fg-cat-d { transform: translate(78vw, 30vh); }
   .fg-ball { display: none; }   /* ปิดลูกบอลเมื่อผู้ใช้ตั้งลดการเคลื่อนไหว */
 }
+
+/* แท่ง/แถวในหน้าสรุปที่กดดูรายละเอียดได้ */
+.bar-click { border-radius: 6px; transition: background .15s; }
+.bar-click:hover { background: var(--navy-soft); }
