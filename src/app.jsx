@@ -783,7 +783,11 @@ function App() {
           const rItems = sync.items.map((it) => Array.isArray(it)
             ? [it[0] || '', Number(it[1]) || 1, Number(it[2]) || 0, it[3] || null, it[4] || null]
             : [it.name || '', Number(it.qty) || 1, Number(it.price) || 0, it.stockId || null, it.origin || null]);
-          const total = rItems.reduce((sum, c) => sum + c[1] * c[2], 0);
+          const itemsSum = rItems.reduce((sum, c) => sum + c[1] * c[2], 0);
+          // ใบที่ออกแบบ "บวก VAT เพิ่ม" ยอดเก็บจริงรวม VAT — คิดใหม่ตามโหมดเดิม (ไม่งั้นแก้ประวัติแล้ว VAT หายจากยอด)
+          const total = r.vatMode === 'added'
+            ? calcVatItems(rItems.map((c) => ({ qty: c[1], price: c[2], noVat: c[4] === 'shop' })), 'added').grandTotal
+            : itemsSum;
           // noVat = ยอดรายการเพ็ทช้อป (origin='shop') คำนวณใหม่จากรายการจริง
           const noVat = rItems.filter((c) => c[4] === 'shop').reduce((sum, c) => sum + c[1] * c[2], 0);
           matched = true;
@@ -965,6 +969,34 @@ function App() {
   const deleteAssistant = (name) => {
     setState((s) => ({ ...s, assistants: (s.assistants || []).filter((v) => v !== name) }));
     pushToast(`ลบผู้ช่วย "${name}" แล้ว`);
+  };
+  // เปลี่ยนคนทำของประวัติที่บันทึกไปแล้ว (กดชื่อช่างผิด) — ยอดอาบน้ำ/ค่าคอมย้ายตามทันที
+  // จับ visit ด้วย hn + เลขคิว + วันที่ (+ ชื่อเดิม ถ้าส่งมา) แก้แค่ตัวแรกที่ตรง
+  // ซิงก์ draft ในคิวด้วย — draft มาก่อนประวัติตอนเปิดเคสเดิม ไม่งั้นเปิดแล้วบันทึกซ้ำจะกลับเป็นชื่อเก่า
+  const reassignVisitStaff = ({ hn, q, date, oldVet }, patch) => {
+    const qs = String(q || '');
+    const sameVisit = (v) => String(v.q || '') === qs && v.date === date
+      && (oldVet == null || String(v.vet || '').trim() === String(oldVet).trim());
+    // ส่งชื่อเดิมมา (จากหน้าสรุป) = เช็คก่อนว่ายังตรงอยู่ · จากหน้าแก้ประวัติ ประวัติเพิ่งถูกแก้ในรอบเดียวกัน ข้ามการเช็ค
+    const pet = (pets || []).find((p) => p.hn === hn);
+    if (oldVet != null && (!pet || !(pet.visits || []).some(sameVisit))) { pushToast('❌ ไม่พบประวัติเคสนี้ (อาจถูกแก้จากอีกเครื่อง) — ลองรีเฟรช'); return false; }
+    setState((s) => {
+      let hit = false;
+      const nextPets = (s.pets || []).map((p) => {
+        if (p.hn !== hn) return p;
+        const visits = (p.visits || []).map((v) => {
+          if (hit || !sameVisit(v)) return v;
+          hit = true;
+          return { ...v, ...patch };
+        });
+        return hit ? { ...p, visits } : p;
+      });
+      if (!hit) return s;
+      const queue = qs ? (s.queue || []).map((x) => (String(x.q || '') === qs && x.hn === hn && x.draft) ? { ...x, draft: { ...x.draft, ...patch } } : x) : (s.queue || []);
+      return { ...s, pets: nextPets, queue };
+    });
+    if (patch.vet != null) pushToast(`🛁 เคสนี้เป็นของ ${patch.vet || '(ไม่ระบุ)'} แล้ว — ยอดอาบน้ำ/ค่าคอมย้ายตาม`);
+    return true;
   };
   // % ค่าคอมอาบน้ำ — จำไว้ในระบบ ไม่ต้องพิมพ์ใหม่ทุกครั้ง
   const saveCommissionPct = (pct) => {
@@ -1388,6 +1420,7 @@ function App() {
           {page === 'case' && casePet ?
           <CaseView pet={casePet} queueItem={caseQItem}
           vets={vets} assistants={assistants} services={services} stock={stock} shopStock={shopStock} allPets={pets} appointments={appointments}
+          queue={queue} onReassignVisitStaff={reassignVisitStaff}
           onBack={() => {setPage('dashboard');setCaseCtx(null);}}
           onFinish={finishCase} onAddVet={addVet} onDeleteVet={deleteVet} onAddAssistant={addAssistant} onDeleteAssistant={deleteAssistant}
           onAddAppointment={addAppointment} onUpdateAppointment={updateAppointment} onDeleteAppointment={deleteAppointment}
@@ -1400,7 +1433,7 @@ function App() {
             staffStart={state.apptStaffStart || ''} onSaveStaffStart={(d) => { setState((st) => ({ ...st, apptStaffStart: d })); pushToast(`บันทึกวันที่เวชระเบียนเริ่มโทรนัด: ${d}`); }} /> : null}
           {page === 'shop' ? <PetShop stock={shopStock} onCheckout={shopCheckout} previewReceiptNo={nextReceiptNo().no} onDeleteItem={deleteShopItem} onAddItem={addShopItem} onImportStock={importShopItems} onUpdateItem={updateShopItem} /> : null}
           {page === 'stock' ? <StockView stock={stock} onAdjust={adjustStock} onAddItem={addStockItem} onImportStock={importStockItems} onDeleteItem={deleteStockItem} onClearAll={clearStock} onUpdateItem={updateStockItem} /> : null}
-          {page === 'reports' ? <ReportsView pets={pets} queue={queue} stock={stock} shopStock={shopStock} services={services} receipts={receipts} appointments={appointments} vets={vets} assistants={assistants} commissionPct={commissionPct} onSaveCommissionPct={saveCommissionPct} onCancelReceipt={cancelReceipt} onUpdateReceipt={updateReceipt} onOpenPet={openPet} /> : null}
+          {page === 'reports' ? <ReportsView pets={pets} queue={queue} stock={stock} shopStock={shopStock} services={services} receipts={receipts} appointments={appointments} vets={vets} assistants={assistants} commissionPct={commissionPct} onSaveCommissionPct={saveCommissionPct} onReassignStaff={reassignVisitStaff} onCancelReceipt={cancelReceipt} onUpdateReceipt={updateReceipt} onOpenPet={openPet} /> : null}
           {page === 'history' ? <HistoryView pets={pets} receipts={receipts} queue={queue} admitted={admitted} ownerMode={isOwner} onOpenPet={openPet} /> : null}
           {page === 'tax' ? <TaxView pets={pets} receipts={receipts} /> : null}
         </main>

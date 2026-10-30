@@ -4581,7 +4581,7 @@ function ChargeSetModal({ sets, services, stock, shopStock, onSave, onApply, onC
   );
 }
 
-function CaseView({ pet, queueItem, vets, assistants = [], services, stock, shopStock = [], allPets, appointments = [], onBack, onFinish, onAddVet, onDeleteVet, onAddAssistant, onDeleteAssistant, onAddAdmitted, onUpdateAdmitted, onDischargeAdmitted, onAddAdmitPayment, onDeleteAdmitPayment, onAddAppointment, onUpdateAppointment, onDeleteAppointment, pushToast, onUpdatePet, onUpdateOwnerFor, onUpdateVisit, onAddService, onDeleteService, onUpdateService, onSaveDraft, previewReceiptNo, notePresets, onSavePresets, chargeSets = [], onSaveChargeSets }) {
+function CaseView({ pet, queueItem, vets, assistants = [], services, stock, shopStock = [], allPets, appointments = [], queue = [], onReassignVisitStaff, onBack, onFinish, onAddVet, onDeleteVet, onAddAssistant, onDeleteAssistant, onAddAdmitted, onUpdateAdmitted, onDischargeAdmitted, onAddAdmitPayment, onDeleteAdmitPayment, onAddAppointment, onUpdateAppointment, onDeleteAppointment, pushToast, onUpdatePet, onUpdateOwnerFor, onUpdateVisit, onAddService, onDeleteService, onUpdateService, onSaveDraft, previewReceiptNo, notePresets, onSavePresets, chargeSets = [], onSaveChargeSets }) {
   const latestWeight = pet.visits.length ? pet.visits[0].weight : pet.weight;
   const draft = queueItem?.draft;
   // เคสที่บันทึกประวัติไปแล้ว (ส่งแคชเชียร์/ชำระแล้ว) เปิดกลับเข้ามาใหม่ ต้องเห็นของเดิมครบทุกช่อง
@@ -4644,8 +4644,18 @@ function CaseView({ pet, queueItem, vets, assistants = [], services, stock, shop
   // เปิดหน้าต่างแก้ไขข้อมูลสัตว์ (รวมข้อควรระวัง/แพ้ยา)
   const openPetEdit = () => setEditPetInfo({ kind: 'pet', name: pet.name, species: pet.species || 'สุนัข', breed: pet.breed || '', sex: pet.sex || 'ผู้', sterilized: pet.sterilized === true ? 'true' : pet.sterilized === false ? 'false' : '', color: pet.color || '', birth: pet.birth || '', caution: pet.caution || '', allergy: pet.allergy || '', deceased: !!pet.deceased, deceasedDate: pet.deceasedDate || todayISO(), deceasedCause: pet.deceasedCause || '' });
   // เปิด modal แก้ไขประวัติ visit (normalize รายการเป็น object พร้อม stockId/origin)
+  // ประวัติเคสอาบน้ำตัดขน? — ยึดประเภทคิว (กติกาเดียวกับหน้าผลงานรายคน) · คิวเก่าไม่มีแล้วดูชื่อผู้ช่วย/รายการแรก
+  const isGroomVisit = (v) => {
+    const qi = v.q ? (queue || []).find((x) => String(x.q || '') === String(v.q) && x.hn === pet.hn) : null;
+    if (qi && qi.type) return qi.type === 'อาบน้ำตัดขน';
+    if (assistants.includes(String(v.vet || '').trim())) return true;
+    const first = (v.items || [])[0];
+    return /อาบน้ำ|ตัดขน|groom/i.test(String(first ? (Array.isArray(first) ? first[0] : first.name) : ''));
+  };
   const openEditVisit = (v) => setEditVisit({
     date: v.date, weight: v.weight, cc: v.cc, pe: v.pe, dx: v.dx, plan: v.plan, media: v.media || [],
+    // เคสอาบน้ำ: แก้ชื่อช่าง (ผู้ช่วยผู้ทำ) + หมอส่วนแพทย์ได้ — มีผลกับยอดอาบน้ำ/ค่าคอม
+    ...(isGroomVisit(v) ? { _groom: true, vet: v.vet || '', medVet: v.medVet || '' } : {}),
     items: (v.items || []).map((it) => Array.isArray(it)
       ? { name: it[0] || '', qty: Number(it[1]) || 1, price: Number(it[2]) || 0, stockId: it[3] || null, origin: it[4] || null }
       : { name: (it && it.name) || '', qty: Number(it && it.qty) || 1, price: Number(it && it.price) || 0, stockId: (it && it.stockId) || null, origin: (it && it.origin) || null }),
@@ -5462,7 +5472,7 @@ function CaseView({ pet, queueItem, vets, assistants = [], services, stock, shop
         <Modal title="แก้ไขประวัติการรักษา" onClose={() => setEditVisit(null)} footer={<>
           <button className="btn" onClick={() => setEditVisit(null)}>ยกเลิก</button>
           <button className="btn btn-primary" onClick={() => {
-            const { _orig, ...patch } = editVisit;
+            const { _orig, _groom, ...patch } = editVisit;
             // แปลงรายการเป็นรูปแบบมาตรฐาน [ชื่อ, จำนวน, ราคา, stockId, origin] (ตัดรายการชื่อว่างทิ้ง)
             const cleanItems = (patch.items || []).filter((it) => String(it.name || '').trim())
               .map((it) => [String(it.name).trim(), Number(it.qty) || 1, Number(it.price) || 0, it.stockId || null, it.origin || null]);
@@ -5475,6 +5485,9 @@ function CaseView({ pet, queueItem, vets, assistants = [], services, stock, shop
               : [it.name || '', Number(it.qty) || 1, Number(it.price) || 0, it.stockId || null, it.origin || null]);
             if (onUpdateVisit) onUpdateVisit(updatedPet, { hn: pet.hn, q: _orig.q || '', oldDate: _orig.date, newDate: nextPatch.date || _orig.date, items: cleanItems, oldItems });
             else onUpdatePet && onUpdatePet(updatedPet);
+            // เปลี่ยนชื่อช่าง/หมอ → ซิงก์ draft ในคิวด้วย (ประวัติถูกแก้ไปแล้วข้างบน · เรียกซ้ำได้ผลเท่าเดิม)
+            if (_groom && onReassignVisitStaff && (String(patch.vet || '') !== String(_orig.vet || '') || String(patch.medVet || '') !== String(_orig.medVet || ''))) {
+              onReassignVisitStaff({ hn: pet.hn, q: _orig.q || '', date: nextPatch.date || _orig.date }, { vet: patch.vet, medVet: patch.medVet });            }
             setEditVisit(null);
           }}>บันทึก</button>
         </>}>
@@ -5482,6 +5495,28 @@ function CaseView({ pet, queueItem, vets, assistants = [], services, stock, shop
             <div className="form-grid" style={{ gridTemplateColumns: '1fr 1fr', gap: 13 }}>
               <Field label="วันที่"><input className="input" type="date" value={editVisit.date || ''} onChange={(e) => setEditVisit({ ...editVisit, date: e.target.value })} /></Field>
               <Field label="น้ำหนัก (kg)"><input className="input" type="number" value={editVisit.weight ?? ''} step="0.1" onChange={(e) => setEditVisit({ ...editVisit, weight: e.target.value })} /></Field>
+              {editVisit._groom ? (
+                <>
+                  <Field label="ผู้ช่วยผู้ทำ (อาบน้ำตัดขน)">
+                    <select className="select" value={editVisit.vet || ''} onChange={(e) => setEditVisit({ ...editVisit, vet: e.target.value })}>
+                      {!editVisit.vet || !assistants.includes(editVisit.vet) ? <option value={editVisit.vet || ''}>{editVisit.vet || '— ไม่ระบุ —'}</option> : null}
+                      {assistants.map((n) => <option key={n} value={n}>{n}</option>)}
+                    </select>
+                  </Field>
+                  <Field label="สัตวแพทย์ (ถ้ามีตรวจ/จ่ายยาเพิ่ม)">
+                    <select className="select" value={editVisit.medVet || ''} onChange={(e) => setEditVisit({ ...editVisit, medVet: e.target.value })}>
+                      <option value="">— ไม่มี (อาบน้ำอย่างเดียว) —</option>
+                      {editVisit.medVet && !vets.includes(editVisit.medVet) ? <option value={editVisit.medVet}>{editVisit.medVet}</option> : null}
+                      {vets.map((v) => <option key={v} value={v}>{v}</option>)}
+                    </select>
+                  </Field>
+                  {String(editVisit.vet || '') !== String(editVisit._orig.vet || '') ? (
+                    <div style={{ gridColumn: '1/-1', fontSize: 12.5, padding: '7px 11px', borderRadius: 'var(--radius-sm)', background: 'var(--butter-soft, #FFF6DA)', border: '1px solid var(--butter, #F0D68A)' }}>
+                      ⚠️ ยอดอาบน้ำและค่าคอมของเคสนี้จะย้ายจาก <b>{editVisit._orig.vet || '(ไม่ระบุ)'}</b> → <b>{editVisit.vet || '(ไม่ระบุ)'}</b> เมื่อกดบันทึก
+                    </div>
+                  ) : null}
+                </>
+              ) : null}
               <Field label="อาการสำคัญ (CC)" style={{ gridColumn: '1/-1' }}><RichTextArea value={editVisit.cc || ''} onChange={(v) => setEditVisit((x) => ({ ...x, cc: v }))} placeholder="อาการที่เจ้าของบอก..." /></Field>
               <Field label="ผลการตรวจร่างกาย (PE)" style={{ gridColumn: '1/-1' }}><RichTextArea value={editVisit.pe || ''} onChange={(v) => setEditVisit((x) => ({ ...x, pe: v }))} placeholder="T, P, R, ผลตรวจ..." /></Field>
               <Field label="การวินิจฉัย (Dx)" style={{ gridColumn: '1/-1' }}><RichTextArea value={editVisit.dx || ''} onChange={(v) => setEditVisit((x) => ({ ...x, dx: v }))} placeholder="การวินิจฉัย..." /></Field>
@@ -7388,7 +7423,7 @@ function ReceiptEditModal({ receipt, onClose, onSave, onOpenPet, services = [], 
   );
 }
 
-function ReportsView({ pets, queue, stock, shopStock = [], services = [], receipts = [], appointments = [], vets = [], assistants = [], commissionPct = 10, onSaveCommissionPct, onCancelReceipt, onUpdateReceipt, onOpenPet }) {
+function ReportsView({ pets, queue, stock, shopStock = [], services = [], receipts = [], appointments = [], vets = [], assistants = [], commissionPct = 10, onSaveCommissionPct, onReassignStaff, onCancelReceipt, onUpdateReceipt, onOpenPet }) {
   const now = new Date();
   const [range, setRange] = useState('week');
   const [pickYear, setPickYear] = useState(now.getFullYear());
@@ -7476,7 +7511,8 @@ function ReportsView({ pets, queue, stock, shopStock = [], services = [], receip
       const pet = petByHn[v.petHn];
       const item = { date: v.date, petName: v.petName, petHn: v.petHn, hn: v.petHn,
         species: (pet && pet.species) || '', ownerName: (pet && pet.owner && pet.owner.name) || '',
-        no: noByKey[`${v.petHn}|${v.q || ''}|${v.date}`] || '', svc, total: amount, groom: groomAmt, ...(extra || {}) };
+        no: noByKey[`${v.petHn}|${v.q || ''}|${v.date}`] || '', svc, total: amount, groom: groomAmt,
+        q: v.q || '', vet: String(v.vet || '').trim(), ...(extra || {}) };
       p.list.push(item);
       (p.byServiceCases[svc] = p.byServiceCases[svc] || []).push(item);
     };
@@ -7963,6 +7999,21 @@ function ReportsView({ pets, queue, stock, shopStock = [], services = [], receip
                       </span>
                       <span className="chip" style={{ fontSize: 11 }}>{c.svc}</span>
                       {c.fromGroom ? <span className="chip chip-butter" style={{ fontSize: 10.5 }} title="ส่วนแพทย์ในเคสอาบน้ำ">ในเคสอาบน้ำ</span> : null}
+                      {/* กดชื่อช่างผิด → ย้ายเคสอาบน้ำไปอีกคน (ยอดอาบน้ำ/ค่าคอมย้ายตาม) */}
+                      {c.svc === 'อาบน้ำตัดขน' && !c.fromGroom && onReassignStaff && assistants.length ? (
+                        <select className="select" value={c.vet} title="เปลี่ยนช่างที่ทำเคสนี้ — ยอดอาบน้ำ/ค่าคอมจะย้ายไปคนใหม่"
+                          onClick={(e) => e.stopPropagation()}
+                          onChange={(e) => {
+                            const to = e.target.value;
+                            if (!to || to === c.vet) return;
+                            if (!confirm(`เปลี่ยนช่างเคส ${c.petName || '-'} (${dateTH(c.date)})\nจาก "${c.vet || '(ไม่ระบุ)'}" → "${to}" ?\n\nยอดอาบน้ำ ${fmtB(c.groom)} และค่าคอมจะย้ายไปคนใหม่`)) return;
+                            onReassignStaff({ hn: c.petHn, q: c.q, date: c.date, oldVet: c.vet }, { vet: to });
+                          }}
+                          style={{ width: 'auto', maxWidth: 130, padding: '3px 26px 3px 8px', fontSize: 12, height: 'auto', flexShrink: 0 }}>
+                          {!assistants.includes(c.vet) ? <option value={c.vet}>{c.vet || '— ไม่ระบุ —'}</option> : null}
+                          {assistants.map((n) => <option key={n} value={n}>🛁 {n}</option>)}
+                        </select>
+                      ) : null}
                       {staffTab === 'asst'
                         ? <span style={{ fontWeight: 800, color: 'var(--mint-deep)', minWidth: 82, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
                             {fmtB(c.groom)}{c.billTotal && c.billTotal !== c.groom ? <span style={{ color: 'var(--ink-faint)', fontWeight: 500, fontSize: 10.5 }}> /บิล {fmtB(c.billTotal)}</span> : null}
@@ -11538,7 +11589,11 @@ function App() {
           const rItems = sync.items.map((it) => Array.isArray(it)
             ? [it[0] || '', Number(it[1]) || 1, Number(it[2]) || 0, it[3] || null, it[4] || null]
             : [it.name || '', Number(it.qty) || 1, Number(it.price) || 0, it.stockId || null, it.origin || null]);
-          const total = rItems.reduce((sum, c) => sum + c[1] * c[2], 0);
+          const itemsSum = rItems.reduce((sum, c) => sum + c[1] * c[2], 0);
+          // ใบที่ออกแบบ "บวก VAT เพิ่ม" ยอดเก็บจริงรวม VAT — คิดใหม่ตามโหมดเดิม (ไม่งั้นแก้ประวัติแล้ว VAT หายจากยอด)
+          const total = r.vatMode === 'added'
+            ? calcVatItems(rItems.map((c) => ({ qty: c[1], price: c[2], noVat: c[4] === 'shop' })), 'added').grandTotal
+            : itemsSum;
           // noVat = ยอดรายการเพ็ทช้อป (origin='shop') คำนวณใหม่จากรายการจริง
           const noVat = rItems.filter((c) => c[4] === 'shop').reduce((sum, c) => sum + c[1] * c[2], 0);
           matched = true;
@@ -11720,6 +11775,34 @@ function App() {
   const deleteAssistant = (name) => {
     setState((s) => ({ ...s, assistants: (s.assistants || []).filter((v) => v !== name) }));
     pushToast(`ลบผู้ช่วย "${name}" แล้ว`);
+  };
+  // เปลี่ยนคนทำของประวัติที่บันทึกไปแล้ว (กดชื่อช่างผิด) — ยอดอาบน้ำ/ค่าคอมย้ายตามทันที
+  // จับ visit ด้วย hn + เลขคิว + วันที่ (+ ชื่อเดิม ถ้าส่งมา) แก้แค่ตัวแรกที่ตรง
+  // ซิงก์ draft ในคิวด้วย — draft มาก่อนประวัติตอนเปิดเคสเดิม ไม่งั้นเปิดแล้วบันทึกซ้ำจะกลับเป็นชื่อเก่า
+  const reassignVisitStaff = ({ hn, q, date, oldVet }, patch) => {
+    const qs = String(q || '');
+    const sameVisit = (v) => String(v.q || '') === qs && v.date === date
+      && (oldVet == null || String(v.vet || '').trim() === String(oldVet).trim());
+    // ส่งชื่อเดิมมา (จากหน้าสรุป) = เช็คก่อนว่ายังตรงอยู่ · จากหน้าแก้ประวัติ ประวัติเพิ่งถูกแก้ในรอบเดียวกัน ข้ามการเช็ค
+    const pet = (pets || []).find((p) => p.hn === hn);
+    if (oldVet != null && (!pet || !(pet.visits || []).some(sameVisit))) { pushToast('❌ ไม่พบประวัติเคสนี้ (อาจถูกแก้จากอีกเครื่อง) — ลองรีเฟรช'); return false; }
+    setState((s) => {
+      let hit = false;
+      const nextPets = (s.pets || []).map((p) => {
+        if (p.hn !== hn) return p;
+        const visits = (p.visits || []).map((v) => {
+          if (hit || !sameVisit(v)) return v;
+          hit = true;
+          return { ...v, ...patch };
+        });
+        return hit ? { ...p, visits } : p;
+      });
+      if (!hit) return s;
+      const queue = qs ? (s.queue || []).map((x) => (String(x.q || '') === qs && x.hn === hn && x.draft) ? { ...x, draft: { ...x.draft, ...patch } } : x) : (s.queue || []);
+      return { ...s, pets: nextPets, queue };
+    });
+    if (patch.vet != null) pushToast(`🛁 เคสนี้เป็นของ ${patch.vet || '(ไม่ระบุ)'} แล้ว — ยอดอาบน้ำ/ค่าคอมย้ายตาม`);
+    return true;
   };
   // % ค่าคอมอาบน้ำ — จำไว้ในระบบ ไม่ต้องพิมพ์ใหม่ทุกครั้ง
   const saveCommissionPct = (pct) => {
@@ -12143,6 +12226,7 @@ function App() {
           {page === 'case' && casePet ?
           <CaseView pet={casePet} queueItem={caseQItem}
           vets={vets} assistants={assistants} services={services} stock={stock} shopStock={shopStock} allPets={pets} appointments={appointments}
+          queue={queue} onReassignVisitStaff={reassignVisitStaff}
           onBack={() => {setPage('dashboard');setCaseCtx(null);}}
           onFinish={finishCase} onAddVet={addVet} onDeleteVet={deleteVet} onAddAssistant={addAssistant} onDeleteAssistant={deleteAssistant}
           onAddAppointment={addAppointment} onUpdateAppointment={updateAppointment} onDeleteAppointment={deleteAppointment}
@@ -12155,7 +12239,7 @@ function App() {
             staffStart={state.apptStaffStart || ''} onSaveStaffStart={(d) => { setState((st) => ({ ...st, apptStaffStart: d })); pushToast(`บันทึกวันที่เวชระเบียนเริ่มโทรนัด: ${d}`); }} /> : null}
           {page === 'shop' ? <PetShop stock={shopStock} onCheckout={shopCheckout} previewReceiptNo={nextReceiptNo().no} onDeleteItem={deleteShopItem} onAddItem={addShopItem} onImportStock={importShopItems} onUpdateItem={updateShopItem} /> : null}
           {page === 'stock' ? <StockView stock={stock} onAdjust={adjustStock} onAddItem={addStockItem} onImportStock={importStockItems} onDeleteItem={deleteStockItem} onClearAll={clearStock} onUpdateItem={updateStockItem} /> : null}
-          {page === 'reports' ? <ReportsView pets={pets} queue={queue} stock={stock} shopStock={shopStock} services={services} receipts={receipts} appointments={appointments} vets={vets} assistants={assistants} commissionPct={commissionPct} onSaveCommissionPct={saveCommissionPct} onCancelReceipt={cancelReceipt} onUpdateReceipt={updateReceipt} onOpenPet={openPet} /> : null}
+          {page === 'reports' ? <ReportsView pets={pets} queue={queue} stock={stock} shopStock={shopStock} services={services} receipts={receipts} appointments={appointments} vets={vets} assistants={assistants} commissionPct={commissionPct} onSaveCommissionPct={saveCommissionPct} onReassignStaff={reassignVisitStaff} onCancelReceipt={cancelReceipt} onUpdateReceipt={updateReceipt} onOpenPet={openPet} /> : null}
           {page === 'history' ? <HistoryView pets={pets} receipts={receipts} queue={queue} admitted={admitted} ownerMode={isOwner} onOpenPet={openPet} /> : null}
           {page === 'tax' ? <TaxView pets={pets} receipts={receipts} /> : null}
         </main>

@@ -850,7 +850,7 @@ function ReceiptEditModal({ receipt, onClose, onSave, onOpenPet, services = [], 
   );
 }
 
-function ReportsView({ pets, queue, stock, shopStock = [], services = [], receipts = [], appointments = [], vets = [], assistants = [], commissionPct = 10, onSaveCommissionPct, onCancelReceipt, onUpdateReceipt, onOpenPet }) {
+function ReportsView({ pets, queue, stock, shopStock = [], services = [], receipts = [], appointments = [], vets = [], assistants = [], commissionPct = 10, onSaveCommissionPct, onReassignStaff, onCancelReceipt, onUpdateReceipt, onOpenPet }) {
   const now = new Date();
   const [range, setRange] = useState('week');
   const [pickYear, setPickYear] = useState(now.getFullYear());
@@ -938,7 +938,8 @@ function ReportsView({ pets, queue, stock, shopStock = [], services = [], receip
       const pet = petByHn[v.petHn];
       const item = { date: v.date, petName: v.petName, petHn: v.petHn, hn: v.petHn,
         species: (pet && pet.species) || '', ownerName: (pet && pet.owner && pet.owner.name) || '',
-        no: noByKey[`${v.petHn}|${v.q || ''}|${v.date}`] || '', svc, total: amount, groom: groomAmt, ...(extra || {}) };
+        no: noByKey[`${v.petHn}|${v.q || ''}|${v.date}`] || '', svc, total: amount, groom: groomAmt,
+        q: v.q || '', vet: String(v.vet || '').trim(), ...(extra || {}) };
       p.list.push(item);
       (p.byServiceCases[svc] = p.byServiceCases[svc] || []).push(item);
     };
@@ -1425,6 +1426,21 @@ function ReportsView({ pets, queue, stock, shopStock = [], services = [], receip
                       </span>
                       <span className="chip" style={{ fontSize: 11 }}>{c.svc}</span>
                       {c.fromGroom ? <span className="chip chip-butter" style={{ fontSize: 10.5 }} title="ส่วนแพทย์ในเคสอาบน้ำ">ในเคสอาบน้ำ</span> : null}
+                      {/* กดชื่อช่างผิด → ย้ายเคสอาบน้ำไปอีกคน (ยอดอาบน้ำ/ค่าคอมย้ายตาม) */}
+                      {c.svc === 'อาบน้ำตัดขน' && !c.fromGroom && onReassignStaff && assistants.length ? (
+                        <select className="select" value={c.vet} title="เปลี่ยนช่างที่ทำเคสนี้ — ยอดอาบน้ำ/ค่าคอมจะย้ายไปคนใหม่"
+                          onClick={(e) => e.stopPropagation()}
+                          onChange={(e) => {
+                            const to = e.target.value;
+                            if (!to || to === c.vet) return;
+                            if (!confirm(`เปลี่ยนช่างเคส ${c.petName || '-'} (${dateTH(c.date)})\nจาก "${c.vet || '(ไม่ระบุ)'}" → "${to}" ?\n\nยอดอาบน้ำ ${fmtB(c.groom)} และค่าคอมจะย้ายไปคนใหม่`)) return;
+                            onReassignStaff({ hn: c.petHn, q: c.q, date: c.date, oldVet: c.vet }, { vet: to });
+                          }}
+                          style={{ width: 'auto', maxWidth: 130, padding: '3px 26px 3px 8px', fontSize: 12, height: 'auto', flexShrink: 0 }}>
+                          {!assistants.includes(c.vet) ? <option value={c.vet}>{c.vet || '— ไม่ระบุ —'}</option> : null}
+                          {assistants.map((n) => <option key={n} value={n}>🛁 {n}</option>)}
+                        </select>
+                      ) : null}
                       {staffTab === 'asst'
                         ? <span style={{ fontWeight: 800, color: 'var(--mint-deep)', minWidth: 82, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
                             {fmtB(c.groom)}{c.billTotal && c.billTotal !== c.groom ? <span style={{ color: 'var(--ink-faint)', fontWeight: 500, fontSize: 10.5 }}> /บิล {fmtB(c.billTotal)}</span> : null}
