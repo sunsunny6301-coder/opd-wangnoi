@@ -397,6 +397,9 @@ function App() {
     setState((s) => ({ ...s, chargeSets: typeof list === 'function' ? list(s.chargeSets || []) : list }));
     if (msg) pushToast(msg);
   };
+  // รายการปักหมุด — ขึ้นบนสุดเวลากดช่องค้นหาค่าใช้จ่าย เรียงตามที่จัดใน "จัดการรายการ" [{ kind:'svc'|'stock', id, name }]
+  const chargePins = state.chargePins || [];
+  const saveChargePins = (list) => setState((s) => ({ ...s, chargePins: list }));
   // ข้อความสำเร็จรูปของหน้าส่ง SMS เอง (แก้/เพิ่มได้ · sync คลาวด์)
   const smsPresets = state.smsPresets;
   const saveSmsPresets = (list) => {
@@ -1427,13 +1430,13 @@ function App() {
           onUpdateAdmitted={updateAdmitted} onDischargeAdmitted={dischargeAdmitted}
           onAddAdmitted={addAdmitted} onAddAdmitPayment={addAdmitPayment} onDeleteAdmitPayment={deleteAdmitPayment} pushToast={pushToast}
           onUpdatePet={updatePet} onUpdateOwnerFor={updateOwnerFor} onUpdateVisit={updateVisit} onAddService={addService} onDeleteService={deleteService} onUpdateService={updateService} onSaveDraft={saveDraft} previewReceiptNo={nextReceiptNo().no}
-          notePresets={notePresets} onSavePresets={saveNotePresets} chargeSets={chargeSets} onSaveChargeSets={saveChargeSets} /> :
+          notePresets={notePresets} onSavePresets={saveNotePresets} chargeSets={chargeSets} onSaveChargeSets={saveChargeSets} chargePins={chargePins} onSaveChargePins={saveChargePins} /> :
           null}
           {page === 'appointments' ? <AppointmentsView appointments={appointments} pets={pets} onAdd={addAppointment} onUpdate={updateAppointment} onDelete={deleteAppointment} onOpenPet={openPet} pushToast={pushToast} notePresets={notePresets} onSavePresets={saveNotePresets} smsPresets={smsPresets} onSaveSmsPresets={saveSmsPresets} ownerMode={isOwner}
             staffStart={state.apptStaffStart || ''} onSaveStaffStart={(d) => { setState((st) => ({ ...st, apptStaffStart: d })); pushToast(`บันทึกวันที่เวชระเบียนเริ่มโทรนัด: ${d}`); }} /> : null}
           {page === 'shop' ? <PetShop stock={shopStock} onCheckout={shopCheckout} previewReceiptNo={nextReceiptNo().no} onDeleteItem={deleteShopItem} onAddItem={addShopItem} onImportStock={importShopItems} onUpdateItem={updateShopItem} /> : null}
           {page === 'stock' ? <StockView stock={stock} onAdjust={adjustStock} onAddItem={addStockItem} onImportStock={importStockItems} onDeleteItem={deleteStockItem} onClearAll={clearStock} onUpdateItem={updateStockItem} /> : null}
-          {page === 'reports' ? <ReportsView pets={pets} queue={queue} stock={stock} shopStock={shopStock} services={services} receipts={receipts} appointments={appointments} vets={vets} assistants={assistants} commissionPct={commissionPct} onSaveCommissionPct={saveCommissionPct} onReassignStaff={reassignVisitStaff} onCancelReceipt={cancelReceipt} onUpdateReceipt={updateReceipt} onOpenPet={openPet} /> : null}
+          {page === 'reports' ? <ReportsView pets={pets} queue={queue} stock={stock} shopStock={shopStock} services={services} receipts={receipts} appointments={appointments} vets={vets} assistants={assistants} commissionPct={commissionPct} onSaveCommissionPct={saveCommissionPct} onReassignStaff={reassignVisitStaff} chargePins={chargePins} onCancelReceipt={cancelReceipt} onUpdateReceipt={updateReceipt} onOpenPet={openPet} /> : null}
           {page === 'history' ? <HistoryView pets={pets} receipts={receipts} queue={queue} admitted={admitted} ownerMode={isOwner} onOpenPet={openPet} /> : null}
           {page === 'tax' ? <TaxView pets={pets} receipts={receipts} /> : null}
         </main>

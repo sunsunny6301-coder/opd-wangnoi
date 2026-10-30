@@ -202,7 +202,7 @@ function CatSelect({ value, cats, onChange, style }) {
 }
 
 // ── Service Manager Modal ──
-function ServiceManagerModal({ services, stock, onAdd, onSaveService, onDeleteService, onUpdateService, onClose }) {
+function ServiceManagerModal({ services, stock, pins = [], onSavePins, onAdd, onSaveService, onDeleteService, onUpdateService, onClose }) {
   const [q, setQ] = useState('');
   const [catFilter, setCatFilter] = useState('ทั้งหมด');
   const [newItem, setNewItem] = useState({ name: '', cat: 'บริการ', price: '' });
@@ -223,6 +223,19 @@ function ServiceManagerModal({ services, stock, onAdd, onSaveService, onDeleteSe
     all.forEach((s) => { if (s.cat) set.add(s.cat); });
     return Array.from(set);
   }, [all]);
+  // ── ปักหมุด: รายการที่ให้ขึ้นบนสุดเวลากดช่องค้นหาในบิล (เรียงลำดับเองได้) ──
+  const pinKind = (x) => (x.kind === 'svc' ? 'svc' : 'stock');
+  const pinRes = useMemo(() => resolvePins(pins, services, stock), [pins, services, stock]);
+  const isPinned = (x) => pinRes.seen.has(pinKind(x) + '|' + x.id);
+  // บันทึกจากรายการที่หาเจอจริงเท่านั้น (ทิ้งหมุดของรายการที่ถูกลบไปแล้ว · ชื่อเป็นปัจจุบัน)
+  const savePins = (list) => onSavePins && onSavePins(list.map((x) => ({ kind: pinKind(x), id: x.id, name: x.name })));
+  const togglePin = (x) => (isPinned(x)
+    ? savePins(pinRes.list.filter((p) => !(p.kind === pinKind(x) && p.id === x.id)))
+    : savePins([...pinRes.list, { ...x, kind: pinKind(x) }]));
+  const movePin = (i, d) => {
+    const j = i + d; if (j < 0 || j >= pinRes.list.length) return;
+    const list = [...pinRes.list]; [list[i], list[j]] = [list[j], list[i]]; savePins(list);
+  };
   const filtered = all.filter((s) => {
     const matchCat = catFilter === 'ทั้งหมด' || s.cat === catFilter;
     const matchQ = !q || s.name.toLowerCase().includes(q.toLowerCase());
@@ -240,9 +253,35 @@ function ServiceManagerModal({ services, stock, onAdd, onSaveService, onDeleteSe
             </button>
           ))}
         </div>
+        {onSavePins ? (
+          <div style={{ border: '1.5px solid var(--butter)', background: 'var(--butter-soft)', borderRadius: 'var(--radius-sm)', padding: '8px 10px' }}>
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap', marginBottom: pinRes.list.length ? 7 : 0 }}>
+              <b style={{ fontSize: 13.5 }}>📌 ขึ้นบนสุดเวลากดช่องค้นหา</b>
+              <span style={{ fontSize: 11.5, color: 'var(--ink-faint)' }}>
+                {pinRes.list.length ? 'เรียงตามลำดับนี้ · กด ▲ ▼ เพื่อเลื่อน' : 'กด 📌 ที่รายการด้านล่างเพื่อปักหมุด — แนะนำปักรายการ 📦 จากสต็อก (ตัดสต็อกให้อัตโนมัติ)'}
+              </span>
+            </div>
+            {pinRes.list.length ? (
+              <div style={{ maxHeight: 190, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 4 }}>
+                {pinRes.list.map((p, i) => (
+                  <div key={p.kind + '|' + p.id} style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'var(--surface)', border: '1px solid var(--line)', borderRadius: 8, padding: '4px 8px', fontSize: 13 }}>
+                    <span style={{ width: 22, textAlign: 'right', color: 'var(--ink-faint)', fontVariantNumeric: 'tabular-nums' }}>{i + 1}.</span>
+                    <span>{p.emoji || (p.kind === 'svc' ? '💼' : '📦')}</span>
+                    <b style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name}</b>
+                    <span className={'chip ' + (p.kind === 'svc' ? '' : 'chip-mint')} style={{ fontSize: 10.5, whiteSpace: 'nowrap' }}>{p.kind === 'svc' ? '💼 บริการ · ไม่ตัดสต็อก' : '📦 ตัดสต็อก'}</span>
+                    <span style={{ fontWeight: 700, color: 'var(--mint-deep)', minWidth: 52, textAlign: 'right' }}>{fmtB(p.price)}</span>
+                    <button className="btn btn-sm" style={{ padding: '2px 8px' }} disabled={i === 0} title="เลื่อนขึ้น" onClick={() => movePin(i, -1)}>▲</button>
+                    <button className="btn btn-sm" style={{ padding: '2px 8px' }} disabled={i === pinRes.list.length - 1} title="เลื่อนลง" onClick={() => movePin(i, 1)}>▼</button>
+                    <button className="btn btn-sm" style={{ padding: '2px 8px', color: 'var(--blush-deep)' }} title="เอาออกจากปักหมุด" onClick={() => togglePin(p)}>✕</button>
+                  </div>
+                ))}
+              </div>
+            ) : null}
+          </div>
+        ) : null}
         <div style={{ maxHeight: 380, overflowY: 'auto', border: '1px solid var(--line)', borderRadius: 'var(--radius-sm)' }}>
           <table className="tbl">
-            <thead><tr><th>รายการ</th><th>หมวด</th><th className="num">ราคา</th><th style={{ width: 90 }}>ข้อมูล</th><th style={{ width: 160 }}></th></tr></thead>
+            <thead><tr><th>รายการ</th><th>หมวด</th><th className="num">ราคา</th><th style={{ width: 90 }}>ข้อมูล</th><th style={{ width: 196 }}></th></tr></thead>
             <tbody>
               {filtered.length === 0 ? (
                 <tr><td colSpan="5" style={{ textAlign: 'center', color: 'var(--ink-faint)', padding: 20 }}>ไม่พบรายการ</td></tr>
@@ -280,6 +319,11 @@ function ServiceManagerModal({ services, stock, onAdd, onSaveService, onDeleteSe
                     </td>
                     <td>
                       <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+                        {onSavePins ? (
+                          <button className="btn btn-sm" title={isPinned(s) ? 'เอาออกจากปักหมุด' : 'ปักหมุด — ให้ขึ้นบนสุดเวลากดช่องค้นหา'} onClick={() => togglePin(s)}
+                            style={{ fontSize: 13, padding: '3px 7px', opacity: isPinned(s) ? 1 : 0.45,
+                              background: isPinned(s) ? 'var(--butter-soft)' : undefined, borderColor: isPinned(s) ? 'var(--butter-deep)' : undefined }}>📌</button>
+                        ) : null}
                         <button className="btn btn-sm btn-primary" style={{ fontSize: 12 }} onClick={() => { onAdd(s); }}>+ เพิ่ม</button>
                         {s.kind === 'svc' && (
                           confirmDeleteId === s.id ? (
@@ -336,7 +380,20 @@ function ServiceManagerModal({ services, stock, onAdd, onSaveService, onDeleteSe
   );
 }
 
-function ChargePicker({ services, stock, shopStock = [], onAdd }) {
+// รายการปักหมุด (state.chargePins = [{ kind:'svc'|'stock', id, name }]) → ขึ้นบนสุดของช่องค้นหาตามลำดับที่จัดไว้
+// id สต็อกเปลี่ยนได้ถ้าลบแล้วนำเข้าใหม่ → ผูกกลับด้วยชื่อในคลังเดียวกัน · หาไม่เจอ (ถูกลบ) = ข้าม
+function resolvePins(pins, services, stock) {
+  const out = [], seen = new Set();
+  (pins || []).forEach((p) => {
+    const pool = p.kind === 'svc' ? (services || []) : (stock || []);
+    const x = pool.find((i) => i.id === p.id) || pool.find((i) => i.name === p.name);
+    const kind = p.kind === 'svc' ? 'svc' : 'stock';
+    if (x && !seen.has(kind + '|' + x.id)) { seen.add(kind + '|' + x.id); out.push({ ...x, kind, pinned: true }); }
+  });
+  return { list: out, seen };
+}
+
+function ChargePicker({ services, stock, shopStock = [], pins = [], onAdd }) {
   const [q, setQ] = useState('');
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
@@ -347,11 +404,14 @@ function ChargePicker({ services, stock, shopStock = [], onAdd }) {
   }, []);
   const results = useMemo(() => {
     const s = q.trim().toLowerCase();
-    const svc = services.filter((x) => !s || x.name.toLowerCase().includes(s)).map((x) => ({ ...x, kind: 'svc' }));
-    const stk = stock.filter((x) => !s || x.name.toLowerCase().includes(s)).map((x) => ({ ...x, kind: 'stock' }));
-    const shop = (shopStock || []).filter((x) => !s || x.name.toLowerCase().includes(s)).map((x) => ({ ...x, kind: 'shop' }));
-    return [...svc, ...stk, ...shop].slice(0, 12);
-  }, [q, services, stock, shopStock]);
+    const hit = (x) => !s || String(x.name || '').toLowerCase().includes(s);
+    const pin = resolvePins(pins, services, stock);
+    const top = pin.list.filter(hit);   // ปักหมุดไว้ = ขึ้นก่อนเสมอ (ทั้งตอนเพิ่งกดช่อง และตอนพิมพ์ค้น)
+    const svc = services.filter((x) => hit(x) && !pin.seen.has('svc|' + x.id)).map((x) => ({ ...x, kind: 'svc' }));
+    const stk = stock.filter((x) => hit(x) && !pin.seen.has('stock|' + x.id)).map((x) => ({ ...x, kind: 'stock' }));
+    const shop = (shopStock || []).filter(hit).map((x) => ({ ...x, kind: 'shop' }));
+    return [...top, ...svc, ...stk, ...shop].slice(0, Math.max(12, top.length));
+  }, [q, services, stock, shopStock, pins]);
   return (
     <div className="search-wrap" style={{ maxWidth: 'none' }} ref={ref}>
       <Icon name="search" size={16} />
@@ -359,10 +419,11 @@ function ChargePicker({ services, stock, shopStock = [], onAdd }) {
       {open && (
         <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, background: '#fff', border: '1px solid var(--line)', borderRadius: 'var(--radius-sm)', marginTop: 6, zIndex: 10, maxHeight: 280, overflowY: 'auto', boxShadow: '0 4px 12px rgba(0,0,0,.1)' }}>
           {results.length === 0 ? <div style={{ padding: 10, fontSize: 13, color: 'var(--ink-faint)', textAlign: 'center' }}>ไม่พบ</div> : results.map((x) => (
-            <button key={x.id} className="search-result" onClick={() => { onAdd(x); setQ(''); setOpen(false); }} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', borderBottom: '1px solid var(--line)', width: '100%', textAlign: 'left', background: 'none', border: 'none', cursor: 'pointer', fontSize: 13 }}>
+            <button key={x.kind + '|' + x.id} className="search-result" onClick={() => { onAdd(x); setQ(''); setOpen(false); }} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', borderBottom: '1px solid var(--line)', width: '100%', textAlign: 'left', background: 'none', border: 'none', cursor: 'pointer', fontSize: 13 }}>
               <span style={{ fontSize: 18 }}>{x.emoji || (x.kind === 'svc' ? '💼' : '📦')}</span>
               <div style={{ flex: 1 }}>
                 <div style={{ fontWeight: 600 }}>
+                  {x.pinned ? <span title="ปักหมุดไว้ (จัดลำดับได้ใน 📋 จัดการรายการ)" style={{ marginRight: 4 }}>📌</span> : null}
                   {x.name}
                   {x.kind === 'shop' ? <span className="chip chip-mint" style={{ fontSize: 10, marginLeft: 6, verticalAlign: 'middle' }}>เพ็ทช้อป · ไม่คิด VAT</span> : null}
                 </div>
@@ -396,7 +457,7 @@ function resolveSetItem(c, stock, shopStock, services) {
   return { name, qty, price: sv ? (Number(sv.price) || 0) : (Number(c[2]) || 0), stockId: null, origin: null, st: null, missing: false };
 }
 
-function ChargeSetModal({ sets, services, stock, shopStock, onSave, onApply, onClose }) {
+function ChargeSetModal({ sets, services, stock, shopStock, pins = [], onSave, onApply, onClose }) {
   const [editing, setEditing] = useState(null);   // null = หน้ารายการ · { id, name, items } = หน้าแก้ไข
   const [confirmDel, setConfirmDel] = useState(null);
   const [q, setQ] = useState('');
@@ -453,7 +514,7 @@ function ChargeSetModal({ sets, services, stock, shopStock, onSave, onApply, onC
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
             <label style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--ink-soft)' }}>เพิ่มรายการเข้าชุด (ยา/สินค้าในสต็อก หรือบริการ)</label>
-            <ChargePicker services={services || []} stock={stock || []} shopStock={shopStock || []} onAdd={addItem} />
+            <ChargePicker services={services || []} stock={stock || []} shopStock={shopStock || []} pins={pins} onAdd={addItem} />
             <button type="button" className="btn btn-sm" style={{ alignSelf: 'flex-start', marginTop: 2 }} onClick={addCustom}
               title="หัตถการ/ค่าบริการที่ไม่ได้อยู่ในสต็อก — พิมพ์ชื่อและราคาเอง (ไม่ตัดสต็อก)">+ เพิ่มรายการ (พิมพ์เอง)</button>
           </div>
@@ -571,7 +632,7 @@ function ChargeSetModal({ sets, services, stock, shopStock, onSave, onApply, onC
   );
 }
 
-function CaseView({ pet, queueItem, vets, assistants = [], services, stock, shopStock = [], allPets, appointments = [], queue = [], onReassignVisitStaff, onBack, onFinish, onAddVet, onDeleteVet, onAddAssistant, onDeleteAssistant, onAddAdmitted, onUpdateAdmitted, onDischargeAdmitted, onAddAdmitPayment, onDeleteAdmitPayment, onAddAppointment, onUpdateAppointment, onDeleteAppointment, pushToast, onUpdatePet, onUpdateOwnerFor, onUpdateVisit, onAddService, onDeleteService, onUpdateService, onSaveDraft, previewReceiptNo, notePresets, onSavePresets, chargeSets = [], onSaveChargeSets }) {
+function CaseView({ pet, queueItem, vets, assistants = [], services, stock, shopStock = [], allPets, appointments = [], queue = [], onReassignVisitStaff, onBack, onFinish, onAddVet, onDeleteVet, onAddAssistant, onDeleteAssistant, onAddAdmitted, onUpdateAdmitted, onDischargeAdmitted, onAddAdmitPayment, onDeleteAdmitPayment, onAddAppointment, onUpdateAppointment, onDeleteAppointment, pushToast, onUpdatePet, onUpdateOwnerFor, onUpdateVisit, onAddService, onDeleteService, onUpdateService, onSaveDraft, previewReceiptNo, notePresets, onSavePresets, chargeSets = [], onSaveChargeSets, chargePins = [], onSaveChargePins }) {
   const latestWeight = pet.visits.length ? pet.visits[0].weight : pet.weight;
   const draft = queueItem?.draft;
   // เคสที่บันทึกประวัติไปแล้ว (ส่งแคชเชียร์/ชำระแล้ว) เปิดกลับเข้ามาใหม่ ต้องเห็นของเดิมครบทุกช่อง
@@ -1020,7 +1081,7 @@ function CaseView({ pet, queueItem, vets, assistants = [], services, stock, shop
               <span className="chip chip-blush" style={{ fontWeight: 700 }}>{charges.length} รายการ</span>
             </div>
             <div className="card-pad" style={{ display: 'flex', flexDirection: 'column', gap: 13 }}>
-              <ChargePicker services={services} stock={stock} shopStock={shopStock} onAdd={(item) => setCharges((prev) => [...prev, [item.name, 1, item.price, (item.kind === 'stock' || item.kind === 'stk' || item.kind === 'shop') ? item.id : null, item.kind === 'shop' ? 'shop' : null]])} />
+              <ChargePicker services={services} stock={stock} shopStock={shopStock} pins={chargePins} onAdd={(item) => setCharges((prev) => [...prev, [item.name, 1, item.price, (item.kind === 'stock' || item.kind === 'stk' || item.kind === 'shop') ? item.id : null, item.kind === 'shop' ? 'shop' : null]])} />
               {/* charges table */}
               {charges.length > 0 && (
                 <div style={{ overflow: 'auto' }}>
@@ -1516,7 +1577,7 @@ function CaseView({ pet, queueItem, vets, assistants = [], services, stock, shop
             <div>
               <div style={{ fontWeight: 700, fontSize: 13, color: 'var(--ink-soft)', marginBottom: 8 }}>💊 รายการค่าใช้จ่าย</div>
               <div className="no-print" style={{ marginBottom: 10 }}>
-                <ChargePicker services={services || []} stock={stock || []} shopStock={shopStock || []}
+                <ChargePicker services={services || []} stock={stock || []} shopStock={shopStock || []} pins={chargePins}
                   onAdd={(x) => setEditVisit((ev) => ({ ...ev, items: [...(ev.items || []), { name: x.name, qty: 1, price: Number(x.price) || 0, stockId: (x.kind === 'svc' ? null : x.id) || null, origin: x.kind === 'shop' ? 'shop' : null }] }))} />
               </div>
               <table className="tbl">
@@ -1620,7 +1681,7 @@ function CaseView({ pet, queueItem, vets, assistants = [], services, stock, shop
             <div>
               <div style={{ fontWeight: 700, fontSize: 13, color: 'var(--ink-soft)', marginBottom: 8 }}>💊 รายการค่าใช้จ่ายของวันนี้</div>
               <div className="no-print" style={{ marginBottom: 10 }}>
-                <ChargePicker services={services || []} stock={stock || []} shopStock={shopStock || []}
+                <ChargePicker services={services || []} stock={stock || []} shopStock={shopStock || []} pins={chargePins}
                   onAdd={(x) => setEditDaily((ed) => ({ ...ed, items: [...(ed.items || []), { name: x.name, qty: 1, price: Number(x.price) || 0, stockId: (x.kind === 'svc' ? null : x.id) || null, origin: x.kind === 'shop' ? 'shop' : null }] }))} />
               </div>
               <table className="tbl">
@@ -1779,12 +1840,12 @@ function CaseView({ pet, queueItem, vets, assistants = [], services, stock, shop
         />
       ) : null}
       {showChargeSets ? (
-        <ChargeSetModal sets={chargeSets} services={services || []} stock={stock || []} shopStock={shopStock || []}
+        <ChargeSetModal sets={chargeSets} services={services || []} stock={stock || []} shopStock={shopStock || []} pins={chargePins}
           onSave={(fn, msg) => onSaveChargeSets && onSaveChargeSets(fn, msg)} onApply={applyChargeSet} onClose={() => setShowChargeSets(false)} />
       ) : null}
       {showServiceMgr ? (
         <ServiceManagerModal
-          services={services} stock={stock}
+          services={services} stock={stock} pins={chargePins} onSavePins={onSaveChargePins}
           onAdd={(item) => { setCharges((prev) => [...prev, [item.name, 1, item.price, (item.kind === 'stk' || item.kind === 'stock' || item.kind === 'shop') ? item.id : null, item.kind === 'shop' ? 'shop' : null]]); }}
           onSaveService={onAddService}
           onDeleteService={onDeleteService}

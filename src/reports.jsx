@@ -734,7 +734,7 @@ const receiptInvoiceItems = (r) => (r.items || []).map((it) => Array.isArray(it)
 const VAT_CHOICES = [['included', 'ราคารวม VAT 7%'], ['none', 'ไม่มี VAT'], ['added', 'บวก VAT 7% เพิ่ม']];
 
 // ── แก้ไขใบเสร็จถาวร (ชื่อ/รายการ/ยอด/วันที่) — บันทึกแล้วสะท้อนใน export ทันที ──
-function ReceiptEditModal({ receipt, onClose, onSave, onOpenPet, services = [], stock = [], shopStock = [] }) {
+function ReceiptEditModal({ receipt, onClose, onSave, onOpenPet, services = [], stock = [], shopStock = [], pins = [] }) {
   const [petName, setPetName] = useState(receipt.petName || '');
   const [ownerName, setOwnerName] = useState(receipt.ownerName || '');
   // ข้อมูลผู้ซื้อสำหรับใบกำกับภาษี — แก้ได้เหมือนตอนรับชำระในหน้า OPD
@@ -814,7 +814,7 @@ function ReceiptEditModal({ receipt, onClose, onSave, onOpenPet, services = [], 
           <div style={{ fontWeight: 700, fontSize: 13, color: 'var(--ink-soft)', marginBottom: 8 }}>รายการในใบเสร็จ</div>
           {/* ค้นหายา/บริการ/สินค้า เพื่อเพิ่มรายการเข้าใบเสร็จได้เลย (เหมือนหน้าบันทึกการตรวจ) */}
           <div className="no-print" style={{ marginBottom: 10 }}>
-            <ChargePicker services={services || []} stock={stock || []} shopStock={shopStock || []} onAdd={addFromCatalog} />
+            <ChargePicker services={services || []} stock={stock || []} shopStock={shopStock || []} pins={pins} onAdd={addFromCatalog} />
           </div>
           <table className="tbl">
             <thead><tr><th>รายการ</th><th className="num" style={{ width: 90 }}>จำนวน</th><th className="num" style={{ width: 110 }}>ราคา/หน่วย</th><th className="num" style={{ width: 110 }}>รวม</th><th style={{ width: 40 }}></th></tr></thead>
@@ -850,7 +850,7 @@ function ReceiptEditModal({ receipt, onClose, onSave, onOpenPet, services = [], 
   );
 }
 
-function ReportsView({ pets, queue, stock, shopStock = [], services = [], receipts = [], appointments = [], vets = [], assistants = [], commissionPct = 10, onSaveCommissionPct, onReassignStaff, onCancelReceipt, onUpdateReceipt, onOpenPet }) {
+function ReportsView({ pets, queue, stock, shopStock = [], services = [], receipts = [], appointments = [], vets = [], assistants = [], commissionPct = 10, onSaveCommissionPct, onReassignStaff, chargePins = [], onCancelReceipt, onUpdateReceipt, onOpenPet }) {
   const now = new Date();
   const [range, setRange] = useState('week');
   const [pickYear, setPickYear] = useState(now.getFullYear());
@@ -1480,7 +1480,7 @@ function ReportsView({ pets, queue, stock, shopStock = [], services = [], receip
       {editReceipt ? (
         <ReceiptEditModal
           receipt={editReceipt}
-          services={services} stock={stock} shopStock={shopStock}
+          services={services} stock={stock} shopStock={shopStock} pins={chargePins}
           onClose={() => setEditReceipt(null)}
           onOpenPet={onOpenPet}
           onSave={(patch) => { onUpdateReceipt && onUpdateReceipt(editReceipt.no, patch); setEditReceipt(null); }}
